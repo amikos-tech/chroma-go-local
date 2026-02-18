@@ -1,0 +1,32 @@
+# OS artifacts
+.DS_Store
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Go test/coverage artifacts
+coverage.out
+*.coverprofile
+*.test
+*.prof
+
+# Rust/Cargo build artifacts
+target/
+shim/target/
+
+# Generated local Chroma runtime data
+chroma_test_data/
+chroma_test_data_builder/
+chroma_test_data_embedded/
+
+# Proptest regression files (local debug artifacts)
+shim/proptest-regressions/
+
+# Binary artifacts
+*.dylib
+*.so
+*.dll
+*.a
+*.o
+*.rlib

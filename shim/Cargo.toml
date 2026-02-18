@@ -1,0 +1,33 @@
+[package]
+name = "chroma_go_shim"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "chroma_go_shim"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+libc = "0.2"
+tokio = { version = "1.41", features = ["fs", "macros", "rt-multi-thread", "time", "io-util", "signal", "sync"] }
+figment = { version = "0.10.12", features = ["env", "yaml"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Chroma dependencies from official repo
+chroma-frontend = { git = "https://github.com/chroma-core/chroma.git", tag = "1.4.1" }
+chroma-config = { git = "https://github.com/chroma-core/chroma.git", tag = "1.4.1" }
+chroma-system = { git = "https://github.com/chroma-core/chroma.git", tag = "1.4.1" }
+chroma-types = { git = "https://github.com/chroma-core/chroma.git", tag = "1.4.1" }
+
+[profile.release]
+lto = "thin"
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.6"
+tempfile = "3"
+
+[[bench]]
+name = "ffi_bench"
+harness = false

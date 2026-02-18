@@ -1,0 +1,53 @@
+# AGENTS.md
+
+Guidance for coding agents working in this repository.
+
+## Project Summary
+
+- `local-go-chroma` is a Go wrapper for running Chroma as an embedded server.
+- It uses a Rust FFI shim plus `purego` (no `cgo`).
+- Primary languages: Go and Rust.
+
+## Requirements
+
+- Go 1.21+
+- Rust 1.70+
+- `golangci-lint` for Go linting
+
+## Common Commands
+
+- Build debug shim: `make build`
+- Build release shim: `make build-release`
+- Run tests (debug): `make test`
+- Run tests (release): `make test-release`
+- Run linters: `make lint`
+- Format code: `make fmt`
+
+Notes:
+- `make test` and `make test-release` set `CHROMA_LIB_PATH` automatically.
+- Prefer Make targets over ad-hoc commands for reproducibility.
+
+## Code Map
+
+- `chroma.go`: server lifecycle and public Go API
+- `config.go`: server config and builder options (`With...`)
+- `library.go`: dynamic library loading and symbol binding via `purego`
+- `errors.go`: error handling types and codes
+- `shim/src/lib.rs`: Rust FFI exports and runtime-backed server operations
+- `chroma_test.go`: integration-style tests against real server instances
+
+## Implementation Rules
+
+- Preserve the no-`cgo` design.
+- Keep Go and Rust FFI contracts in sync when changing signatures.
+- Maintain resource cleanup behavior (`Stop`, `Close`, and finalizers).
+- Keep public API changes backward compatible unless explicitly requested.
+- Add or update tests for behavior changes.
+
+## Validation Before Handoff
+
+- Run relevant checks for touched areas:
+- `make test`
+- `make lint`
+
+If a full run is not possible, document exactly what was not executed and why.

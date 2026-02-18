@@ -1,0 +1,218 @@
+# local-go-chroma
+
+A minimal Go wrapper for running Chroma from Go using a Rust FFI shim and [purego](https://github.com/ebitengine/purego) (no cgo required).
+
+It supports both:
+- server mode (starts the HTTP frontend)
+- embedded mode (direct in-process calls, no HTTP port)
+
+## Requirements
+
+- Go 1.21+
+- Rust 1.70+
+
+## Building
+
+```bash
+# Build debug version
+make build
+
+# Build release version
+make build-release
+```
+
+## Usage
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+
+    chroma "github.com/amikos-tech/local-go-chroma"
+)
+
+func main() {
+    // Initialize - set CHROMA_LIB_PATH or pass path directly
+    if err := chroma.Init(""); err != nil {
+        fmt.Fprintf(os.Stderr, "Failed to initialize: %v\n", err)
+        os.Exit(1)
+    }
+
+    // Start server with builder pattern
+    server, err := chroma.NewServer(
+        chroma.WithPort(8000),
+        chroma.WithPersistPath("./chroma_data"),
+        chroma.WithAllowReset(true),
+    )
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Failed to start server: %v\n", err)
+        os.Exit(1)
+    }
+    defer server.Close()
+
+    fmt.Printf("Server running at %s\n", server.URL())
+
+    // Use any Chroma client to connect to the server...
+}
+```
+
+## Embedded Mode (No HTTP Port)
+
+```go
+embedded, err := chroma.NewEmbedded(
+    chroma.WithEmbeddedPersistPath("./chroma_data"),
+    chroma.WithEmbeddedAllowReset(true),
+)
+if err != nil {
+    panic(err)
+}
+defer embedded.Close()
+
+collection, err := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
+    Name: "docs",
+})
+if err != nil {
+    panic(err)
+}
+
+err = embedded.Add(chroma.EmbeddedAddRequest{
+    CollectionID: collection.ID,
+    IDs:          []string{"doc-1"},
+    Embeddings:   [][]float32{{0.1, 0.2, 0.3}},
+})
+if err != nil {
+    panic(err)
+}
+
+result, err := embedded.Query(chroma.EmbeddedQueryRequest{
+    CollectionID:    collection.ID,
+    QueryEmbeddings: [][]float32{{0.1, 0.2, 0.3}},
+    NResults:        1,
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println(result.IDs)
+```
+
+### Configuration Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `WithPort(port)` | Server port | 8000 |
+| `WithListenAddress(addr)` | Bind address | "127.0.0.1" |
+| `WithPersistPath(path)` | Data directory | "./chroma" |
+| `WithAllowReset(bool)` | Enable reset endpoint | false |
+| `WithMaxPayloadSize(bytes)` | Max request size | 40 MB |
+| `WithCORSAllowOrigins(origins...)` | CORS allowed origins | none |
+| `WithSQLiteFilename(name)` | SQLite DB filename | "chroma.sqlite3" |
+| `WithOpenTelemetry(endpoint, service)` | Enable OTel tracing | disabled |
+| `WithRawYAML(yaml)` | Raw YAML config (overrides all) | - |
+
+### Alternative: YAML config file
+
+```go
+server, err := chroma.StartServer(chroma.StartServerConfig{
+    ConfigPath: "./config.yaml",
+})
+```
+
+### Alternative: Inline YAML string
+
+```go
+server, err := chroma.StartServer(chroma.StartServerConfig{
+    ConfigString: `
+port: 8000
+persist_path: "./chroma_data"
+allow_reset: true
+`,
+})
+```
+
+## API
+
+For a detailed, example-heavy reference of the currently implemented Go APIs, see [`GO_API_SURFACE.md`](GO_API_SURFACE.md).
+
+| Function | Description |
+|----------|-------------|
+| `Init(libPath string) error` | Initialize the library. Uses `CHROMA_LIB_PATH` env if path is empty. |
+| `Version() string` | Returns the shim version. |
+| `NewServer(opts ...ServerOption) (*Server, error)` | Start a server with builder options. |
+| `StartServer(config StartServerConfig) (*Server, error)` | Start a server with YAML config. |
+| `(*Server) Port() int` | Get the server port. |
+| `(*Server) Address() string` | Get the server listen address. |
+| `(*Server) URL() string` | Get the full server URL. |
+| `(*Server) Stop() error` | Gracefully stop the server. |
+| `(*Server) Close() error` | Stop and free resources. |
+| `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
+| `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)` | Start embedded mode from YAML config. |
+| `(*Embedded) Heartbeat() (uint64, error)` | Read in-process heartbeat nanoseconds. |
+| `(*Embedded) MaxBatchSize() (uint32, error)` | Get embedded max batch size. |
+| `(*Embedded) CreateTenant(request EmbeddedCreateTenantRequest) error` | Create a tenant in embedded mode. |
+| `(*Embedded) GetTenant(request EmbeddedGetTenantRequest) (*EmbeddedTenant, error)` | Get a tenant by name. |
+| `(*Embedded) UpdateTenant(request EmbeddedUpdateTenantRequest) error` | Update tenant properties. |
+| `(*Embedded) Healthcheck() (*EmbeddedHealthCheckResponse, error)` | Get embedded readiness state. |
+| `(*Embedded) CreateDatabase(request EmbeddedCreateDatabaseRequest) error` | Create a database in embedded mode. |
+| `(*Embedded) ListDatabases(request EmbeddedListDatabasesRequest) ([]EmbeddedDatabase, error)` | List databases in embedded mode. |
+| `(*Embedded) GetDatabase(request EmbeddedGetDatabaseRequest) (*EmbeddedDatabase, error)` | Get a database by name. |
+| `(*Embedded) DeleteDatabase(request EmbeddedDeleteDatabaseRequest) error` | Delete a database by name. |
+| `(*Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*EmbeddedCollection, error)` | Create a collection without HTTP. |
+| `(*Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error)` | List collections for a database. |
+| `(*Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error)` | Get a collection by name. |
+| `(*Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (uint32, error)` | Count collections for a database. |
+| `(*Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error` | Update a collection (rename-focused). |
+| `(*Embedded) DeleteCollection(request EmbeddedDeleteCollectionRequest) error` | Delete a collection by name. |
+| `(*Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error)` | Fork a collection (may be unimplemented in local mode). |
+| `(*Embedded) CountRecords(request EmbeddedCountRecordsRequest) (uint32, error)` | Count records for a collection. |
+| `(*Embedded) GetRecords(request EmbeddedGetRecordsRequest) (*EmbeddedGetRecordsResponse, error)` | Get records from a collection (supports `where` and `where_document`). |
+| `(*Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error` | Update existing records by id. |
+| `(*Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error` | Upsert records by id. |
+| `(*Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error` | Delete records by ids and/or filters. |
+| `(*Embedded) Add(request EmbeddedAddRequest) error` | Add records without HTTP. |
+| `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
+| `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
+| `(*Embedded) Reset() error` | Reset local state when enabled. |
+| `(*Embedded) Close() error` | Free embedded resources. |
+
+## Testing
+
+```bash
+make test-go       # Run Go tests (unit + integration + property tests)
+make test-rust     # Run Rust shim tests (unit + proptests + FFI integration)
+make test-all      # Run both Go and Rust tests
+make test-release  # Run Go tests with release build
+```
+
+### Benchmarks
+
+```bash
+make bench-go      # Run Go benchmarks
+make bench-rust    # Run Rust criterion benchmarks
+make bench         # Run both benchmark suites
+```
+
+## Project Structure
+
+```
+.
+├── chroma.go       # Main Go wrapper
+├── config.go       # Server config builder with WithXXX options
+├── embedded.go     # Embedded (in-process) API
+├── library.go      # Library loading via purego
+├── errors.go       # Error codes and handling
+├── chroma_test.go  # Tests
+├── embedded_test.go # Embedded integration test
+├── Makefile        # Build orchestration
+├── examples/
+│   └── basic/      # Example usage
+└── shim/
+    ├── Cargo.toml  # Rust dependencies
+    └── src/
+        └── lib.rs  # Rust FFI shim
+```
+
+## License
+
+MIT
