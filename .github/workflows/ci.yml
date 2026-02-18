@@ -25,6 +25,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Normalize line endings on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --local core.autocrlf false
+          git config --local core.eol lf
+          git reset --hard HEAD
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
