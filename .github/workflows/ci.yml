@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-lint:
+    name: Build/Test/Lint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "shim -> target"
+
+      - name: Build Rust shim (debug)
+        working-directory: shim
+        run: cargo build --locked
+
+      - name: Run Go tests
+        shell: pwsh
+        run: |
+          $libName = switch ("${{ runner.os }}") {
+            "Linux" { "libchroma_go_shim.so" }
+            "macOS" { "libchroma_go_shim.dylib" }
+            "Windows" { "chroma_go_shim.dll" }
+            default { throw "Unsupported OS: ${{ runner.os }}" }
+          }
+
+          $env:CHROMA_LIB_PATH = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE "shim/target/debug/$libName"))
+          Write-Host "CHROMA_LIB_PATH=$env:CHROMA_LIB_PATH"
+          go test -v ./...
+
+      - name: Run Go lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: --timeout=30m ./...
+
+      - name: Run Rust lint
+        working-directory: shim
+        run: cargo clippy --locked -- -D warnings
