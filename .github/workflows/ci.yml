@@ -41,6 +41,14 @@ jobs:
         with:
           workspaces: "shim -> target"
 
+      - name: Set up protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "31.x"
+
+      - name: Verify protoc
+        run: protoc --version
+
       - name: Build Rust shim (debug)
         working-directory: shim
         run: cargo build --locked
