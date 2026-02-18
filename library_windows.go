@@ -3,9 +3,8 @@
 package chroma
 
 import (
-	"golang.org/x/sys/windows"
-
 	"github.com/pkg/errors"
+	"golang.org/x/sys/windows"
 )
 
 func loadLibrary(path string) (uintptr, error) {
