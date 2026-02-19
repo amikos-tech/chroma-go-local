@@ -17,9 +17,5 @@ func loadLibrary(path string) (uintptr, error) {
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to load library: %s", resolvedPath)
 	}
-	if handle == 0 {
-		return 0, errors.Errorf("failed to load library: %s", resolvedPath)
-	}
-
 	return uintptr(handle), nil
 }

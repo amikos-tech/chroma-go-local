@@ -14,8 +14,12 @@ func loadLibrary(path string) (uintptr, error) {
 	}
 
 	libHandle, err := purego.Dlopen(resolvedPath, purego.RTLD_NOW|purego.RTLD_GLOBAL)
-	if err != nil || libHandle == 0 {
+	if err != nil {
 		return 0, errors.Wrapf(err, "failed to load library: %s", resolvedPath)
 	}
+	if libHandle == 0 {
+		return 0, errors.Errorf("failed to load library: %s", resolvedPath)
+	}
+
 	return libHandle, nil
 }
