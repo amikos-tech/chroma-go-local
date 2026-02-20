@@ -21,6 +21,49 @@ make build
 make build-release
 ```
 
+## Prebuilt Shim Artifacts
+
+Tag pushes matching `v*` trigger the release workflow in `.github/workflows/release.yml`, which publishes downloadable shim archives in the GitHub [Releases](https://github.com/amikos-tech/chroma-go-local/releases).
+
+Archive naming is stable:
+
+- `chroma-go-shim-linux-<arch>.tar.gz`
+- `chroma-go-shim-macos-<arch>.tar.gz`
+- `chroma-go-shim-windows-<arch>.tar.gz`
+- `chroma-go-shim_SHA256SUMS.txt` (combined checksums for all archives)
+
+Library filename mapping inside each archive:
+
+| OS | Library filename |
+|---|---|
+| Linux | `libchroma_go_shim.so` |
+| macOS | `libchroma_go_shim.dylib` |
+| Windows | `chroma_go_shim.dll` |
+
+Example usage:
+
+```bash
+# Linux/macOS
+tar -xzf chroma-go-shim-linux-amd64.tar.gz
+export CHROMA_LIB_PATH="$(pwd)/libchroma_go_shim.so"
+```
+
+```powershell
+# Windows PowerShell
+tar -xzf chroma-go-shim-windows-amd64.tar.gz
+$env:CHROMA_LIB_PATH = (Resolve-Path .\chroma_go_shim.dll).Path
+```
+
+Verify release checksums:
+
+```bash
+# Linux
+sha256sum -c chroma-go-shim_SHA256SUMS.txt
+
+# macOS (for a single archive)
+shasum -a 256 chroma-go-shim-macos-arm64.tar.gz
+```
+
 ## Usage
 
 ```go
@@ -193,6 +236,8 @@ GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `w
 2. `go test -v ./...` with platform-specific `CHROMA_LIB_PATH`
 3. `golangci-lint run ./...`
 4. `cargo clippy --locked -- -D warnings` in `shim/`
+
+Release tags (`v*`) run a separate workflow that builds release shim archives and publishes them together with `chroma-go-shim_SHA256SUMS.txt`.
 
 ### Benchmarks
 
