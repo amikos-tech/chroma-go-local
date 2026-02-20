@@ -66,6 +66,16 @@ sha256sum -c chroma-go-shim_SHA256SUMS.txt
 shasum -a 256 -c chroma-go-shim_SHA256SUMS.txt
 ```
 
+```powershell
+# Windows PowerShell
+Get-Content chroma-go-shim_SHA256SUMS.txt | ForEach-Object {
+    if (-not $_) { return }
+    $expected, $file = $_ -split '  ', 2
+    $actual = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
+    if ($actual -eq $expected) { "OK: $file" } else { throw "MISMATCH: $file" }
+}
+```
+
 ## Usage
 
 ```go
