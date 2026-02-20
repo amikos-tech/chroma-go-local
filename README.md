@@ -32,6 +32,8 @@ Archive naming is stable:
 - `chroma-go-shim-windows-<arch>.tar.gz`
 - `chroma-go-shim_SHA256SUMS.txt` (combined checksums for all archives)
 
+Architecture note: archive `<arch>` is derived from the GitHub runner architecture. With the current hosted matrix, releases are expected to be `amd64`; add ARM64 runners to publish native `arm64` archives.
+
 Library filename mapping inside each archive:
 
 | OS | Library filename |
@@ -60,8 +62,8 @@ Verify release checksums:
 # Linux
 sha256sum -c chroma-go-shim_SHA256SUMS.txt
 
-# macOS (for a single archive)
-shasum -a 256 chroma-go-shim-macos-arm64.tar.gz
+# macOS
+shasum -a 256 -c chroma-go-shim_SHA256SUMS.txt
 ```
 
 ## Usage
