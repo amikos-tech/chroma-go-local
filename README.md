@@ -185,6 +185,15 @@ make test-all      # Run both Go and Rust tests
 make test-release  # Run Go tests with release build
 ```
 
+## CI
+
+GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`) on pushes to `main` and pull requests. Each matrix job runs:
+
+1. `cargo build --locked` in `shim/`
+2. `go test -v ./...` with platform-specific `CHROMA_LIB_PATH`
+3. `golangci-lint run ./...`
+4. `cargo clippy --locked -- -D warnings` in `shim/`
+
 ### Benchmarks
 
 ```bash
