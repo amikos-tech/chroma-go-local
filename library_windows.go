@@ -3,19 +3,33 @@
 package chroma
 
 import (
-	"github.com/pkg/errors"
+	"os"
+	"runtime"
+
 	"golang.org/x/sys/windows"
 )
 
 func loadLibrary(path string) (uintptr, error) {
-	resolvedPath, err := resolveLibraryPath(path)
+	plan, err := resolveLibraryLoadPlan(path, runtime.GOOS, os.Getenv, os.Stat)
 	if err != nil {
 		return 0, err
 	}
 
-	handle, err := windows.LoadLibrary(resolvedPath)
-	if err != nil {
-		return 0, errors.Wrapf(err, "failed to load library: %s", resolvedPath)
+	loadAttempts := make([]string, 0, len(plan.candidates))
+	for _, candidate := range plan.candidates {
+		handle, loadErr := windows.LoadLibrary(candidate.path)
+		if loadErr == nil {
+			if handle != 0 {
+				// Successful load returns only the handle; plan warnings are intentionally
+				// surfaced only on error to preserve the current Init/loadLibrary API.
+				return uintptr(handle), nil
+			}
+
+			loadAttempts = append(loadAttempts, formatLoadAttempt(candidate, nil))
+			return 0, formatLibraryLoadError(plan, loadAttempts)
+		}
+		loadAttempts = append(loadAttempts, formatLoadAttempt(candidate, loadErr))
 	}
-	return uintptr(handle), nil
+
+	return 0, formatLibraryLoadError(plan, loadAttempts)
 }

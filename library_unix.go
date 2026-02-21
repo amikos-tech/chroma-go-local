@@ -3,23 +3,33 @@
 package chroma
 
 import (
+	"os"
+	"runtime"
+
 	"github.com/ebitengine/purego"
-	"github.com/pkg/errors"
 )
 
 func loadLibrary(path string) (uintptr, error) {
-	resolvedPath, err := resolveLibraryPath(path)
+	plan, err := resolveLibraryLoadPlan(path, runtime.GOOS, os.Getenv, os.Stat)
 	if err != nil {
 		return 0, err
 	}
 
-	libHandle, err := purego.Dlopen(resolvedPath, purego.RTLD_NOW|purego.RTLD_GLOBAL)
-	if err != nil {
-		return 0, errors.Wrapf(err, "failed to load library: %s", resolvedPath)
-	}
-	if libHandle == 0 {
-		return 0, errors.Errorf("failed to load library: %s", resolvedPath)
+	loadAttempts := make([]string, 0, len(plan.candidates))
+	for _, candidate := range plan.candidates {
+		libHandle, loadErr := purego.Dlopen(candidate.path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+		if loadErr == nil {
+			if libHandle != 0 {
+				// Successful load returns only the handle; plan warnings are intentionally
+				// surfaced only on error to preserve the current Init/loadLibrary API.
+				return libHandle, nil
+			}
+
+			loadAttempts = append(loadAttempts, formatLoadAttempt(candidate, nil))
+			return 0, formatLibraryLoadError(plan, loadAttempts)
+		}
+		loadAttempts = append(loadAttempts, formatLoadAttempt(candidate, loadErr))
 	}
 
-	return libHandle, nil
+	return 0, formatLibraryLoadError(plan, loadAttempts)
 }
