@@ -1,10 +1,35 @@
 .PHONY: build build-debug build-release clean test test-go test-rust test-all bench bench-go bench-rust lint lint-go lint-rust fmt fmt-go fmt-rust help
 
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
+UNAME_S := $(shell uname -s 2>/dev/null || echo UNKNOWN)
+OS_ENV := $(OS)
+
+ifeq ($(UNAME_S),UNKNOWN)
+$(warning uname -s failed; OS detection will rely on OS env and fallback rules)
+endif
+
+ifeq ($(OS_ENV),Windows_NT)
+    HOST_OS := windows
+else ifneq (,$(findstring MINGW,$(UNAME_S)))
+    HOST_OS := windows
+else ifneq (,$(findstring MSYS,$(UNAME_S)))
+    HOST_OS := windows
+else ifneq (,$(findstring CYGWIN,$(UNAME_S)))
+    HOST_OS := windows
+else ifeq ($(UNAME_S),Darwin)
+    HOST_OS := darwin
+else ifeq ($(UNAME_S),Linux)
+    HOST_OS := linux
+else ifeq ($(UNAME_S),UNKNOWN)
+    HOST_OS := linux
+else
+    HOST_OS := linux
+$(warning unrecognized uname -s '$(UNAME_S)'; defaulting HOST_OS to linux)
+endif
+
+ifeq ($(HOST_OS),darwin)
     LIB_EXT := dylib
     LIB_NAME := libchroma_go_shim.dylib
-else ifeq ($(UNAME_S),Windows_NT)
+else ifeq ($(HOST_OS),windows)
     LIB_EXT := dll
     LIB_NAME := chroma_go_shim.dll
 else
@@ -13,8 +38,30 @@ else
 endif
 
 SHIM_DIR := shim
-SHIM_TARGET_DEBUG := $(SHIM_DIR)/target/debug/$(LIB_NAME)
-SHIM_TARGET_RELEASE := $(SHIM_DIR)/target/release/$(LIB_NAME)
+CARGO_TARGET_DIR_ENV := $(strip $(CARGO_TARGET_DIR))
+
+ifeq ($(CARGO_TARGET_DIR_ENV),)
+    SHIM_TARGET_DIR := $(SHIM_DIR)/target
+else ifneq ($(filter /%,$(CARGO_TARGET_DIR_ENV)),)
+    SHIM_TARGET_DIR := $(CARGO_TARGET_DIR_ENV)
+else ifneq ($(findstring :,$(CARGO_TARGET_DIR_ENV)),)
+    SHIM_TARGET_DIR := $(CARGO_TARGET_DIR_ENV)
+else ifneq ($(findstring \\,$(CARGO_TARGET_DIR_ENV)),)
+    SHIM_TARGET_DIR := $(CARGO_TARGET_DIR_ENV)
+else
+    SHIM_TARGET_DIR := $(SHIM_DIR)/$(CARGO_TARGET_DIR_ENV)
+endif
+
+SHIM_TARGET_DEBUG := $(SHIM_TARGET_DIR)/debug/$(LIB_NAME)
+SHIM_TARGET_RELEASE := $(SHIM_TARGET_DIR)/release/$(LIB_NAME)
+
+ifeq ($(HOST_OS),windows)
+VERIFY_DEBUG_ARTIFACT := @echo "Skipping POSIX artifact check on Windows Make host; use scripts/dev-windows.ps1 for artifact verification."
+VERIFY_RELEASE_ARTIFACT := @echo "Skipping POSIX artifact check on Windows Make host; use scripts/dev-windows.ps1 for artifact verification."
+else
+VERIFY_DEBUG_ARTIFACT := @test -f "$(SHIM_TARGET_DEBUG)" || (echo "Expected debug library not found at $(SHIM_TARGET_DEBUG). Check CARGO_TARGET_DIR." && exit 1)
+VERIFY_RELEASE_ARTIFACT := @test -f "$(SHIM_TARGET_RELEASE)" || (echo "Expected release library not found at $(SHIM_TARGET_RELEASE). Check CARGO_TARGET_DIR." && exit 1)
+endif
 
 help:
 	@echo "Chroma Go Shim Build System"
@@ -41,37 +88,43 @@ help:
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  CHROMA_LIB_PATH - Path to the shared library (auto-set during tests)"
+	@echo ""
+	@echo "Windows (PowerShell):"
+	@echo "  pwsh -File .\\scripts\\dev-windows.ps1 -Task test"
+	@echo "  pwsh -File .\\scripts\\dev-windows.ps1 -Task lint"
 
 build: build-debug
 
 build-debug:
-	cd $(SHIM_DIR) && cargo build
+	cd $(SHIM_DIR) && cargo build --locked
+	$(VERIFY_DEBUG_ARTIFACT)
 	@echo "Built debug library at $(SHIM_TARGET_DEBUG)"
 
 build-release:
-	cd $(SHIM_DIR) && cargo build --release
+	cd $(SHIM_DIR) && cargo build --locked --release
+	$(VERIFY_RELEASE_ARTIFACT)
 	@echo "Built release library at $(SHIM_TARGET_RELEASE)"
 
 test: test-go
 
 test-go: build-debug
-	CHROMA_LIB_PATH=$(shell pwd)/$(SHIM_TARGET_DEBUG) go test -v ./...
+	CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -v ./...
 
 test-rust:
-	cd $(SHIM_DIR) && cargo test
+	cd $(SHIM_DIR) && cargo test --locked
 
 test-all: test-go test-rust
 
 test-release: build-release
-	CHROMA_LIB_PATH=$(shell pwd)/$(SHIM_TARGET_RELEASE) go test -v ./...
+	CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_RELEASE)) go test -v ./...
 
 bench: bench-go bench-rust
 
 bench-go: build-debug
-	CHROMA_LIB_PATH=$(shell pwd)/$(SHIM_TARGET_DEBUG) go test -run '^$$' -bench . -benchmem ./...
+	CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -run '^$$' -bench . -benchmem ./...
 
 bench-rust:
-	cd $(SHIM_DIR) && cargo bench --bench ffi_bench
+	cd $(SHIM_DIR) && cargo bench --locked --bench ffi_bench
 
 clean:
 	cd $(SHIM_DIR) && cargo clean
@@ -83,7 +136,7 @@ lint-go:
 	golangci-lint run ./...
 
 lint-rust:
-	cd $(SHIM_DIR) && cargo clippy -- -D warnings
+	cd $(SHIM_DIR) && cargo clippy --locked -- -D warnings
 
 fmt: fmt-go fmt-rust
 
