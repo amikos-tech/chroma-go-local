@@ -3,7 +3,10 @@ package chroma
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -183,6 +186,7 @@ type EmbeddedCountCollectionsRequest struct {
 type EmbeddedUpdateCollectionRequest struct {
 	CollectionID string `json:"collection_id"`
 	NewName      string `json:"new_name"`
+	DatabaseName string `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteCollectionRequest deletes a collection by name.
@@ -202,11 +206,13 @@ type EmbeddedForkCollectionRequest struct {
 
 // EmbeddedAddRequest adds records to a collection.
 type EmbeddedAddRequest struct {
-	CollectionID string           `json:"collection_id"`
-	IDs          []string         `json:"ids"`
-	Embeddings   [][]float32      `json:"embeddings"`
-	Documents    []string         `json:"documents,omitempty"`
-	URIs         []string         `json:"uris,omitempty"`
+	CollectionID string      `json:"collection_id"`
+	IDs          []string    `json:"ids"`
+	Embeddings   [][]float32 `json:"embeddings"`
+	Documents    []string    `json:"documents,omitempty"`
+	URIs         []string    `json:"uris,omitempty"`
+	// Metadatas accepts bool/int/float/string values and homogeneous arrays of those scalar types.
+	// Floats are encoded with an explicit decimal to avoid accidental int-array coercion.
 	Metadatas    []map[string]any `json:"metadatas,omitempty"`
 	TenantID     string           `json:"tenant_id,omitempty"`
 	DatabaseName string           `json:"database_name,omitempty"`
@@ -262,11 +268,14 @@ type EmbeddedGetRecordsResponse struct {
 
 // EmbeddedUpdateRecordsRequest updates existing records by id.
 type EmbeddedUpdateRecordsRequest struct {
-	CollectionID string           `json:"collection_id"`
-	IDs          []string         `json:"ids"`
-	Embeddings   [][]float32      `json:"embeddings,omitempty"`
-	Documents    []string         `json:"documents,omitempty"`
-	URIs         []string         `json:"uris,omitempty"`
+	CollectionID string      `json:"collection_id"`
+	IDs          []string    `json:"ids"`
+	Embeddings   [][]float32 `json:"embeddings,omitempty"`
+	Documents    []string    `json:"documents,omitempty"`
+	URIs         []string    `json:"uris,omitempty"`
+	// Metadatas accepts bool/int/float/string values and homogeneous arrays of those scalar types.
+	// Floats are encoded with an explicit decimal to avoid accidental int-array coercion.
+	// Nil metadata values are allowed in update/upsert and forwarded as metadata key deletion.
 	Metadatas    []map[string]any `json:"metadatas,omitempty"`
 	TenantID     string           `json:"tenant_id,omitempty"`
 	DatabaseName string           `json:"database_name,omitempty"`
@@ -274,11 +283,14 @@ type EmbeddedUpdateRecordsRequest struct {
 
 // EmbeddedUpsertRecordsRequest upserts records by id.
 type EmbeddedUpsertRecordsRequest struct {
-	CollectionID string           `json:"collection_id"`
-	IDs          []string         `json:"ids"`
-	Embeddings   [][]float32      `json:"embeddings"`
-	Documents    []string         `json:"documents,omitempty"`
-	URIs         []string         `json:"uris,omitempty"`
+	CollectionID string      `json:"collection_id"`
+	IDs          []string    `json:"ids"`
+	Embeddings   [][]float32 `json:"embeddings"`
+	Documents    []string    `json:"documents,omitempty"`
+	URIs         []string    `json:"uris,omitempty"`
+	// Metadatas accepts bool/int/float/string values and homogeneous arrays of those scalar types.
+	// Floats are encoded with an explicit decimal to avoid accidental int-array coercion.
+	// Nil metadata values are allowed in update/upsert and forwarded as metadata key deletion.
 	Metadatas    []map[string]any `json:"metadatas,omitempty"`
 	TenantID     string           `json:"tenant_id,omitempty"`
 	DatabaseName string           `json:"database_name,omitempty"`
@@ -810,21 +822,26 @@ func (e *Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error {
 	if len(request.IDs) == 0 {
 		return errors.New("ids must not be empty")
 	}
-	if len(request.Embeddings) > 0 && len(request.Embeddings) != len(request.IDs) {
-		return errors.New("embeddings must have same length as ids when provided")
+	if err := validateOptionalLength("embeddings", len(request.Embeddings), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.Documents) > 0 && len(request.Documents) != len(request.IDs) {
-		return errors.New("documents must have same length as ids when provided")
+	if err := validateOptionalLength("documents", len(request.Documents), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
-		return errors.New("uris must have same length as ids when provided")
+	if err := validateOptionalLength("uris", len(request.URIs), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.Metadatas) > 0 && len(request.Metadatas) != len(request.IDs) {
-		return errors.New("metadatas must have same length as ids when provided")
+	if err := validateOptionalLength("metadatas", len(request.Metadatas), len(request.IDs)); err != nil {
+		return err
 	}
 	if len(request.Embeddings) == 0 && len(request.Documents) == 0 && len(request.URIs) == 0 && len(request.Metadatas) == 0 {
 		return errors.New("at least one of embeddings, documents, uris, or metadatas must be provided")
 	}
+	normalizedMetadatas, err := validateAndNormalizeMetadatas(request.Metadatas, true)
+	if err != nil {
+		return errors.Wrap(err, "invalid metadatas")
+	}
+	request.Metadatas = normalizedMetadatas
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
@@ -855,15 +872,20 @@ func (e *Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error {
 	if len(request.IDs) != len(request.Embeddings) {
 		return errors.New("ids and embeddings must have same length")
 	}
-	if len(request.Documents) > 0 && len(request.Documents) != len(request.IDs) {
-		return errors.New("documents must have same length as ids when provided")
+	if err := validateOptionalLength("documents", len(request.Documents), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
-		return errors.New("uris must have same length as ids when provided")
+	if err := validateOptionalLength("uris", len(request.URIs), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.Metadatas) > 0 && len(request.Metadatas) != len(request.IDs) {
-		return errors.New("metadatas must have same length as ids when provided")
+	if err := validateOptionalLength("metadatas", len(request.Metadatas), len(request.IDs)); err != nil {
+		return err
 	}
+	normalizedMetadatas, err := validateAndNormalizeMetadatas(request.Metadatas, true)
+	if err != nil {
+		return errors.Wrap(err, "invalid metadatas")
+	}
+	request.Metadatas = normalizedMetadatas
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
@@ -945,15 +967,20 @@ func (e *Embedded) Add(request EmbeddedAddRequest) error {
 	if len(request.IDs) != len(request.Embeddings) {
 		return errors.New("ids and embeddings must have same length")
 	}
-	if len(request.Documents) > 0 && len(request.Documents) != len(request.IDs) {
-		return errors.New("documents must have same length as ids when provided")
+	if err := validateOptionalLength("documents", len(request.Documents), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
-		return errors.New("uris must have same length as ids when provided")
+	if err := validateOptionalLength("uris", len(request.URIs), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.Metadatas) > 0 && len(request.Metadatas) != len(request.IDs) {
-		return errors.New("metadatas must have same length as ids when provided")
+	if err := validateOptionalLength("metadatas", len(request.Metadatas), len(request.IDs)); err != nil {
+		return err
 	}
+	normalizedMetadatas, err := validateAndNormalizeMetadatas(request.Metadatas, false)
+	if err != nil {
+		return errors.Wrap(err, "invalid metadatas")
+	}
+	request.Metadatas = normalizedMetadatas
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
@@ -1006,6 +1033,203 @@ func (e *Embedded) Close() error {
 	chromaEmbeddedFree(e.handle)
 	e.handle = 0
 	return nil
+}
+
+func validateOptionalLength(field string, valueLen, idsLen int) error {
+	if valueLen > 0 && valueLen != idsLen {
+		return errors.Errorf("%s must have same length as ids when provided", field)
+	}
+	return nil
+}
+
+// metadataFloat64 preserves explicit floating-point representation in JSON.
+// This avoids ambiguous encoding of whole floats (for example 1.0 -> 1).
+type metadataFloat64 float64
+
+func (f metadataFloat64) MarshalJSON() ([]byte, error) {
+	v := float64(f)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, errors.New("float metadata values must be finite")
+	}
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	return []byte(s), nil
+}
+
+func validateAndNormalizeMetadatas(metadatas []map[string]any, allowNilValues bool) ([]map[string]any, error) {
+	if len(metadatas) == 0 {
+		return metadatas, nil
+	}
+
+	normalized := make([]map[string]any, len(metadatas))
+	for i, metadata := range metadatas {
+		if metadata == nil {
+			normalized[i] = nil
+			continue
+		}
+
+		normalizedMetadata := make(map[string]any, len(metadata))
+		for key, value := range metadata {
+			path := fmt.Sprintf("metadatas[%d].%s", i, key)
+			normalizedValue, err := normalizeMetadataValue(path, value, allowNilValues)
+			if err != nil {
+				return nil, err
+			}
+			normalizedMetadata[key] = normalizedValue
+		}
+		normalized[i] = normalizedMetadata
+	}
+
+	return normalized, nil
+}
+
+func normalizeMetadataValue(path string, value any, allowNil bool) (any, error) {
+	if value == nil {
+		if allowNil {
+			return nil, nil
+		}
+		return nil, errors.Errorf("%s cannot be null", path)
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Bool:
+		return rv.Bool(), nil
+	case reflect.String:
+		return rv.String(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		u := rv.Uint()
+		if u > uint64(^uint64(0)>>1) {
+			return nil, errors.Errorf("%s integer value %d exceeds int64 range", path, u)
+		}
+		return int64(u), nil
+	case reflect.Float32, reflect.Float64:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, errors.Errorf("%s float metadata values must be finite", path)
+		}
+		return metadataFloat64(f), nil
+	case reflect.Ptr:
+		if rv.IsNil() {
+			if allowNil {
+				return nil, nil
+			}
+			return nil, errors.Errorf("%s cannot be null", path)
+		}
+		return normalizeMetadataValue(path, rv.Elem().Interface(), allowNil)
+	case reflect.Slice, reflect.Array:
+		return normalizeMetadataSlice(path, rv)
+	case reflect.Map:
+		return nil, errors.Errorf("%s has unsupported metadata value type %T (nested objects are not supported)", path, value)
+	default:
+		return nil, errors.Errorf("%s has unsupported metadata value type %T", path, value)
+	}
+}
+
+func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
+	if rv.Type().Elem().Kind() == reflect.Uint8 {
+		return nil, errors.Errorf("%s has unsupported metadata array type %s", path, rv.Type().String())
+	}
+
+	if rv.Len() == 0 {
+		switch rv.Type().Elem().Kind() {
+		case reflect.Bool:
+			return []bool{}, nil
+		case reflect.String:
+			return []string{}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return []int64{}, nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return []int64{}, nil
+		case reflect.Float32, reflect.Float64:
+			return []metadataFloat64{}, nil
+		default:
+			return nil, errors.Errorf("%s cannot use empty arrays of type %s", path, rv.Type().String())
+		}
+	}
+
+	type scalarKind int
+	const (
+		scalarUnknown scalarKind = iota
+		scalarBool
+		scalarString
+		scalarInt
+		scalarFloat
+	)
+
+	kind := scalarUnknown
+	bools := make([]bool, 0, rv.Len())
+	stringsOut := make([]string, 0, rv.Len())
+	ints := make([]int64, 0, rv.Len())
+	floats := make([]metadataFloat64, 0, rv.Len())
+
+	for i := 0; i < rv.Len(); i++ {
+		itemPath := fmt.Sprintf("%s[%d]", path, i)
+		normalized, err := normalizeMetadataValue(itemPath, rv.Index(i).Interface(), false)
+		if err != nil {
+			return nil, err
+		}
+
+		switch v := normalized.(type) {
+		case bool:
+			if kind != scalarUnknown && kind != scalarBool {
+				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			kind = scalarBool
+			bools = append(bools, v)
+		case string:
+			if kind != scalarUnknown && kind != scalarString {
+				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			kind = scalarString
+			stringsOut = append(stringsOut, v)
+		case int64:
+			if kind == scalarUnknown || kind == scalarInt {
+				kind = scalarInt
+				ints = append(ints, v)
+				continue
+			}
+			if kind == scalarFloat {
+				floats = append(floats, metadataFloat64(float64(v)))
+				continue
+			}
+			return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+		case metadataFloat64:
+			if kind == scalarUnknown {
+				kind = scalarFloat
+			}
+			if kind == scalarInt {
+				for _, iv := range ints {
+					floats = append(floats, metadataFloat64(float64(iv)))
+				}
+				ints = nil
+				kind = scalarFloat
+			}
+			if kind != scalarFloat {
+				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			floats = append(floats, v)
+		default:
+			return nil, errors.Errorf("%s has unsupported metadata array element type %T", itemPath, normalized)
+		}
+	}
+
+	switch kind {
+	case scalarBool:
+		return bools, nil
+	case scalarString:
+		return stringsOut, nil
+	case scalarInt:
+		return ints, nil
+	case scalarFloat:
+		return floats, nil
+	default:
+		return nil, errors.Errorf("%s has unsupported metadata array type %s", path, rv.Type().String())
+	}
 }
 
 func marshalRequestJSON(v any) ([]byte, error) {

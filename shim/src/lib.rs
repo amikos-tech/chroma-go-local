@@ -1,5 +1,7 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -46,14 +48,77 @@ fn parse_database_name(database_name: String) -> Result<DatabaseName, String> {
         .ok_or_else(|| "database_name must be at least 3 characters".to_string())
 }
 
+fn resolve_database_name(database_name: Option<String>) -> String {
+    database_name.unwrap_or_else(|| DEFAULT_DATABASE.to_string())
+}
+
+fn resolve_database_name_typed(database_name: Option<String>) -> Result<DatabaseName, String> {
+    parse_database_name(resolve_database_name(database_name))
+}
+
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
 }
 
 fn set_last_error(msg: &str) {
+    let sanitized = msg.replace('\0', "\\0");
     LAST_ERROR.with(|e| {
-        *e.borrow_mut() = CString::new(msg).ok();
+        *e.borrow_mut() = CString::new(sanitized).ok();
     });
+}
+
+fn panic_payload_message(payload: Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        return (*message).to_string();
+    }
+    "unknown panic payload".to_string()
+}
+
+fn with_ffi_panic_boundary<T, F>(default: T, f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(value) => value,
+        Err(payload) => {
+            let panic_message = panic_payload_message(payload);
+            set_last_error(&format!("panic across FFI boundary: {panic_message}"));
+            default
+        }
+    }
+}
+
+macro_rules! ffi_guard_ptr_mut {
+    ($body:block) => {
+        with_ffi_panic_boundary(ptr::null_mut(), || $body)
+    };
+}
+
+macro_rules! ffi_guard_ptr_const {
+    ($body:block) => {
+        with_ffi_panic_boundary(ptr::null(), || $body)
+    };
+}
+
+macro_rules! ffi_guard_code {
+    ($body:block) => {
+        with_ffi_panic_boundary(ERROR_OPERATION_FAILED, || $body)
+    };
+}
+
+macro_rules! ffi_guard_minus_one {
+    ($body:block) => {
+        with_ffi_panic_boundary(-1, || $body)
+    };
+}
+
+macro_rules! ffi_guard_unit {
+    ($body:block) => {
+        with_ffi_panic_boundary((), || $body)
+    };
 }
 
 struct ServerHandle {
@@ -84,10 +149,7 @@ struct EmbeddedCreateCollectionPayload {
 impl EmbeddedCreateCollectionPayload {
     fn into_request(self) -> Result<CreateCollectionRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
-        let database_name = parse_database_name(database_name)?;
+        let database_name = resolve_database_name_typed(self.database_name)?;
 
         CreateCollectionRequest::try_new(
             tenant_id,
@@ -122,9 +184,7 @@ impl EmbeddedAddPayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
 
         AddCollectionRecordsRequest::try_new(
             tenant_id,
@@ -165,9 +225,7 @@ impl EmbeddedQueryPayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         let r#where = parse_where_fields(self.r#where, self.where_document)?;
         let include = match self.include {
             Some(include_values) => {
@@ -233,10 +291,7 @@ struct EmbeddedIndexingStatusPayload {
 
 impl EmbeddedIndexingStatusPayload {
     fn into_request(self) -> Result<(DatabaseName, CollectionUuid), String> {
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
-        let database_name = parse_database_name(database_name)?;
+        let database_name = resolve_database_name_typed(self.database_name)?;
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         Ok((database_name, collection_id))
@@ -320,10 +375,7 @@ struct EmbeddedListCollectionsPayload {
 impl EmbeddedListCollectionsPayload {
     fn into_request(self) -> Result<ListCollectionsRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
-        let database_name = parse_database_name(database_name)?;
+        let database_name = resolve_database_name_typed(self.database_name)?;
         ListCollectionsRequest::try_new(
             tenant_id,
             database_name,
@@ -346,10 +398,7 @@ struct EmbeddedGetCollectionPayload {
 impl EmbeddedGetCollectionPayload {
     fn into_request(self) -> Result<GetCollectionRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
-        let database_name = parse_database_name(database_name)?;
+        let database_name = resolve_database_name_typed(self.database_name)?;
         GetCollectionRequest::try_new(tenant_id, database_name, self.name)
             .map_err(|e| e.to_string())
     }
@@ -366,10 +415,7 @@ struct EmbeddedCountCollectionsPayload {
 impl EmbeddedCountCollectionsPayload {
     fn into_request(self) -> Result<CountCollectionsRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
-        let database_name = parse_database_name(database_name)?;
+        let database_name = resolve_database_name_typed(self.database_name)?;
         CountCollectionsRequest::try_new(tenant_id, database_name).map_err(|e| e.to_string())
     }
 }
@@ -410,9 +456,7 @@ struct EmbeddedDeleteCollectionPayload {
 impl EmbeddedDeleteCollectionPayload {
     fn into_request(self) -> Result<DeleteCollectionRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         DeleteCollectionRequest::try_new(tenant_id, database_name, self.name)
             .map_err(|e| e.to_string())
     }
@@ -433,9 +477,7 @@ impl EmbeddedForkCollectionPayload {
         let source_collection_id = CollectionUuid::from_str(&self.source_collection_id)
             .map_err(|e| format!("invalid source_collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         ForkCollectionRequest::try_new(
             tenant_id,
             database_name,
@@ -460,9 +502,7 @@ impl EmbeddedCountPayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         CountRequest::try_new(tenant_id, database_name, collection_id).map_err(|e| e.to_string())
     }
 }
@@ -493,9 +533,7 @@ impl EmbeddedGetPayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         let r#where = parse_where_fields(self.r#where, self.where_document)?;
         let include = match self.include {
             Some(include_values) => {
@@ -540,9 +578,7 @@ impl EmbeddedUpdatePayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         let embeddings = self
             .embeddings
             .map(|rows| rows.into_iter().map(Some).collect::<Vec<_>>());
@@ -583,9 +619,7 @@ impl EmbeddedUpsertPayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
 
         UpsertCollectionRecordsRequest::try_new(
             tenant_id,
@@ -621,9 +655,7 @@ impl EmbeddedDeleteRecordsPayload {
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        let database_name = self
-            .database_name
-            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = resolve_database_name(self.database_name);
         let r#where = parse_where_fields(self.r#where, self.where_document)?;
 
         DeleteCollectionRecordsRequest::try_new(
@@ -735,23 +767,25 @@ fn resolve_storage_paths(config: &FrontendServerConfig) -> Result<FrontendServer
 /// `config_path` must be a valid null-terminated C string or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_server_start(config_path: *const c_char) -> *mut c_void {
-    let path = match c_ptr_to_string(config_path, "config_path") {
-        Ok(path) => path,
-        Err(msg) => {
-            set_last_error(&msg);
-            return ptr::null_mut();
-        }
-    };
+    ffi_guard_ptr_mut!({
+        let path = match c_ptr_to_string(config_path, "config_path") {
+            Ok(path) => path,
+            Err(msg) => {
+                set_last_error(&msg);
+                return ptr::null_mut();
+            }
+        };
 
-    let config = match parse_config_from_path(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let config = match parse_config_from_path(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    start_server_with_config(config)
+        start_server_with_config(config)
+    })
 }
 
 /// Start a Chroma server from a YAML config string.
@@ -764,23 +798,25 @@ pub unsafe extern "C" fn chroma_server_start(config_path: *const c_char) -> *mut
 pub unsafe extern "C" fn chroma_server_start_from_string(
     config_yaml: *const c_char,
 ) -> *mut c_void {
-    let yaml = match c_ptr_to_string(config_yaml, "config_yaml") {
-        Ok(yaml) => yaml,
-        Err(msg) => {
-            set_last_error(&msg);
-            return ptr::null_mut();
-        }
-    };
+    ffi_guard_ptr_mut!({
+        let yaml = match c_ptr_to_string(config_yaml, "config_yaml") {
+            Ok(yaml) => yaml,
+            Err(msg) => {
+                set_last_error(&msg);
+                return ptr::null_mut();
+            }
+        };
 
-    let config = match parse_config_from_string(&yaml) {
-        Ok(c) => c,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let config = match parse_config_from_string(&yaml) {
+            Ok(c) => c,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    start_server_with_config(config)
+        start_server_with_config(config)
+    })
 }
 
 fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
@@ -852,11 +888,13 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
 /// `handle` must be a valid handle from `chroma_server_start*` or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_server_port(handle: *mut c_void) -> i32 {
-    if handle.is_null() {
-        return -1;
-    }
-    let server = &*(handle as *const ServerHandle);
-    server.port as i32
+    ffi_guard_minus_one!({
+        if handle.is_null() {
+            return -1;
+        }
+        let server = &*(handle as *const ServerHandle);
+        server.port as i32
+    })
 }
 
 /// Get the listen address the server is configured with.
@@ -867,11 +905,13 @@ pub unsafe extern "C" fn chroma_server_port(handle: *mut c_void) -> i32 {
 /// `handle` must be a valid handle from `chroma_server_start*` or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_server_address(handle: *mut c_void) -> *const c_char {
-    if handle.is_null() {
-        return ptr::null();
-    }
-    let server = &*(handle as *const ServerHandle);
-    server.listen_address.as_ptr()
+    ffi_guard_ptr_const!({
+        if handle.is_null() {
+            return ptr::null();
+        }
+        let server = &*(handle as *const ServerHandle);
+        server.listen_address.as_ptr()
+    })
 }
 
 /// Stop the server gracefully.
@@ -881,20 +921,22 @@ pub unsafe extern "C" fn chroma_server_address(handle: *mut c_void) -> *const c_
 /// `handle` must be a valid handle from `chroma_server_start*` or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_server_stop(handle: *mut c_void) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let server = &mut *(handle as *mut ServerHandle);
+        let server = &mut *(handle as *mut ServerHandle);
 
-    if let Some(tx) = server.shutdown_tx.take() {
-        let _ = tx.send(());
-        SUCCESS
-    } else {
-        set_last_error("server already stopped");
-        ERROR_ALREADY_STOPPED
-    }
+        if let Some(tx) = server.shutdown_tx.take() {
+            let _ = tx.send(());
+            SUCCESS
+        } else {
+            set_last_error("server already stopped");
+            ERROR_ALREADY_STOPPED
+        }
+    })
 }
 
 /// Free the server handle.
@@ -905,9 +947,11 @@ pub unsafe extern "C" fn chroma_server_stop(handle: *mut c_void) -> i32 {
 /// Must not be called more than once for the same handle.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_server_free(handle: *mut c_void) {
-    if !handle.is_null() {
-        let _ = Box::from_raw(handle as *mut ServerHandle);
-    }
+    ffi_guard_unit!({
+        if !handle.is_null() {
+            let _ = Box::from_raw(handle as *mut ServerHandle);
+        }
+    })
 }
 
 /// Start embedded (in-process) mode from a config file path.
@@ -917,23 +961,25 @@ pub unsafe extern "C" fn chroma_server_free(handle: *mut c_void) {
 /// `config_path` must be a valid null-terminated C string or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_embedded_start(config_path: *const c_char) -> *mut c_void {
-    let path = match c_ptr_to_string(config_path, "config_path") {
-        Ok(path) => path,
-        Err(msg) => {
-            set_last_error(&msg);
-            return ptr::null_mut();
-        }
-    };
+    ffi_guard_ptr_mut!({
+        let path = match c_ptr_to_string(config_path, "config_path") {
+            Ok(path) => path,
+            Err(msg) => {
+                set_last_error(&msg);
+                return ptr::null_mut();
+            }
+        };
 
-    let config = match parse_config_from_path(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let config = match parse_config_from_path(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    start_embedded_with_config(config)
+        start_embedded_with_config(config)
+    })
 }
 
 /// Start embedded (in-process) mode from a YAML config string.
@@ -945,23 +991,25 @@ pub unsafe extern "C" fn chroma_embedded_start(config_path: *const c_char) -> *m
 pub unsafe extern "C" fn chroma_embedded_start_from_string(
     config_yaml: *const c_char,
 ) -> *mut c_void {
-    let yaml = match c_ptr_to_string(config_yaml, "config_yaml") {
-        Ok(yaml) => yaml,
-        Err(msg) => {
-            set_last_error(&msg);
-            return ptr::null_mut();
-        }
-    };
+    ffi_guard_ptr_mut!({
+        let yaml = match c_ptr_to_string(config_yaml, "config_yaml") {
+            Ok(yaml) => yaml,
+            Err(msg) => {
+                set_last_error(&msg);
+                return ptr::null_mut();
+            }
+        };
 
-    let config = match parse_config_from_string(&yaml) {
-        Ok(c) => c,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let config = match parse_config_from_string(&yaml) {
+            Ok(c) => c,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    start_embedded_with_config(config)
+        start_embedded_with_config(config)
+    })
 }
 
 fn start_embedded_with_config(config: FrontendServerConfig) -> *mut c_void {
@@ -1015,9 +1063,11 @@ fn start_embedded_with_config(config: FrontendServerConfig) -> *mut c_void {
 /// Must not be called more than once for the same handle.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_embedded_free(handle: *mut c_void) {
-    if !handle.is_null() {
-        let _ = Box::from_raw(handle as *mut EmbeddedHandle);
-    }
+    ffi_guard_unit!({
+        if !handle.is_null() {
+            let _ = Box::from_raw(handle as *mut EmbeddedHandle);
+        }
+    })
 }
 
 /// Get an in-process heartbeat value as unix nanoseconds.
@@ -1031,37 +1081,39 @@ pub unsafe extern "C" fn chroma_embedded_heartbeat(
     handle: *mut c_void,
     out_heartbeat: *mut u64,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-    if out_heartbeat.is_null() {
-        set_last_error("out_heartbeat is null");
-        return ERROR_NULL_INPUT;
-    }
-
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
-
-    let heartbeat = match embedded
-        .runtime
-        .block_on(async { frontend.heartbeat().await })
-    {
-        Ok(heartbeat) => heartbeat,
-        Err(e) => {
-            set_last_error(&format!("heartbeat failed: {e}"));
-            return ERROR_OPERATION_FAILED;
+        if out_heartbeat.is_null() {
+            set_last_error("out_heartbeat is null");
+            return ERROR_NULL_INPUT;
         }
-    };
 
-    *out_heartbeat = heartbeat.nanosecond_heartbeat as u64;
-    SUCCESS
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        let heartbeat = match embedded
+            .runtime
+            .block_on(async { frontend.heartbeat().await })
+        {
+            Ok(heartbeat) => heartbeat,
+            Err(e) => {
+                set_last_error(&format!("heartbeat failed: {e}"));
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        *out_heartbeat = heartbeat.nanosecond_heartbeat as u64;
+        SUCCESS
+    })
 }
 
 /// Get max batch size from the embedded frontend.
@@ -1075,26 +1127,28 @@ pub unsafe extern "C" fn chroma_embedded_get_max_batch_size(
     handle: *mut c_void,
     out_max_batch_size: *mut u32,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-    if out_max_batch_size.is_null() {
-        set_last_error("out_max_batch_size is null");
-        return ERROR_NULL_INPUT;
-    }
-
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
+        if out_max_batch_size.is_null() {
+            set_last_error("out_max_batch_size is null");
+            return ERROR_NULL_INPUT;
+        }
 
-    *out_max_batch_size = frontend.get_max_batch_size();
-    SUCCESS
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        *out_max_batch_size = frontend.get_max_batch_size();
+        SUCCESS
+    })
 }
 
 /// Create a tenant in embedded mode.
@@ -1108,47 +1162,49 @@ pub unsafe extern "C" fn chroma_embedded_create_tenant(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedCreateTenantPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedCreateTenantPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.create_tenant(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("create tenant failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.create_tenant(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("create tenant failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// Get a tenant in embedded mode.
@@ -1162,48 +1218,51 @@ pub unsafe extern "C" fn chroma_embedded_get_tenant(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
-
-    let payload: EmbeddedGetTenantPayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
             return ptr::null_mut();
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let payload: EmbeddedGetTenantPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    let tenant = match embedded
-        .runtime
-        .block_on(async { frontend.get_tenant(request).await })
-    {
-        Ok(tenant) => tenant,
-        Err(e) => {
-            set_last_error(&format!("get tenant failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    json_to_c_string_ptr(&tenant)
+        let tenant = match embedded
+            .runtime
+            .block_on(async { frontend.get_tenant(request).await })
+        {
+            Ok(tenant) => tenant,
+            Err(e) => {
+                set_last_error(&format!("get tenant failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr(&tenant)
+    })
 }
 
 /// Update a tenant in embedded mode.
@@ -1217,47 +1276,49 @@ pub unsafe extern "C" fn chroma_embedded_update_tenant(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedUpdateTenantPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedUpdateTenantPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.update_tenant(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("update tenant failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.update_tenant(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("update tenant failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// Create a database in embedded mode.
@@ -1271,47 +1332,49 @@ pub unsafe extern "C" fn chroma_embedded_create_database(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedCreateDatabasePayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedCreateDatabasePayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.create_database(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("create database failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.create_database(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("create database failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// List databases in embedded mode.
@@ -1325,49 +1388,51 @@ pub unsafe extern "C" fn chroma_embedded_list_databases(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
 
-    let payload: EmbeddedListDatabasesPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedListDatabasesPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let databases = match embedded
+            .runtime
+            .block_on(async { frontend.list_databases(request).await })
+        {
+            Ok(databases) => databases,
+            Err(e) => {
+                set_last_error(&format!("list databases failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
 
-    let databases = match embedded
-        .runtime
-        .block_on(async { frontend.list_databases(request).await })
-    {
-        Ok(databases) => databases,
-        Err(e) => {
-            set_last_error(&format!("list databases failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
-
-    json_to_c_string_ptr(&databases)
+        json_to_c_string_ptr(&databases)
+    })
 }
 
 /// Get a database in embedded mode.
@@ -1381,49 +1446,51 @@ pub unsafe extern "C" fn chroma_embedded_get_database(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
-
-    let payload: EmbeddedGetDatabasePayload = match parse_json_request(request_json, "request_json")
-    {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
             return ptr::null_mut();
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let payload: EmbeddedGetDatabasePayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    let database = match embedded
-        .runtime
-        .block_on(async { frontend.get_database(request).await })
-    {
-        Ok(database) => database,
-        Err(e) => {
-            set_last_error(&format!("get database failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    json_to_c_string_ptr(&database)
+        let database = match embedded
+            .runtime
+            .block_on(async { frontend.get_database(request).await })
+        {
+            Ok(database) => database,
+            Err(e) => {
+                set_last_error(&format!("get database failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr(&database)
+    })
 }
 
 /// Delete a database in embedded mode.
@@ -1437,47 +1504,49 @@ pub unsafe extern "C" fn chroma_embedded_delete_database(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedDeleteDatabasePayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedDeleteDatabasePayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.delete_database(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("delete database failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.delete_database(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("delete database failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// List collections in embedded mode.
@@ -1491,49 +1560,51 @@ pub unsafe extern "C" fn chroma_embedded_list_collections(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
 
-    let payload: EmbeddedListCollectionsPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedListCollectionsPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let collections = match embedded
+            .runtime
+            .block_on(async { frontend.list_collections(request).await })
+        {
+            Ok(collections) => collections,
+            Err(e) => {
+                set_last_error(&format!("list collections failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
 
-    let collections = match embedded
-        .runtime
-        .block_on(async { frontend.list_collections(request).await })
-    {
-        Ok(collections) => collections,
-        Err(e) => {
-            set_last_error(&format!("list collections failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
-
-    json_to_c_string_ptr(&collections)
+        json_to_c_string_ptr(&collections)
+    })
 }
 
 /// Get a collection in embedded mode.
@@ -1547,49 +1618,51 @@ pub unsafe extern "C" fn chroma_embedded_get_collection(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
 
-    let payload: EmbeddedGetCollectionPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedGetCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let collection = match embedded
+            .runtime
+            .block_on(async { frontend.get_collection(request).await })
+        {
+            Ok(collection) => collection,
+            Err(e) => {
+                set_last_error(&format!("get collection failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
 
-    let collection = match embedded
-        .runtime
-        .block_on(async { frontend.get_collection(request).await })
-    {
-        Ok(collection) => collection,
-        Err(e) => {
-            set_last_error(&format!("get collection failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
-
-    json_to_c_string_ptr(&collection)
+        json_to_c_string_ptr(&collection)
+    })
 }
 
 /// Count collections in embedded mode.
@@ -1605,54 +1678,56 @@ pub unsafe extern "C" fn chroma_embedded_count_collections(
     request_json: *const c_char,
     out_count: *mut u32,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-    if out_count.is_null() {
-        set_last_error("out_count is null");
-        return ERROR_NULL_INPUT;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
+        if out_count.is_null() {
+            set_last_error("out_count is null");
+            return ERROR_NULL_INPUT;
+        }
 
-    let payload: EmbeddedCountCollectionsPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedCountCollectionsPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
-        }
-    };
+        let count = match embedded
+            .runtime
+            .block_on(async { frontend.count_collections(request).await })
+        {
+            Ok(count) => count,
+            Err(e) => {
+                set_last_error(&format!("count collections failed: {e}"));
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let count = match embedded
-        .runtime
-        .block_on(async { frontend.count_collections(request).await })
-    {
-        Ok(count) => count,
-        Err(e) => {
-            set_last_error(&format!("count collections failed: {e}"));
-            return ERROR_OPERATION_FAILED;
-        }
-    };
-
-    *out_count = count;
-    SUCCESS
+        *out_count = count;
+        SUCCESS
+    })
 }
 
 /// Update a collection in embedded mode.
@@ -1666,47 +1741,49 @@ pub unsafe extern "C" fn chroma_embedded_update_collection(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedUpdateCollectionPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedUpdateCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.update_collection(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("update collection failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.update_collection(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("update collection failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// Delete a collection in embedded mode.
@@ -1720,47 +1797,49 @@ pub unsafe extern "C" fn chroma_embedded_delete_collection(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedDeleteCollectionPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedDeleteCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.delete_collection(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("delete collection failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.delete_collection(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("delete collection failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// Fork a collection in embedded mode.
@@ -1774,49 +1853,51 @@ pub unsafe extern "C" fn chroma_embedded_fork_collection(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
 
-    let payload: EmbeddedForkCollectionPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedForkCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let collection = match embedded
+            .runtime
+            .block_on(async { frontend.fork_collection(request).await })
+        {
+            Ok(collection) => collection,
+            Err(e) => {
+                set_last_error(&format!("fork collection failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
 
-    let collection = match embedded
-        .runtime
-        .block_on(async { frontend.fork_collection(request).await })
-    {
-        Ok(collection) => collection,
-        Err(e) => {
-            set_last_error(&format!("fork collection failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
-
-    json_to_c_string_ptr(&collection)
+        json_to_c_string_ptr(&collection)
+    })
 }
 
 /// Count records in a collection in embedded mode.
@@ -1832,53 +1913,55 @@ pub unsafe extern "C" fn chroma_embedded_count(
     request_json: *const c_char,
     out_count: *mut u32,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-    if out_count.is_null() {
-        set_last_error("out_count is null");
-        return ERROR_NULL_INPUT;
-    }
-
-    let payload: EmbeddedCountPayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
-
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
+        if out_count.is_null() {
+            set_last_error("out_count is null");
+            return ERROR_NULL_INPUT;
         }
-    };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
-        }
-    };
+        let payload: EmbeddedCountPayload = match parse_json_request(request_json, "request_json") {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    let count = match embedded
-        .runtime
-        .block_on(async { frontend.count(request).await })
-    {
-        Ok(count) => count,
-        Err(e) => {
-            set_last_error(&format!("count records failed: {e}"));
-            return ERROR_OPERATION_FAILED;
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    *out_count = count;
-    SUCCESS
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        let count = match embedded
+            .runtime
+            .block_on(async { frontend.count(request).await })
+        {
+            Ok(count) => count,
+            Err(e) => {
+                set_last_error(&format!("count records failed: {e}"));
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        *out_count = count;
+        SUCCESS
+    })
 }
 
 /// Get records from a collection in embedded mode.
@@ -1892,48 +1975,50 @@ pub unsafe extern "C" fn chroma_embedded_get(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
-
-    let payload: EmbeddedGetPayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
             return ptr::null_mut();
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let payload: EmbeddedGetPayload = match parse_json_request(request_json, "request_json") {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    let response = match embedded
-        .runtime
-        .block_on(async { frontend.get(request).await })
-    {
-        Ok(response) => response,
-        Err(e) => {
-            set_last_error(&format!("get records failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    json_to_c_string_ptr(&response)
+        let response = match embedded
+            .runtime
+            .block_on(async { frontend.get(request).await })
+        {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("get records failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr(&response)
+    })
 }
 
 /// Update records in a collection in embedded mode.
@@ -1947,46 +2032,49 @@ pub unsafe extern "C" fn chroma_embedded_update(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-
-    let payload: EmbeddedUpdatePayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let payload: EmbeddedUpdatePayload = match parse_json_request(request_json, "request_json")
+        {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    match embedded
-        .runtime
-        .block_on(async { frontend.update(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("update records failed: {e}"));
-            ERROR_OPERATION_FAILED
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        match embedded
+            .runtime
+            .block_on(async { frontend.update(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("update records failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    }
+    })
 }
 
 /// Upsert records in a collection in embedded mode.
@@ -2000,46 +2088,49 @@ pub unsafe extern "C" fn chroma_embedded_upsert(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-
-    let payload: EmbeddedUpsertPayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let payload: EmbeddedUpsertPayload = match parse_json_request(request_json, "request_json")
+        {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    match embedded
-        .runtime
-        .block_on(async { frontend.upsert(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("upsert records failed: {e}"));
-            ERROR_OPERATION_FAILED
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        match embedded
+            .runtime
+            .block_on(async { frontend.upsert(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("upsert records failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    }
+    })
 }
 
 /// Delete records in a collection in embedded mode.
@@ -2053,47 +2144,49 @@ pub unsafe extern "C" fn chroma_embedded_delete_records(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
+        }
 
-    let payload: EmbeddedDeleteRecordsPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedDeleteRecordsPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ERROR_CONFIG_PARSE;
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ERROR_CONFIG_PARSE;
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+        match embedded
+            .runtime
+            .block_on(async { frontend.delete(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("delete records failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    };
-
-    match embedded
-        .runtime
-        .block_on(async { frontend.delete(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("delete records failed: {e}"));
-            ERROR_OPERATION_FAILED
-        }
-    }
+    })
 }
 
 /// Create a collection in embedded mode.
@@ -2107,49 +2200,51 @@ pub unsafe extern "C" fn chroma_embedded_create_collection(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
 
-    let payload: EmbeddedCreateCollectionPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedCreateCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let collection = match embedded
+            .runtime
+            .block_on(async { frontend.create_collection(request).await })
+        {
+            Ok(collection) => collection,
+            Err(e) => {
+                set_last_error(&format!("create collection failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
 
-    let collection = match embedded
-        .runtime
-        .block_on(async { frontend.create_collection(request).await })
-    {
-        Ok(collection) => collection,
-        Err(e) => {
-            set_last_error(&format!("create collection failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
-
-    json_to_c_string_ptr(&collection)
+        json_to_c_string_ptr(&collection)
+    })
 }
 
 /// Add records to a collection in embedded mode.
@@ -2163,46 +2258,48 @@ pub unsafe extern "C" fn chroma_embedded_add(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-
-    let payload: EmbeddedAddPayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ERROR_CONFIG_PARSE;
-        }
-    };
+        let payload: EmbeddedAddPayload = match parse_json_request(request_json, "request_json") {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ERROR_CONFIG_PARSE;
+            }
+        };
 
-    match embedded
-        .runtime
-        .block_on(async { frontend.add(request).await })
-    {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("add failed: {e}"));
-            ERROR_OPERATION_FAILED
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        match embedded
+            .runtime
+            .block_on(async { frontend.add(request).await })
+        {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("add failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    }
+    })
 }
 
 /// Query a collection in embedded mode.
@@ -2216,48 +2313,50 @@ pub unsafe extern "C" fn chroma_embedded_query(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
-
-    let payload: EmbeddedQueryPayload = match parse_json_request(request_json, "request_json") {
-        Ok(payload) => payload,
-        Err(e) => {
-            set_last_error(&e);
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
             return ptr::null_mut();
         }
-    };
 
-    let request = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let payload: EmbeddedQueryPayload = match parse_json_request(request_json, "request_json") {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
 
-    let response = match embedded
-        .runtime
-        .block_on(async { frontend.query(request).await })
-    {
-        Ok(response) => response,
-        Err(e) => {
-            set_last_error(&format!("query failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    json_to_c_string_ptr(&response)
+        let response = match embedded
+            .runtime
+            .block_on(async { frontend.query(request).await })
+        {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("query failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr(&response)
+    })
 }
 
 /// Get indexing status for a collection in embedded mode.
@@ -2271,49 +2370,51 @@ pub unsafe extern "C" fn chroma_embedded_indexing_status(
     handle: *mut c_void,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
 
-    let payload: EmbeddedIndexingStatusPayload =
-        match parse_json_request(request_json, "request_json") {
-            Ok(payload) => payload,
+        let payload: EmbeddedIndexingStatusPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let (database_name, collection_id) = match payload.into_request() {
+            Ok(request) => request,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
 
-    let (database_name, collection_id) = match payload.into_request() {
-        Ok(request) => request,
-        Err(e) => {
-            set_last_error(&e);
-            return ptr::null_mut();
-        }
-    };
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
 
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ptr::null_mut();
-        }
-    };
+        let response = match embedded
+            .runtime
+            .block_on(async { frontend.indexing_status(database_name, collection_id).await })
+        {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("indexing status failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
 
-    let response = match embedded
-        .runtime
-        .block_on(async { frontend.indexing_status(database_name, collection_id).await })
-    {
-        Ok(response) => response,
-        Err(e) => {
-            set_last_error(&format!("indexing status failed: {e}"));
-            return ptr::null_mut();
-        }
-    };
-
-    json_to_c_string_ptr(&response)
+        json_to_c_string_ptr(&response)
+    })
 }
 
 /// Get healthcheck status in embedded mode.
@@ -2323,24 +2424,26 @@ pub unsafe extern "C" fn chroma_embedded_indexing_status(
 /// `handle` must be a valid embedded handle.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_embedded_healthcheck(handle: *mut c_void) -> *mut c_char {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ptr::null_mut();
-    }
-
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
             return ptr::null_mut();
         }
-    };
 
-    let response = embedded
-        .runtime
-        .block_on(async { frontend.healthcheck().await });
-    json_to_c_string_ptr(&response)
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
+
+        let response = embedded
+            .runtime
+            .block_on(async { frontend.healthcheck().await });
+        json_to_c_string_ptr(&response)
+    })
 }
 
 /// Reset local state in embedded mode.
@@ -2350,27 +2453,29 @@ pub unsafe extern "C" fn chroma_embedded_healthcheck(handle: *mut c_void) -> *mu
 /// `handle` must be a valid embedded handle.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_embedded_reset(handle: *mut c_void) -> i32 {
-    if handle.is_null() {
-        set_last_error("handle is null");
-        return ERROR_INVALID_HANDLE;
-    }
-
-    let embedded = &*(handle as *const EmbeddedHandle);
-    let mut frontend = match embedded.frontend.lock() {
-        Ok(frontend) => frontend,
-        Err(_) => {
-            set_last_error("embedded frontend lock poisoned");
-            return ERROR_OPERATION_FAILED;
+    ffi_guard_code!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ERROR_INVALID_HANDLE;
         }
-    };
 
-    match embedded.runtime.block_on(async { frontend.reset().await }) {
-        Ok(_) => SUCCESS,
-        Err(e) => {
-            set_last_error(&format!("reset failed: {e}"));
-            ERROR_OPERATION_FAILED
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ERROR_OPERATION_FAILED;
+            }
+        };
+
+        match embedded.runtime.block_on(async { frontend.reset().await }) {
+            Ok(_) => SUCCESS,
+            Err(e) => {
+                set_last_error(&format!("reset failed: {e}"));
+                ERROR_OPERATION_FAILED
+            }
         }
-    }
+    })
 }
 
 /// Free a heap-allocated C string returned by this library.
@@ -2379,9 +2484,11 @@ pub unsafe extern "C" fn chroma_embedded_reset(handle: *mut c_void) -> i32 {
 /// `s` must be a pointer previously returned by this library via `CString::into_raw`.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_string_free(s: *mut c_char) {
-    if !s.is_null() {
-        let _ = CString::from_raw(s);
-    }
+    ffi_guard_unit!({
+        if !s.is_null() {
+            let _ = CString::from_raw(s);
+        }
+    })
 }
 
 /// Get the last error message.
@@ -2391,9 +2498,11 @@ pub unsafe extern "C" fn chroma_string_free(s: *mut c_char) {
 /// Must be called from the same thread that made the failing call.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_get_last_error() -> *const c_char {
-    LAST_ERROR.with(|e| match e.borrow().as_ref() {
-        Some(s) => s.as_ptr(),
-        None => ptr::null(),
+    ffi_guard_ptr_const!({
+        LAST_ERROR.with(|e| match e.borrow().as_ref() {
+            Some(s) => s.as_ptr(),
+            None => ptr::null(),
+        })
     })
 }
 
@@ -2403,8 +2512,10 @@ pub unsafe extern "C" fn chroma_get_last_error() -> *const c_char {
 /// Returns a pointer to a static string, always safe to call.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_version() -> *const c_char {
-    static VERSION: &[u8] = b"0.2.0\0";
-    VERSION.as_ptr() as *const c_char
+    ffi_guard_ptr_const!({
+        static VERSION: &[u8] = b"0.2.0\0";
+        VERSION.as_ptr() as *const c_char
+    })
 }
 
 #[cfg(test)]
@@ -2412,6 +2523,14 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use serde_json::json;
+
+    fn last_error_string() -> Option<String> {
+        LAST_ERROR.with(|e| {
+            e.borrow()
+                .as_ref()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
+    }
 
     #[test]
     fn test_parse_config_from_string() {
@@ -2480,6 +2599,24 @@ allow_reset: true
 
         let request = payload.into_request().expect("request should build");
         assert!(request.metadatas.is_some());
+    }
+
+    #[test]
+    fn test_ffi_panic_boundary_returns_default_and_sets_last_error() {
+        let value = with_ffi_panic_boundary(123, || -> i32 {
+            panic!("boom");
+        });
+
+        assert_eq!(value, 123);
+        let err = last_error_string().expect("last error should be populated");
+        assert!(err.contains("panic across FFI boundary"));
+        assert!(err.contains("boom"));
+    }
+
+    #[test]
+    fn test_ffi_panic_boundary_returns_success_value() {
+        let value = with_ffi_panic_boundary(123, || 7);
+        assert_eq!(value, 7);
     }
 
     proptest! {

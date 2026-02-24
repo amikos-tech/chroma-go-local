@@ -308,6 +308,16 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
 | `(*Embedded) Close() error` | Free embedded resources. |
 
+### Metadata Value Rules (Embedded Record APIs)
+
+For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, and `EmbeddedUpsertRecordsRequest.Metadatas`:
+
+- Supported scalar values: `bool`, integer types, float types, `string`
+- Supported arrays: homogeneous arrays of one supported scalar type
+- Unsupported values: nested objects/maps, mixed-type arrays, structs
+
+`UpdateRecords` and `UpsertRecords` allow `nil` metadata values to clear keys. Float metadata values are encoded with an explicit decimal representation to avoid integer/float array ambiguity at the Go/Rust boundary.
+
 ## Testing
 
 ```bash

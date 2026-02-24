@@ -145,6 +145,7 @@ col, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
 _ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
     CollectionID: col.ID,
     NewName:      "docs_v2",
+    DatabaseName: "my_db",
 })
 ```
 
@@ -165,6 +166,10 @@ _ = embedded.Add(chroma.EmbeddedAddRequest{
     IDs:          []string{"doc-1", "doc-2"},
     Embeddings:   [][]float32{{0.1, 0.2, 0.3}, {0.2, 0.2, 0.1}},
     Documents:    []string{"first", "second"},
+    Metadatas: []map[string]any{
+        {"labels": []string{"alpha", "beta"}, "scores": []float64{1.1, 2.2}},
+        {"labels": []string{"beta", "gamma"}, "scores": []float64{3.3, 4.4}},
+    },
 })
 
 result, _ := embedded.Query(chroma.EmbeddedQueryRequest{
@@ -175,6 +180,13 @@ result, _ := embedded.Query(chroma.EmbeddedQueryRequest{
 })
 fmt.Println(result.IDs)
 ```
+
+Metadata values in `Add`/`UpdateRecords`/`UpsertRecords` support:
+
+- scalar values: `bool`, `int`/`int64`, `float32`/`float64`, `string`
+- homogeneous arrays of those scalar types
+
+Nil metadata values are accepted for `UpdateRecords` and `UpsertRecords` to clear keys. Float values are encoded with an explicit decimal to avoid integer/float array ambiguity at the Go/Rust FFI boundary.
 
 ## 4. Filter Support (`where`, `where_document`)
 

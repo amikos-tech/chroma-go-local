@@ -1,6 +1,8 @@
 package chroma
 
 import (
+	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -182,6 +184,79 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		},
 		gen.UInt8Range(0, 10),
 		gen.UInt8Range(0, 10),
+	))
+
+	properties.Property("Add rejects nested metadata objects", prop.ForAll(
+		func(key string, value string) bool {
+			if strings.TrimSpace(key) == "" {
+				key = "nested"
+			}
+			err := fakeEmbedded.Add(EmbeddedAddRequest{
+				CollectionID: "c",
+				IDs:          []string{"id-1"},
+				Embeddings:   makeEmbeddings(1),
+				Metadatas: []map[string]any{
+					{
+						key: map[string]any{"value": value},
+					},
+				},
+			})
+			return err != nil && strings.Contains(err.Error(), "nested objects are not supported")
+		},
+		gen.AnyString(),
+		gen.AnyString(),
+	))
+
+	properties.Property("Add rejects heterogeneous metadata arrays", prop.ForAll(
+		func(i int64, s string) bool {
+			err := fakeEmbedded.Add(EmbeddedAddRequest{
+				CollectionID: "c",
+				IDs:          []string{"id-1"},
+				Embeddings:   makeEmbeddings(1),
+				Metadatas: []map[string]any{
+					{
+						"mixed": []any{i, s},
+					},
+				},
+			})
+			return err != nil && strings.Contains(err.Error(), "homogeneous array")
+		},
+		gen.Int64(),
+		gen.AnyString(),
+	))
+
+	properties.Property("Metadata normalization encodes float values with decimal or exponent", prop.ForAll(
+		func(f float64) bool {
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				return true
+			}
+			normalized, err := validateAndNormalizeMetadatas([]map[string]any{
+				{"score": f},
+			}, false)
+			if err != nil {
+				return false
+			}
+			encoded, err := json.Marshal(normalized)
+			if err != nil {
+				return false
+			}
+			jsonStr := string(encoded)
+			return strings.ContainsAny(jsonStr, ".eE")
+		},
+		gen.Float64Range(-1e6, 1e6),
+	))
+
+	properties.Property("Metadata normalization allows nil values for updates", prop.ForAll(
+		func(key string) bool {
+			if strings.TrimSpace(key) == "" {
+				key = "k"
+			}
+			_, err := validateAndNormalizeMetadatas([]map[string]any{
+				{key: nil},
+			}, true)
+			return err == nil
+		},
+		gen.AnyString(),
 	))
 
 	properties.Property("DeleteRecords rejects requests without ids/where/where_document", prop.ForAll(
