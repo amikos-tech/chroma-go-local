@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	chroma "github.com/amikos-tech/local-go-chroma"
+	chroma "github.com/amikos-tech/chroma-go-local"
 )
 
 func main() {
