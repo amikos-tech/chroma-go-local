@@ -12,6 +12,16 @@ It supports both:
 - Rust 1.70+
 - `golangci-lint` (for `lint` checks)
 
+## Integration Direction (`chroma-go` PersistentClient)
+
+This repository is the low-level runtime layer (`purego` + Rust shim). It is intended to be consumed by `github.com/amikos-tech/chroma-go` for a downstream `PersistentClient`.
+
+Design intent:
+
+- `local-go-chroma` remains independent and does not import `chroma-go`
+- `chroma-go` depends on `local-go-chroma` to embed Chroma in Go apps
+- integration and compatibility tests for `PersistentClient` should live in `chroma-go`
+
 ## Building
 
 ```bash

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestEmbeddedModeBasicFlow(t *testing.T) {
@@ -240,23 +242,13 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 	}
 
 	var recordCount uint32
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		recordCount, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 		})
-		if err == nil && recordCount == 2 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("CountRecords failed: %v", err)
-	}
-	if recordCount != 2 {
-		t.Fatalf("expected 2 records, got %d", recordCount)
-	}
+		return err == nil && recordCount == 2
+	}, 5*time.Second, 200*time.Millisecond, "CountRecords did not reach expected value after add")
 
 	getResp, err := embedded.GetRecords(EmbeddedGetRecordsRequest{
 		CollectionID: collection.ID,
@@ -284,25 +276,15 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("UpdateRecords failed: %v", err)
 	}
 
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		getResp, err = embedded.GetRecords(EmbeddedGetRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 			IDs:          []string{"doc-1"},
 			Include:      []string{"documents"},
 		})
-		if err == nil && len(getResp.Documents) == 1 && getResp.Documents[0] != nil && *getResp.Documents[0] == "first-updated" {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("GetRecords after update failed: %v", err)
-	}
-	if len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "first-updated" {
-		t.Fatalf("expected updated document first-updated, got %#v", getResp.Documents)
-	}
+		return err == nil && len(getResp.Documents) == 1 && getResp.Documents[0] != nil && *getResp.Documents[0] == "first-updated"
+	}, 5*time.Second, 200*time.Millisecond, "GetRecords did not return updated document")
 
 	err = embedded.UpsertRecords(EmbeddedUpsertRecordsRequest{
 		CollectionID: collection.ID,
@@ -315,23 +297,13 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("UpsertRecords failed: %v", err)
 	}
 
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		recordCount, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 		})
-		if err == nil && recordCount == 3 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("CountRecords after upsert failed: %v", err)
-	}
-	if recordCount != 3 {
-		t.Fatalf("expected 3 records after upsert, got %d", recordCount)
-	}
+		return err == nil && recordCount == 3
+	}, 5*time.Second, 200*time.Millisecond, "CountRecords did not reach expected value after upsert")
 
 	indexingStatus, err := embedded.IndexingStatus(EmbeddedIndexingStatusRequest{
 		CollectionID: collection.ID,
@@ -356,50 +328,27 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("DeleteRecords failed: %v", err)
 	}
 
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		recordCount, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 		})
-		if err == nil && recordCount == 2 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("CountRecords after delete failed: %v", err)
-	}
-	if recordCount != 2 {
-		t.Fatalf("expected 2 records after delete, got %d", recordCount)
-	}
+		return err == nil && recordCount == 2
+	}, 5*time.Second, 200*time.Millisecond, "CountRecords did not reach expected value after delete")
 
 	var queryResp *EmbeddedQueryResponse
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		queryResp, err = embedded.Query(EmbeddedQueryRequest{
 			CollectionID:    collection.ID,
 			DatabaseName:    databaseName,
 			QueryEmbeddings: [][]float32{{0.1, 0.2, 0.3}},
 			NResults:        1,
 		})
-		if err == nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("Query failed: %v", err)
-	}
-	if queryResp == nil || len(queryResp.IDs) == 0 || len(queryResp.IDs[0]) == 0 {
-		t.Fatal("query returned no ids")
-	}
-	if queryResp.IDs[0][0] != "doc-1" {
-		t.Fatalf("expected top match doc-1, got %q", queryResp.IDs[0][0])
-	}
+		return err == nil && queryResp != nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0
+	}, 5*time.Second, 200*time.Millisecond, "Query did not return IDs")
+	require.Equal(t, "doc-1", queryResp.IDs[0][0])
 
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		queryResp, err = embedded.Query(EmbeddedQueryRequest{
 			CollectionID:    collection.ID,
 			DatabaseName:    databaseName,
@@ -409,20 +358,11 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 				"$contains": "updated",
 			},
 		})
-		if err == nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("Query with where_document failed: %v", err)
-	}
-	if queryResp.IDs[0][0] != "doc-1" {
-		t.Fatalf("expected filtered top match doc-1, got %q", queryResp.IDs[0][0])
-	}
+		return err == nil && queryResp != nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0
+	}, 5*time.Second, 200*time.Millisecond, "Query with where_document did not return IDs")
+	require.Equal(t, "doc-1", queryResp.IDs[0][0])
 
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		getResp, err = embedded.GetRecords(EmbeddedGetRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
@@ -431,17 +371,9 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 			},
 			Include: []string{"documents"},
 		})
-		if err == nil && len(getResp.IDs) > 0 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("GetRecords with where_document failed: %v", err)
-	}
-	if len(getResp.IDs) == 0 || getResp.IDs[0] != "doc-1" {
-		t.Fatalf("expected filtered get to return doc-1, got %#v", getResp.IDs)
-	}
+		return err == nil && len(getResp.IDs) > 0
+	}, 5*time.Second, 200*time.Millisecond, "GetRecords with where_document did not return IDs")
+	require.Equal(t, "doc-1", getResp.IDs[0])
 
 	err = embedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
 		CollectionID: collection.ID,
@@ -454,23 +386,13 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("DeleteRecords with where_document failed: %v", err)
 	}
 
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		recordCount, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 		})
-		if err == nil && recordCount == 1 {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("CountRecords after filter delete failed: %v", err)
-	}
-	if recordCount != 1 {
-		t.Fatalf("expected 1 record after filter delete, got %d", recordCount)
-	}
+		return err == nil && recordCount == 1
+	}, 5*time.Second, 200*time.Millisecond, "CountRecords did not reach expected value after filter delete")
 
 	if err := embedded.Reset(); err != nil {
 		t.Fatalf("Reset failed: %v", err)

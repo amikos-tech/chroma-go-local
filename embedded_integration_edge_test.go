@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func newEmbeddedForIntegrationTest(t *testing.T) *Embedded {
@@ -126,22 +128,12 @@ func TestEmbeddedDeleteByDocumentFilterOnly(t *testing.T) {
 		t.Fatalf("DeleteRecords by filter failed: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
 	var count uint32
-	for time.Now().Before(deadline) {
+	require.Eventually(t, func() bool {
 		count, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 		})
-		if err == nil && count == 1 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("CountRecords failed: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("expected 1 record after filtered delete, got %d", count)
-	}
+		return err == nil && count == 1
+	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after filtered delete")
 }
