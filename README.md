@@ -10,6 +10,7 @@ It supports both:
 
 - Go 1.21+
 - Rust 1.70+
+- `golangci-lint` (for `lint` checks)
 
 ## Building
 
@@ -19,6 +20,57 @@ make build
 
 # Build release version
 make build-release
+```
+
+## Windows Developer Workflow (PowerShell)
+
+Use the PowerShell helper on Windows for native build/test/lint parity:
+
+```powershell
+pwsh -File .\scripts\dev-windows.ps1 -Task help
+```
+
+On Windows, prefer the PowerShell workflow for `test`, `test-release`, and `bench-go`; these Make targets are intentionally guarded on Windows Make hosts to avoid path translation issues.
+
+### Windows toolchain setup
+
+1. Install Go 1.21+.
+2. Install Rust with an MSVC target toolchain:
+
+```powershell
+# x64 Windows
+rustup toolchain install stable-x86_64-pc-windows-msvc
+rustup default stable-x86_64-pc-windows-msvc
+```
+
+```powershell
+# ARM64 Windows
+rustup toolchain install stable-aarch64-pc-windows-msvc
+rustup default stable-aarch64-pc-windows-msvc
+```
+
+3. Install `protoc` 31.x (matches Chroma `1.4.1` toolchain and this repo's CI).
+4. Install `golangci-lint`.
+5. Install `goimports`:
+
+```powershell
+go install golang.org/x/tools/cmd/goimports@latest
+```
+
+### Common Windows commands
+
+```powershell
+# Build debug shim
+pwsh -File .\scripts\dev-windows.ps1 -Task build
+
+# Run Go tests (builds debug shim and sets CHROMA_LIB_PATH automatically)
+pwsh -File .\scripts\dev-windows.ps1 -Task test
+
+# Run Rust tests
+pwsh -File .\scripts\dev-windows.ps1 -Task test-rust
+
+# Run linters (golangci-lint + cargo clippy)
+pwsh -File .\scripts\dev-windows.ps1 -Task lint
 ```
 
 ## Prebuilt Shim Artifacts
@@ -240,6 +292,14 @@ make test-all      # Run both Go and Rust tests
 make test-release  # Run Go tests with release build
 ```
 
+```powershell
+# Windows PowerShell equivalents
+pwsh -File .\scripts\dev-windows.ps1 -Task test
+pwsh -File .\scripts\dev-windows.ps1 -Task test-rust
+pwsh -File .\scripts\dev-windows.ps1 -Task test-all
+pwsh -File .\scripts\dev-windows.ps1 -Task test-release
+```
+
 ## CI
 
 GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`) on pushes to `main` and pull requests. Each matrix job runs:
@@ -271,6 +331,8 @@ make bench         # Run both benchmark suites
 ├── chroma_test.go  # Tests
 ├── embedded_test.go # Embedded integration test
 ├── Makefile        # Build orchestration
+├── scripts/
+│   └── dev-windows.ps1 # Windows build/test/lint helper
 ├── examples/
 │   └── basic/      # Example usage
 └── shim/
