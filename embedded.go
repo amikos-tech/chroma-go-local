@@ -202,13 +202,14 @@ type EmbeddedForkCollectionRequest struct {
 
 // EmbeddedAddRequest adds records to a collection.
 type EmbeddedAddRequest struct {
-	CollectionID string      `json:"collection_id"`
-	IDs          []string    `json:"ids"`
-	Embeddings   [][]float32 `json:"embeddings"`
-	Documents    []string    `json:"documents,omitempty"`
-	URIs         []string    `json:"uris,omitempty"`
-	TenantID     string      `json:"tenant_id,omitempty"`
-	DatabaseName string      `json:"database_name,omitempty"`
+	CollectionID string           `json:"collection_id"`
+	IDs          []string         `json:"ids"`
+	Embeddings   [][]float32      `json:"embeddings"`
+	Documents    []string         `json:"documents,omitempty"`
+	URIs         []string         `json:"uris,omitempty"`
+	Metadatas    []map[string]any `json:"metadatas,omitempty"`
+	TenantID     string           `json:"tenant_id,omitempty"`
+	DatabaseName string           `json:"database_name,omitempty"`
 }
 
 // EmbeddedQueryRequest queries vectors from a collection.
@@ -261,24 +262,26 @@ type EmbeddedGetRecordsResponse struct {
 
 // EmbeddedUpdateRecordsRequest updates existing records by id.
 type EmbeddedUpdateRecordsRequest struct {
-	CollectionID string      `json:"collection_id"`
-	IDs          []string    `json:"ids"`
-	Embeddings   [][]float32 `json:"embeddings,omitempty"`
-	Documents    []string    `json:"documents,omitempty"`
-	URIs         []string    `json:"uris,omitempty"`
-	TenantID     string      `json:"tenant_id,omitempty"`
-	DatabaseName string      `json:"database_name,omitempty"`
+	CollectionID string           `json:"collection_id"`
+	IDs          []string         `json:"ids"`
+	Embeddings   [][]float32      `json:"embeddings,omitempty"`
+	Documents    []string         `json:"documents,omitempty"`
+	URIs         []string         `json:"uris,omitempty"`
+	Metadatas    []map[string]any `json:"metadatas,omitempty"`
+	TenantID     string           `json:"tenant_id,omitempty"`
+	DatabaseName string           `json:"database_name,omitempty"`
 }
 
 // EmbeddedUpsertRecordsRequest upserts records by id.
 type EmbeddedUpsertRecordsRequest struct {
-	CollectionID string      `json:"collection_id"`
-	IDs          []string    `json:"ids"`
-	Embeddings   [][]float32 `json:"embeddings"`
-	Documents    []string    `json:"documents,omitempty"`
-	URIs         []string    `json:"uris,omitempty"`
-	TenantID     string      `json:"tenant_id,omitempty"`
-	DatabaseName string      `json:"database_name,omitempty"`
+	CollectionID string           `json:"collection_id"`
+	IDs          []string         `json:"ids"`
+	Embeddings   [][]float32      `json:"embeddings"`
+	Documents    []string         `json:"documents,omitempty"`
+	URIs         []string         `json:"uris,omitempty"`
+	Metadatas    []map[string]any `json:"metadatas,omitempty"`
+	TenantID     string           `json:"tenant_id,omitempty"`
+	DatabaseName string           `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteRecordsRequest deletes records by ids and/or filters.
@@ -294,6 +297,7 @@ type EmbeddedDeleteRecordsRequest struct {
 // EmbeddedIndexingStatusRequest gets indexing progress for a collection.
 type EmbeddedIndexingStatusRequest struct {
 	CollectionID string `json:"collection_id"`
+	DatabaseName string `json:"database_name,omitempty"`
 }
 
 // EmbeddedIndexingStatusResponse describes indexing progress in local mode.
@@ -815,8 +819,11 @@ func (e *Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error {
 	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
 		return errors.New("uris must have same length as ids when provided")
 	}
-	if len(request.Embeddings) == 0 && len(request.Documents) == 0 && len(request.URIs) == 0 {
-		return errors.New("at least one of embeddings, documents, or uris must be provided")
+	if len(request.Metadatas) > 0 && len(request.Metadatas) != len(request.IDs) {
+		return errors.New("metadatas must have same length as ids when provided")
+	}
+	if len(request.Embeddings) == 0 && len(request.Documents) == 0 && len(request.URIs) == 0 && len(request.Metadatas) == 0 {
+		return errors.New("at least one of embeddings, documents, uris, or metadatas must be provided")
 	}
 
 	requestBytes, err := marshalRequestJSON(request)
@@ -853,6 +860,9 @@ func (e *Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error {
 	}
 	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
 		return errors.New("uris must have same length as ids when provided")
+	}
+	if len(request.Metadatas) > 0 && len(request.Metadatas) != len(request.IDs) {
+		return errors.New("metadatas must have same length as ids when provided")
 	}
 
 	requestBytes, err := marshalRequestJSON(request)
@@ -940,6 +950,9 @@ func (e *Embedded) Add(request EmbeddedAddRequest) error {
 	}
 	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
 		return errors.New("uris must have same length as ids when provided")
+	}
+	if len(request.Metadatas) > 0 && len(request.Metadatas) != len(request.IDs) {
+		return errors.New("metadatas must have same length as ids when provided")
 	}
 
 	requestBytes, err := marshalRequestJSON(request)

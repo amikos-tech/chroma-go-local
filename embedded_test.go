@@ -236,6 +236,18 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 			{0.9, 0.1, 0.1},
 		},
 		Documents: []string{"first", "second"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"alpha", "beta"},
+				"scores": []float64{1.1, 2.2},
+				"flags":  []bool{true, false},
+			},
+			{
+				"labels": []string{"beta", "gamma"},
+				"scores": []float64{3.3, 4.4},
+				"flags":  []bool{false, true},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -254,7 +266,7 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		CollectionID: collection.ID,
 		DatabaseName: databaseName,
 		IDs:          []string{"doc-1"},
-		Include:      []string{"documents"},
+		Include:      []string{"documents", "metadatas"},
 	})
 	if err != nil {
 		t.Fatalf("GetRecords failed: %v", err)
@@ -265,12 +277,31 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 	if len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "first" {
 		t.Fatalf("expected document first, got %#v", getResp.Documents)
 	}
+	if len(getResp.Metadatas) != 1 {
+		t.Fatalf("expected one metadata entry, got %#v", getResp.Metadatas)
+	}
+	labelsRaw, ok := getResp.Metadatas[0]["labels"]
+	if !ok {
+		t.Fatalf("expected metadata labels key, got %#v", getResp.Metadatas[0])
+	}
+	labels, ok := labelsRaw.([]any)
+	if !ok {
+		t.Fatalf("expected labels to decode as []any, got %T", labelsRaw)
+	}
+	require.Contains(t, labels, "alpha")
+	require.Contains(t, labels, "beta")
 
 	err = embedded.UpdateRecords(EmbeddedUpdateRecordsRequest{
 		CollectionID: collection.ID,
 		DatabaseName: databaseName,
 		IDs:          []string{"doc-1"},
 		Documents:    []string{"first-updated"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"alpha", "updated"},
+				"flags":  []bool{true, true},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpdateRecords failed: %v", err)
@@ -281,9 +312,23 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 			IDs:          []string{"doc-1"},
-			Include:      []string{"documents"},
+			Include:      []string{"documents", "metadatas"},
 		})
-		return err == nil && len(getResp.Documents) == 1 && getResp.Documents[0] != nil && *getResp.Documents[0] == "first-updated"
+		if err != nil || len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "first-updated" {
+			return false
+		}
+		if len(getResp.Metadatas) != 1 {
+			return false
+		}
+		labelsRaw, ok := getResp.Metadatas[0]["labels"]
+		if !ok {
+			return false
+		}
+		labels, ok := labelsRaw.([]any)
+		if !ok {
+			return false
+		}
+		return len(labels) == 2 && labels[0] == "alpha" && labels[1] == "updated"
 	}, 5*time.Second, 200*time.Millisecond, "GetRecords did not return updated document")
 
 	err = embedded.UpsertRecords(EmbeddedUpsertRecordsRequest{
@@ -292,6 +337,12 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		IDs:          []string{"doc-3"},
 		Embeddings:   [][]float32{{0.0, 0.0, 1.0}},
 		Documents:    []string{"third"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"third", "delta"},
+				"scores": []float64{7.7, 8.8},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertRecords failed: %v", err)
@@ -307,6 +358,7 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 
 	indexingStatus, err := embedded.IndexingStatus(EmbeddedIndexingStatusRequest{
 		CollectionID: collection.ID,
+		DatabaseName: databaseName,
 	})
 	if err != nil {
 		lower := strings.ToLower(err.Error())
@@ -346,6 +398,22 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		})
 		return err == nil && queryResp != nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0
 	}, 5*time.Second, 200*time.Millisecond, "Query did not return IDs")
+	require.Equal(t, "doc-1", queryResp.IDs[0][0])
+
+	require.Eventually(t, func() bool {
+		queryResp, err = embedded.Query(EmbeddedQueryRequest{
+			CollectionID:    collection.ID,
+			DatabaseName:    databaseName,
+			QueryEmbeddings: [][]float32{{0.1, 0.2, 0.3}},
+			NResults:        1,
+			Where: map[string]any{
+				"labels": map[string]any{
+					"$contains": "updated",
+				},
+			},
+		})
+		return err == nil && queryResp != nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0
+	}, 5*time.Second, 200*time.Millisecond, "Query with metadata array contains filter did not return IDs")
 	require.Equal(t, "doc-1", queryResp.IDs[0][0])
 
 	require.Eventually(t, func() bool {

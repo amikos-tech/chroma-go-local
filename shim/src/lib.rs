@@ -12,12 +12,12 @@ use chroma_frontend::Frontend;
 use chroma_system::System;
 use chroma_types::{
     AddCollectionRecordsRequest, CollectionUuid, CountCollectionsRequest, CountRequest,
-    CreateCollectionRequest, CreateDatabaseRequest, CreateTenantRequest,
+    CreateCollectionRequest, CreateDatabaseRequest, CreateTenantRequest, DatabaseName,
     DeleteCollectionRecordsRequest, DeleteCollectionRequest, DeleteDatabaseRequest,
     ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest, GetRequest, GetTenantRequest,
-    IncludeList, ListCollectionsRequest, ListDatabasesRequest, QueryRequest, RawWhereFields,
-    UpdateCollectionRecordsRequest, UpdateCollectionRequest, UpdateTenantRequest,
-    UpsertCollectionRecordsRequest, Where,
+    IncludeList, ListCollectionsRequest, ListDatabasesRequest, Metadata, QueryRequest,
+    RawWhereFields, UpdateCollectionRecordsRequest, UpdateCollectionRequest, UpdateMetadata,
+    UpdateTenantRequest, UpsertCollectionRecordsRequest, Where,
 };
 use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
@@ -40,6 +40,11 @@ pub const ERROR_OPERATION_FAILED: i32 = -8;
 const DEFAULT_TENANT: &str = "default_tenant";
 const DEFAULT_DATABASE: &str = "default_database";
 const DEFAULT_QUERY_RESULTS: u32 = 10;
+
+fn parse_database_name(database_name: String) -> Result<DatabaseName, String> {
+    DatabaseName::new(database_name)
+        .ok_or_else(|| "database_name must be at least 3 characters".to_string())
+}
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
@@ -82,6 +87,7 @@ impl EmbeddedCreateCollectionPayload {
         let database_name = self
             .database_name
             .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = parse_database_name(database_name)?;
 
         CreateCollectionRequest::try_new(
             tenant_id,
@@ -103,6 +109,8 @@ struct EmbeddedAddPayload {
     embeddings: Vec<Vec<f32>>,
     documents: Option<Vec<Option<String>>>,
     uris: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    metadatas: Option<Vec<Option<Metadata>>>,
     #[serde(default)]
     tenant_id: Option<String>,
     #[serde(default)]
@@ -126,7 +134,7 @@ impl EmbeddedAddPayload {
             self.embeddings,
             self.documents,
             self.uris,
-            None,
+            self.metadatas,
         )
         .map_err(|e| e.to_string())
     }
@@ -219,12 +227,19 @@ impl EmbeddedUpdateTenantPayload {
 #[derive(Debug, Deserialize)]
 struct EmbeddedIndexingStatusPayload {
     collection_id: String,
+    #[serde(default)]
+    database_name: Option<String>,
 }
 
 impl EmbeddedIndexingStatusPayload {
-    fn into_request(self) -> Result<CollectionUuid, String> {
-        CollectionUuid::from_str(&self.collection_id)
-            .map_err(|e| format!("invalid collection_id: {e}"))
+    fn into_request(self) -> Result<(DatabaseName, CollectionUuid), String> {
+        let database_name = self
+            .database_name
+            .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = parse_database_name(database_name)?;
+        let collection_id = CollectionUuid::from_str(&self.collection_id)
+            .map_err(|e| format!("invalid collection_id: {e}"))?;
+        Ok((database_name, collection_id))
     }
 }
 
@@ -238,7 +253,8 @@ struct EmbeddedCreateDatabasePayload {
 impl EmbeddedCreateDatabasePayload {
     fn into_request(self) -> Result<CreateDatabaseRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        CreateDatabaseRequest::try_new(tenant_id, self.name).map_err(|e| e.to_string())
+        let database_name = parse_database_name(self.name)?;
+        CreateDatabaseRequest::try_new(tenant_id, database_name).map_err(|e| e.to_string())
     }
 }
 
@@ -270,7 +286,8 @@ struct EmbeddedGetDatabasePayload {
 impl EmbeddedGetDatabasePayload {
     fn into_request(self) -> Result<GetDatabaseRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
-        GetDatabaseRequest::try_new(tenant_id, self.name).map_err(|e| e.to_string())
+        let database_name = parse_database_name(self.name)?;
+        GetDatabaseRequest::try_new(tenant_id, database_name).map_err(|e| e.to_string())
     }
 }
 
@@ -306,6 +323,7 @@ impl EmbeddedListCollectionsPayload {
         let database_name = self
             .database_name
             .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = parse_database_name(database_name)?;
         ListCollectionsRequest::try_new(
             tenant_id,
             database_name,
@@ -331,6 +349,7 @@ impl EmbeddedGetCollectionPayload {
         let database_name = self
             .database_name
             .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = parse_database_name(database_name)?;
         GetCollectionRequest::try_new(tenant_id, database_name, self.name)
             .map_err(|e| e.to_string())
     }
@@ -350,22 +369,32 @@ impl EmbeddedCountCollectionsPayload {
         let database_name = self
             .database_name
             .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
+        let database_name = parse_database_name(database_name)?;
         CountCollectionsRequest::try_new(tenant_id, database_name).map_err(|e| e.to_string())
     }
 }
 
 #[derive(Debug, Deserialize)]
 struct EmbeddedUpdateCollectionPayload {
+    #[serde(default)]
+    database_name: Option<String>,
     collection_id: String,
     new_name: String,
 }
 
 impl EmbeddedUpdateCollectionPayload {
     fn into_request(self) -> Result<UpdateCollectionRequest, String> {
+        let database_name = self.database_name.map(parse_database_name).transpose()?;
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
-        UpdateCollectionRequest::try_new(collection_id, Some(self.new_name), None, None)
-            .map_err(|e| e.to_string())
+        UpdateCollectionRequest::try_new(
+            database_name,
+            collection_id,
+            Some(self.new_name),
+            None,
+            None,
+        )
+        .map_err(|e| e.to_string())
     }
 }
 
@@ -499,6 +528,8 @@ struct EmbeddedUpdatePayload {
     #[serde(default)]
     uris: Option<Vec<Option<String>>>,
     #[serde(default)]
+    metadatas: Option<Vec<Option<UpdateMetadata>>>,
+    #[serde(default)]
     tenant_id: Option<String>,
     #[serde(default)]
     database_name: Option<String>,
@@ -524,7 +555,7 @@ impl EmbeddedUpdatePayload {
             embeddings,
             self.documents,
             self.uris,
-            None,
+            self.metadatas,
         )
         .map_err(|e| e.to_string())
     }
@@ -539,6 +570,8 @@ struct EmbeddedUpsertPayload {
     documents: Option<Vec<Option<String>>>,
     #[serde(default)]
     uris: Option<Vec<Option<String>>>,
+    #[serde(default)]
+    metadatas: Option<Vec<Option<UpdateMetadata>>>,
     #[serde(default)]
     tenant_id: Option<String>,
     #[serde(default)]
@@ -562,7 +595,7 @@ impl EmbeddedUpsertPayload {
             self.embeddings,
             self.documents,
             self.uris,
-            None,
+            self.metadatas,
         )
         .map_err(|e| e.to_string())
     }
@@ -2252,7 +2285,7 @@ pub unsafe extern "C" fn chroma_embedded_indexing_status(
             }
         };
 
-    let collection_id = match payload.into_request() {
+    let (database_name, collection_id) = match payload.into_request() {
         Ok(request) => request,
         Err(e) => {
             set_last_error(&e);
@@ -2271,7 +2304,7 @@ pub unsafe extern "C" fn chroma_embedded_indexing_status(
 
     let response = match embedded
         .runtime
-        .block_on(async { frontend.indexing_status(collection_id).await })
+        .block_on(async { frontend.indexing_status(database_name, collection_id).await })
     {
         Ok(response) => response,
         Err(e) => {
@@ -2412,6 +2445,41 @@ allow_reset: true
             database_name: None,
         };
         assert!(payload.into_request().is_ok());
+    }
+
+    #[test]
+    fn test_add_payload_accepts_metadata_arrays() {
+        let payload: EmbeddedAddPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "ids": ["doc-1"],
+            "embeddings": [[0.1, 0.2, 0.3]],
+            "metadatas": [{
+                "tags": ["alpha", "beta"],
+                "scores": [1.1, 2.2],
+                "flags": [true, false],
+                "levels": [1, 2]
+            }]
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.metadatas.is_some());
+    }
+
+    #[test]
+    fn test_update_payload_accepts_metadata_arrays() {
+        let payload: EmbeddedUpdatePayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "ids": ["doc-1"],
+            "metadatas": [{
+                "tags": ["updated", "stable"],
+                "scores": [3.3, 4.4]
+            }]
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.metadatas.is_some());
     }
 
     proptest! {

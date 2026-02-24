@@ -41,6 +41,14 @@ func makeURIs(n int) []string {
 	return uris
 }
 
+func makeMetadatas(n int) []map[string]any {
+	metadatas := make([]map[string]any, n)
+	for i := 0; i < n; i++ {
+		metadatas[i] = map[string]any{"i": i}
+	}
+	return metadatas
+}
+
 func TestEmbeddedValidationProperties(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -64,6 +72,23 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		gen.UInt8Range(0, 10),
 	))
 
+	properties.Property("Add rejects mismatched ids/metadatas lengths", prop.ForAll(
+		func(idsLen uint8, mdLen uint8) bool {
+			if idsLen == 0 || mdLen == 0 || idsLen == mdLen {
+				return true
+			}
+			err := fakeEmbedded.Add(EmbeddedAddRequest{
+				CollectionID: "c",
+				IDs:          makeIDs(int(idsLen)),
+				Embeddings:   makeEmbeddings(int(idsLen)),
+				Metadatas:    makeMetadatas(int(mdLen)),
+			})
+			return err != nil && strings.Contains(err.Error(), "metadatas must have same length")
+		},
+		gen.UInt8Range(0, 10),
+		gen.UInt8Range(0, 10),
+	))
+
 	properties.Property("Upsert rejects mismatched ids/embeddings lengths", prop.ForAll(
 		func(idsLen uint8, embLen uint8) bool {
 			if idsLen == 0 || embLen == 0 || idsLen == embLen {
@@ -80,6 +105,23 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		gen.UInt8Range(0, 10),
 	))
 
+	properties.Property("Upsert rejects mismatched ids/metadatas lengths", prop.ForAll(
+		func(idsLen uint8, mdLen uint8) bool {
+			if idsLen == 0 || mdLen == 0 || idsLen == mdLen {
+				return true
+			}
+			err := fakeEmbedded.UpsertRecords(EmbeddedUpsertRecordsRequest{
+				CollectionID: "c",
+				IDs:          makeIDs(int(idsLen)),
+				Embeddings:   makeEmbeddings(int(idsLen)),
+				Metadatas:    makeMetadatas(int(mdLen)),
+			})
+			return err != nil && strings.Contains(err.Error(), "metadatas must have same length")
+		},
+		gen.UInt8Range(0, 10),
+		gen.UInt8Range(0, 10),
+	))
+
 	properties.Property("Update rejects empty payload mutations", prop.ForAll(
 		func(idsLen uint8) bool {
 			if idsLen == 0 {
@@ -89,7 +131,7 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 				CollectionID: "c",
 				IDs:          makeIDs(int(idsLen)),
 			})
-			return err != nil && strings.Contains(err.Error(), "at least one of embeddings, documents, or uris")
+			return err != nil && strings.Contains(err.Error(), "at least one of embeddings, documents, uris, or metadatas")
 		},
 		gen.UInt8Range(0, 10),
 	))
@@ -121,6 +163,22 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 				URIs:         makeURIs(int(urisLen)),
 			})
 			return err != nil && strings.Contains(err.Error(), "uris must have same length")
+		},
+		gen.UInt8Range(0, 10),
+		gen.UInt8Range(0, 10),
+	))
+
+	properties.Property("Update rejects metadata length mismatch", prop.ForAll(
+		func(idsLen uint8, mdLen uint8) bool {
+			if idsLen == 0 || mdLen == 0 || idsLen == mdLen {
+				return true
+			}
+			err := fakeEmbedded.UpdateRecords(EmbeddedUpdateRecordsRequest{
+				CollectionID: "c",
+				IDs:          makeIDs(int(idsLen)),
+				Metadatas:    makeMetadatas(int(mdLen)),
+			})
+			return err != nil && strings.Contains(err.Error(), "metadatas must have same length")
 		},
 		gen.UInt8Range(0, 10),
 		gen.UInt8Range(0, 10),
