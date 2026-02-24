@@ -1,4 +1,4 @@
-module github.com/amikos-tech/local-go-chroma
+module github.com/amikos-tech/chroma-go-local
 
 go 1.21
 
