@@ -58,9 +58,15 @@ SHIM_TARGET_RELEASE := $(SHIM_TARGET_DIR)/release/$(LIB_NAME)
 ifeq ($(HOST_OS),windows)
 VERIFY_DEBUG_ARTIFACT := @echo "Skipping POSIX artifact check on Windows Make host; use scripts/dev-windows.ps1 for artifact verification."
 VERIFY_RELEASE_ARTIFACT := @echo "Skipping POSIX artifact check on Windows Make host; use scripts/dev-windows.ps1 for artifact verification."
+RUN_GO_TEST_DEBUG := @echo "Windows Make host detected; use: pwsh -File .\\scripts\\dev-windows.ps1 -Task test" && exit 1
+RUN_GO_TEST_RELEASE := @echo "Windows Make host detected; use: pwsh -File .\\scripts\\dev-windows.ps1 -Task test-release" && exit 1
+RUN_GO_BENCH_DEBUG := @echo "Windows Make host detected; use: pwsh -File .\\scripts\\dev-windows.ps1 -Task bench-go" && exit 1
 else
 VERIFY_DEBUG_ARTIFACT := @test -f "$(SHIM_TARGET_DEBUG)" || (echo "Expected debug library not found at $(SHIM_TARGET_DEBUG). Check CARGO_TARGET_DIR." && exit 1)
 VERIFY_RELEASE_ARTIFACT := @test -f "$(SHIM_TARGET_RELEASE)" || (echo "Expected release library not found at $(SHIM_TARGET_RELEASE). Check CARGO_TARGET_DIR." && exit 1)
+RUN_GO_TEST_DEBUG := CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -v ./...
+RUN_GO_TEST_RELEASE := CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_RELEASE)) go test -v ./...
+RUN_GO_BENCH_DEBUG := CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -run '^$$' -bench . -benchmem ./...
 endif
 
 help:
@@ -108,7 +114,7 @@ build-release:
 test: test-go
 
 test-go: build-debug
-	CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -v ./...
+	$(RUN_GO_TEST_DEBUG)
 
 test-rust:
 	cd $(SHIM_DIR) && cargo test --locked
@@ -116,12 +122,12 @@ test-rust:
 test-all: test-go test-rust
 
 test-release: build-release
-	CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_RELEASE)) go test -v ./...
+	$(RUN_GO_TEST_RELEASE)
 
 bench: bench-go bench-rust
 
 bench-go: build-debug
-	CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -run '^$$' -bench . -benchmem ./...
+	$(RUN_GO_BENCH_DEBUG)
 
 bench-rust:
 	cd $(SHIM_DIR) && cargo bench --locked --bench ffi_bench

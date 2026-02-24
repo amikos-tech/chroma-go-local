@@ -30,6 +30,8 @@ Use the PowerShell helper on Windows for native build/test/lint parity:
 pwsh -File .\scripts\dev-windows.ps1 -Task help
 ```
 
+On Windows, prefer the PowerShell workflow for `test`, `test-release`, and `bench-go`; these Make targets are intentionally guarded on Windows Make hosts to avoid path translation issues.
+
 ### Windows toolchain setup
 
 1. Install Go 1.21+.

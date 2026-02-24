@@ -2,7 +2,9 @@ param(
     [ValidateSet(
         "help",
         "build",
+        "build-debug",
         "build-release",
+        "clean",
         "test",
         "test-go",
         "test-release",
@@ -71,7 +73,7 @@ function Invoke-CommandChecked {
     )
 
     $exitCode = $null
-    $global:LASTEXITCODE = $null
+    $LASTEXITCODE = $null
 
     if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
         & $Name @Arguments
@@ -183,6 +185,17 @@ function Bench-Rust {
     Invoke-CommandChecked -Name "cargo" -Arguments @("bench", "--locked", "--bench", "ffi_bench") -WorkingDirectory $shimDir
 }
 
+function Invoke-Clean {
+    Test-CommandAvailable -Name "cargo" -Hint "Install Rust with rustup (MSVC toolchain)."
+    Invoke-CommandChecked -Name "cargo" -Arguments @("clean") -WorkingDirectory $shimDir
+
+    $testDataDir = Join-Path $repoRoot "chroma_test_data"
+    if (Test-Path $testDataDir) {
+        Remove-Item -Path $testDataDir -Recurse -Force -ErrorAction Stop
+    }
+    Write-Host "Cleaned build artifacts."
+}
+
 function Lint-Go {
     Test-CommandAvailable -Name "golangci-lint" -Hint "Install golangci-lint and ensure it is on PATH."
     Invoke-CommandChecked -Name "golangci-lint" -Arguments @("run", "./...") -WorkingDirectory $repoRoot
@@ -206,7 +219,7 @@ function Fmt-Rust {
 }
 
 function Show-Help {
-    Write-Host "Windows Developer Workflow for local-go-chroma"
+    Write-Host "Windows Developer Workflow for chroma-go-local"
     Write-Host ""
     Write-Host "Usage:"
     Write-Host "  pwsh -File .\scripts\dev-windows.ps1 -Task <task>"
@@ -214,7 +227,9 @@ function Show-Help {
     Write-Host "Tasks:"
     Write-Host "  help          Show this help text"
     Write-Host "  build         Build Rust shim (debug)"
+    Write-Host "  build-debug   Build Rust shim (debug)"
     Write-Host "  build-release Build Rust shim (release)"
+    Write-Host "  clean         Clean build artifacts"
     Write-Host "  test          Build debug shim + run Go tests"
     Write-Host "  test-go       Build debug shim + run Go tests"
     Write-Host "  test-release  Build release shim + run Go tests"
@@ -234,7 +249,9 @@ function Show-Help {
 switch ($Task) {
     "help" { Show-Help }
     "build" { Build-Debug }
+    "build-debug" { Build-Debug }
     "build-release" { Build-Release }
+    "clean" { Invoke-Clean }
     "test" { Test-GoDebug }
     "test-go" { Test-GoDebug }
     "test-release" { Test-GoRelease }
@@ -249,5 +266,4 @@ switch ($Task) {
     "fmt" { Fmt-Go; Fmt-Rust }
     "fmt-go" { Fmt-Go }
     "fmt-rust" { Fmt-Rust }
-    default { throw "Unsupported task '$Task'" }
 }
