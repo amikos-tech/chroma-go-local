@@ -383,7 +383,6 @@ xattr -dr com.apple.quarantine /path/to/libchroma_go_shim.dylib
 
 ```bash
 make clean
-make build
 make test-go
 ```
 
