@@ -12,6 +12,21 @@ It supports both:
 - Rust 1.70+
 - `golangci-lint` (for `lint` checks)
 
+## Supported Platform Matrix
+
+The table below captures current support and CI coverage for this repository.
+
+| OS | Arch | CI coverage | Release shim archive | Notes |
+|---|---|---|---|---|
+| Linux | amd64 | yes | yes | Fully exercised in CI. |
+| macOS | amd64 | no | no | Not in current hosted CI matrix. |
+| Windows | amd64 | yes | yes | Use the documented PowerShell workflow for local dev. |
+| Linux | arm64 | no | no | Not in current hosted CI matrix. |
+| macOS | arm64 | yes | yes | Fully exercised in CI. |
+| Windows | arm64 | no | no | Toolchain is documented, but CI/release artifacts are not yet published. |
+
+See [Prebuilt Shim Artifacts](#prebuilt-shim-artifacts) for archive naming and [Windows toolchain setup](#windows-toolchain-setup) for local Windows prerequisites.
+
 ## Integration Direction (`chroma-go` PersistentClient)
 
 This repository is the low-level runtime layer (`purego` + Rust shim). It is intended to be consumed by `github.com/amikos-tech/chroma-go` for a downstream `PersistentClient`.
@@ -94,7 +109,7 @@ Archive naming is stable:
 - `chroma-go-shim-windows-<arch>.tar.gz`
 - `chroma-go-shim_SHA256SUMS.txt` (combined checksums for all archives)
 
-Architecture note: archive `<arch>` is derived from the GitHub runner architecture. With the current hosted matrix, releases are expected to be `amd64`; add ARM64 runners to publish native `arm64` archives.
+Architecture note: archive `<arch>` is derived from the GitHub runner architecture. In the current hosted matrix for this repository, Linux/Windows builds are `amd64` and macOS builds are `arm64`. Runner mappings can change over time.
 
 Library filename mapping inside each archive:
 
@@ -321,7 +336,57 @@ GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `w
 
 Release tags (`v*`) run a separate workflow that builds release shim archives and publishes them together with `chroma-go-shim_SHA256SUMS.txt`.
 
-### Benchmarks
+## Troubleshooting
+
+### Dynamic loading (`Init` / `CHROMA_LIB_PATH`)
+
+If `Init("")` fails, validate all of the following first:
+
+- `CHROMA_LIB_PATH` should be absolute for clarity. Relative paths that include separators are also supported and resolved by the loader.
+- The library filename matches your platform (see [Prebuilt Shim Artifacts](#prebuilt-shim-artifacts)).
+- The library exists at that exact path.
+
+Quick verification:
+
+```bash
+# Linux/macOS
+echo "$CHROMA_LIB_PATH"
+ls -l "$CHROMA_LIB_PATH"
+```
+
+```powershell
+# Windows PowerShell
+echo $env:CHROMA_LIB_PATH
+Test-Path $env:CHROMA_LIB_PATH
+```
+
+### Linux and macOS
+
+- If the loader reports file-not-found, confirm extension and filename are correct for the platform.
+- If using release downloads, re-check archive checksums before loading.
+- On macOS, if the downloaded file is quarantined by Gatekeeper, remove quarantine metadata:
+
+```bash
+xattr -dr com.apple.quarantine /path/to/libchroma_go_shim.dylib
+```
+
+### Windows
+
+- Prefer the PowerShell helper commands in this README (`scripts/dev-windows.ps1`) instead of `make` for test/lint/bench flows.
+- Ensure the Rust MSVC target is active and `protoc` 31.x is installed before running tests.
+- If path issues appear, set `CHROMA_LIB_PATH` via `Resolve-Path` as shown in [Prebuilt Shim Artifacts](#prebuilt-shim-artifacts).
+
+### Build and test failures
+
+- `protoc` version mismatches are a common source of build failures; use `31.x`.
+- If Rust or Go dependencies are corrupted locally, clear build outputs and rerun:
+
+```bash
+make clean
+make test-go
+```
+
+## Benchmarks
 
 ```bash
 make bench-go      # Run Go benchmarks
