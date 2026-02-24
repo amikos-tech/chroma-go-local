@@ -1,10 +1,13 @@
 package chroma
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestInitAndVersion(t *testing.T) {
@@ -47,19 +50,15 @@ allow_reset: true
 		t.Errorf("Expected address 127.0.0.1, got %s", server.Address())
 	}
 
-	// Give the server time to start
-	time.Sleep(2 * time.Second)
-
-	// Try to connect to the server
-	resp, err := http.Get("http://127.0.0.1:8765/api/v2/heartbeat")
-	if err != nil {
-		t.Fatalf("Failed to connect to server: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
-	}
+	require.Eventually(t, func() bool {
+		resp, err := http.Get("http://127.0.0.1:8765/api/v2/heartbeat")
+		if err != nil {
+			return false
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 10*time.Second, 100*time.Millisecond, "server heartbeat did not become ready")
 
 	t.Log("Server is running and responding to heartbeat")
 }
@@ -133,17 +132,15 @@ func TestNewServerWithOptions(t *testing.T) {
 		t.Errorf("Expected port 8766, got %d", server.Port())
 	}
 
-	time.Sleep(2 * time.Second)
-
-	resp, err := http.Get("http://127.0.0.1:8766/api/v2/heartbeat")
-	if err != nil {
-		t.Fatalf("Failed to connect to server: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
-	}
+	require.Eventually(t, func() bool {
+		resp, err := http.Get("http://127.0.0.1:8766/api/v2/heartbeat")
+		if err != nil {
+			return false
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 10*time.Second, 100*time.Millisecond, "server heartbeat did not become ready")
 
 	t.Log("NewServer with options is working")
 }
