@@ -11,6 +11,8 @@ if err := chroma.Init(""); err != nil {
     panic(err)
 }
 fmt.Println("shim version:", chroma.Version())
+v, err := chroma.VersionWithError()
+fmt.Println(v, err)
 ```
 
 `Init("")` uses `CHROMA_LIB_PATH` when no explicit path is provided.
@@ -187,6 +189,7 @@ Metadata values in `Add`/`UpdateRecords`/`UpsertRecords` support:
 - homogeneous arrays of those scalar types
 
 Nil metadata values are accepted for `UpdateRecords` and `UpsertRecords` to clear keys. Float values are encoded with an explicit decimal to avoid integer/float array ambiguity at the Go/Rust FFI boundary.
+Numeric metadata values decode back as `float64` in `EmbeddedGetRecordsResponse.Metadatas` because Go JSON unmarshaling uses `map[string]any`.
 
 ## 4. Filter Support (`where`, `where_document`)
 

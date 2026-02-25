@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
@@ -27,6 +26,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
+use tokio::time::{timeout, Duration};
 
 // Error codes
 pub const SUCCESS: i32 = 0;
@@ -56,15 +56,19 @@ fn resolve_database_name_typed(database_name: Option<String>) -> Result<Database
     parse_database_name(resolve_database_name(database_name))
 }
 
-thread_local! {
-    static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
-}
+static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 fn set_last_error(msg: &str) {
     let sanitized = msg.replace('\0', "\\0");
-    LAST_ERROR.with(|e| {
-        *e.borrow_mut() = CString::new(sanitized).ok();
-    });
+    if let Ok(mut slot) = LAST_ERROR.lock() {
+        *slot = Some(sanitized);
+    }
+}
+
+fn last_error_cstring() -> Option<CString> {
+    let slot = LAST_ERROR.lock().ok()?;
+    let msg = slot.as_ref()?;
+    CString::new(msg.as_str()).ok()
 }
 
 fn panic_payload_message(payload: Box<dyn Any + Send>) -> String {
@@ -850,7 +854,7 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
     let auth: Arc<dyn chroma_frontend::auth::AuthenticateAndAuthorize> = Arc::new(());
     let quota_enforcer: Arc<dyn chroma_frontend::quota::QuotaEnforcer> = Arc::new(());
 
-    runtime.spawn(async move {
+    let mut server_task = runtime.spawn(async move {
         let system = System::new();
         let registry = Registry::new();
 
@@ -870,6 +874,20 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
             }
         }
     });
+
+    match runtime.block_on(async { timeout(Duration::from_millis(250), &mut server_task).await }) {
+        Ok(Ok(())) => {
+            set_last_error("server exited during startup");
+            return ptr::null_mut();
+        }
+        Ok(Err(join_err)) => {
+            set_last_error(&format!("server panicked during startup: {join_err}"));
+            return ptr::null_mut();
+        }
+        Err(_) => {
+            // Timed out waiting for early task termination; assume startup is healthy.
+        }
+    }
 
     let handle = Box::new(ServerHandle {
         _runtime: runtime,
@@ -2492,17 +2510,17 @@ pub unsafe extern "C" fn chroma_string_free(s: *mut c_char) {
 }
 
 /// Get the last error message.
-/// Returns NULL if no error. The returned string is valid until the next FFI call.
+/// Returns NULL if no error.
 ///
 /// # Safety
-/// Must be called from the same thread that made the failing call.
+/// The returned string must be freed with `chroma_string_free`.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_get_last_error() -> *const c_char {
     ffi_guard_ptr_const!({
-        LAST_ERROR.with(|e| match e.borrow().as_ref() {
-            Some(s) => s.as_ptr(),
+        match last_error_cstring() {
+            Some(s) => s.into_raw() as *const c_char,
             None => ptr::null(),
-        })
+        }
     })
 }
 
@@ -2525,11 +2543,10 @@ mod tests {
     use serde_json::json;
 
     fn last_error_string() -> Option<String> {
-        LAST_ERROR.with(|e| {
-            e.borrow()
-                .as_ref()
-                .map(|s| s.to_string_lossy().into_owned())
-        })
+        LAST_ERROR
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().cloned())
     }
 
     #[test]

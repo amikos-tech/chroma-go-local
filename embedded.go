@@ -258,12 +258,14 @@ type EmbeddedGetRecordsRequest struct {
 
 // EmbeddedGetRecordsResponse contains fetched record fields.
 type EmbeddedGetRecordsResponse struct {
-	IDs        []string         `json:"ids"`
-	Embeddings [][]float32      `json:"embeddings,omitempty"`
-	Documents  []*string        `json:"documents,omitempty"`
-	URIs       []*string        `json:"uris,omitempty"`
-	Metadatas  []map[string]any `json:"metadatas,omitempty"`
-	Include    []string         `json:"include,omitempty"`
+	IDs        []string    `json:"ids"`
+	Embeddings [][]float32 `json:"embeddings,omitempty"`
+	Documents  []*string   `json:"documents,omitempty"`
+	URIs       []*string   `json:"uris,omitempty"`
+	// Metadatas decodes through encoding/json into map[string]any.
+	// Numeric values (including integer metadata) round-trip back as float64.
+	Metadatas []map[string]any `json:"metadatas,omitempty"`
+	Include   []string         `json:"include,omitempty"`
 }
 
 // EmbeddedUpdateRecordsRequest updates existing records by id.
@@ -1143,7 +1145,7 @@ func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
 			return []string{}, nil
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			return []int64{}, nil
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 			return []int64{}, nil
 		case reflect.Float32, reflect.Float64:
 			return []metadataFloat64{}, nil
@@ -1162,10 +1164,10 @@ func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
 	)
 
 	kind := scalarUnknown
-	bools := make([]bool, 0, rv.Len())
-	stringsOut := make([]string, 0, rv.Len())
-	ints := make([]int64, 0, rv.Len())
-	floats := make([]metadataFloat64, 0, rv.Len())
+	var bools []bool
+	var stringsOut []string
+	var ints []int64
+	var floats []metadataFloat64
 
 	for i := 0; i < rv.Len(); i++ {
 		itemPath := fmt.Sprintf("%s[%d]", path, i)
@@ -1180,20 +1182,32 @@ func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
 				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
 			}
 			kind = scalarBool
+			if bools == nil {
+				bools = make([]bool, 0, rv.Len())
+			}
 			bools = append(bools, v)
 		case string:
 			if kind != scalarUnknown && kind != scalarString {
 				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
 			}
 			kind = scalarString
+			if stringsOut == nil {
+				stringsOut = make([]string, 0, rv.Len())
+			}
 			stringsOut = append(stringsOut, v)
 		case int64:
 			if kind == scalarUnknown || kind == scalarInt {
 				kind = scalarInt
+				if ints == nil {
+					ints = make([]int64, 0, rv.Len())
+				}
 				ints = append(ints, v)
 				continue
 			}
 			if kind == scalarFloat {
+				if floats == nil {
+					floats = make([]metadataFloat64, 0, rv.Len())
+				}
 				floats = append(floats, metadataFloat64(float64(v)))
 				continue
 			}
@@ -1203,6 +1217,9 @@ func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
 				kind = scalarFloat
 			}
 			if kind == scalarInt {
+				if floats == nil {
+					floats = make([]metadataFloat64, 0, rv.Len())
+				}
 				for _, iv := range ints {
 					floats = append(floats, metadataFloat64(float64(iv)))
 				}
@@ -1211,6 +1228,9 @@ func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
 			}
 			if kind != scalarFloat {
 				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			if floats == nil {
+				floats = make([]metadataFloat64, 0, rv.Len())
 			}
 			floats = append(floats, v)
 		default:

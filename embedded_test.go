@@ -243,11 +243,13 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 				"labels": []string{"alpha", "beta"},
 				"scores": []float64{1.1, 2.2},
 				"flags":  []bool{true, false},
+				"levels": []int{1, 2},
 			},
 			{
 				"labels": []string{"beta", "gamma"},
 				"scores": []float64{3.3, 4.4},
 				"flags":  []bool{false, true},
+				"levels": []int{3, 4},
 			},
 		},
 	})
@@ -320,6 +322,25 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("expected flags to decode as []any, got %T", flagsRaw)
 	}
 	require.Equal(t, []any{true, false}, flags)
+	levelsRaw, ok := getResp.Metadatas[0]["levels"]
+	if !ok {
+		t.Fatalf("expected metadata levels key, got %#v", getResp.Metadatas[0])
+	}
+	levels, ok := levelsRaw.([]any)
+	if !ok {
+		t.Fatalf("expected levels to decode as []any, got %T", levelsRaw)
+	}
+	require.Len(t, levels, 2)
+	level0, ok := levels[0].(float64)
+	if !ok {
+		t.Fatalf("expected levels[0] to decode as float64, got %T", levels[0])
+	}
+	level1, ok := levels[1].(float64)
+	if !ok {
+		t.Fatalf("expected levels[1] to decode as float64, got %T", levels[1])
+	}
+	require.Equal(t, 1.0, level0)
+	require.Equal(t, 2.0, level1)
 
 	err = embedded.UpdateRecords(EmbeddedUpdateRecordsRequest{
 		CollectionID: collection.ID,

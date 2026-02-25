@@ -3,6 +3,7 @@ package chroma
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -56,6 +57,8 @@ var (
 	chromaVersion                  func() *byte
 )
 
+const maxCStringLen = 1 << 20
+
 // Init initializes the Chroma library. Must be called before any other functions.
 // If libPath is empty, it will look for CHROMA_LIB_PATH environment variable.
 func Init(libPath string) error {
@@ -70,45 +73,91 @@ func Init(libPath string) error {
 }
 
 func registerFunctions() error {
-	purego.RegisterLibFunc(&chromaServerStart, libHandle, "chroma_server_start")
-	purego.RegisterLibFunc(&chromaServerStartFromString, libHandle, "chroma_server_start_from_string")
-	purego.RegisterLibFunc(&chromaServerPort, libHandle, "chroma_server_port")
-	purego.RegisterLibFunc(&chromaServerAddress, libHandle, "chroma_server_address")
-	purego.RegisterLibFunc(&chromaServerStop, libHandle, "chroma_server_stop")
-	purego.RegisterLibFunc(&chromaServerFree, libHandle, "chroma_server_free")
-	purego.RegisterLibFunc(&chromaEmbeddedStart, libHandle, "chroma_embedded_start")
-	purego.RegisterLibFunc(&chromaEmbeddedStartFromString, libHandle, "chroma_embedded_start_from_string")
-	purego.RegisterLibFunc(&chromaEmbeddedFree, libHandle, "chroma_embedded_free")
-	purego.RegisterLibFunc(&chromaEmbeddedHeartbeat, libHandle, "chroma_embedded_heartbeat")
-	purego.RegisterLibFunc(&chromaEmbeddedGetMaxBatchSize, libHandle, "chroma_embedded_get_max_batch_size")
-	purego.RegisterLibFunc(&chromaEmbeddedCreateTenant, libHandle, "chroma_embedded_create_tenant")
-	purego.RegisterLibFunc(&chromaEmbeddedGetTenant, libHandle, "chroma_embedded_get_tenant")
-	purego.RegisterLibFunc(&chromaEmbeddedUpdateTenant, libHandle, "chroma_embedded_update_tenant")
-	purego.RegisterLibFunc(&chromaEmbeddedReset, libHandle, "chroma_embedded_reset")
-	purego.RegisterLibFunc(&chromaEmbeddedCreateDatabase, libHandle, "chroma_embedded_create_database")
-	purego.RegisterLibFunc(&chromaEmbeddedListDatabases, libHandle, "chroma_embedded_list_databases")
-	purego.RegisterLibFunc(&chromaEmbeddedGetDatabase, libHandle, "chroma_embedded_get_database")
-	purego.RegisterLibFunc(&chromaEmbeddedDeleteDatabase, libHandle, "chroma_embedded_delete_database")
-	purego.RegisterLibFunc(&chromaEmbeddedListCollections, libHandle, "chroma_embedded_list_collections")
-	purego.RegisterLibFunc(&chromaEmbeddedGetCollection, libHandle, "chroma_embedded_get_collection")
-	purego.RegisterLibFunc(&chromaEmbeddedCountCollections, libHandle, "chroma_embedded_count_collections")
-	purego.RegisterLibFunc(&chromaEmbeddedUpdateCollection, libHandle, "chroma_embedded_update_collection")
-	purego.RegisterLibFunc(&chromaEmbeddedDeleteCollection, libHandle, "chroma_embedded_delete_collection")
-	purego.RegisterLibFunc(&chromaEmbeddedForkCollection, libHandle, "chroma_embedded_fork_collection")
-	purego.RegisterLibFunc(&chromaEmbeddedCount, libHandle, "chroma_embedded_count")
-	purego.RegisterLibFunc(&chromaEmbeddedGet, libHandle, "chroma_embedded_get")
-	purego.RegisterLibFunc(&chromaEmbeddedUpdate, libHandle, "chroma_embedded_update")
-	purego.RegisterLibFunc(&chromaEmbeddedUpsert, libHandle, "chroma_embedded_upsert")
-	purego.RegisterLibFunc(&chromaEmbeddedDeleteRecords, libHandle, "chroma_embedded_delete_records")
-	purego.RegisterLibFunc(&chromaEmbeddedCreateCollection, libHandle, "chroma_embedded_create_collection")
-	purego.RegisterLibFunc(&chromaEmbeddedAdd, libHandle, "chroma_embedded_add")
-	purego.RegisterLibFunc(&chromaEmbeddedQuery, libHandle, "chroma_embedded_query")
-	purego.RegisterLibFunc(&chromaEmbeddedIndexingStatus, libHandle, "chroma_embedded_indexing_status")
-	purego.RegisterLibFunc(&chromaEmbeddedHealthcheck, libHandle, "chroma_embedded_healthcheck")
-	purego.RegisterLibFunc(&chromaStringFree, libHandle, "chroma_string_free")
-	purego.RegisterLibFunc(&chromaGetLastError, libHandle, "chroma_get_last_error")
-	purego.RegisterLibFunc(&chromaVersion, libHandle, "chroma_version")
+	registrations := []struct {
+		target any
+		name   string
+	}{
+		{&chromaServerStart, "chroma_server_start"},
+		{&chromaServerStartFromString, "chroma_server_start_from_string"},
+		{&chromaServerPort, "chroma_server_port"},
+		{&chromaServerAddress, "chroma_server_address"},
+		{&chromaServerStop, "chroma_server_stop"},
+		{&chromaServerFree, "chroma_server_free"},
+		{&chromaEmbeddedStart, "chroma_embedded_start"},
+		{&chromaEmbeddedStartFromString, "chroma_embedded_start_from_string"},
+		{&chromaEmbeddedFree, "chroma_embedded_free"},
+		{&chromaEmbeddedHeartbeat, "chroma_embedded_heartbeat"},
+		{&chromaEmbeddedGetMaxBatchSize, "chroma_embedded_get_max_batch_size"},
+		{&chromaEmbeddedCreateTenant, "chroma_embedded_create_tenant"},
+		{&chromaEmbeddedGetTenant, "chroma_embedded_get_tenant"},
+		{&chromaEmbeddedUpdateTenant, "chroma_embedded_update_tenant"},
+		{&chromaEmbeddedReset, "chroma_embedded_reset"},
+		{&chromaEmbeddedCreateDatabase, "chroma_embedded_create_database"},
+		{&chromaEmbeddedListDatabases, "chroma_embedded_list_databases"},
+		{&chromaEmbeddedGetDatabase, "chroma_embedded_get_database"},
+		{&chromaEmbeddedDeleteDatabase, "chroma_embedded_delete_database"},
+		{&chromaEmbeddedListCollections, "chroma_embedded_list_collections"},
+		{&chromaEmbeddedGetCollection, "chroma_embedded_get_collection"},
+		{&chromaEmbeddedCountCollections, "chroma_embedded_count_collections"},
+		{&chromaEmbeddedUpdateCollection, "chroma_embedded_update_collection"},
+		{&chromaEmbeddedDeleteCollection, "chroma_embedded_delete_collection"},
+		{&chromaEmbeddedForkCollection, "chroma_embedded_fork_collection"},
+		{&chromaEmbeddedCount, "chroma_embedded_count"},
+		{&chromaEmbeddedGet, "chroma_embedded_get"},
+		{&chromaEmbeddedUpdate, "chroma_embedded_update"},
+		{&chromaEmbeddedUpsert, "chroma_embedded_upsert"},
+		{&chromaEmbeddedDeleteRecords, "chroma_embedded_delete_records"},
+		{&chromaEmbeddedCreateCollection, "chroma_embedded_create_collection"},
+		{&chromaEmbeddedAdd, "chroma_embedded_add"},
+		{&chromaEmbeddedQuery, "chroma_embedded_query"},
+		{&chromaEmbeddedIndexingStatus, "chroma_embedded_indexing_status"},
+		{&chromaEmbeddedHealthcheck, "chroma_embedded_healthcheck"},
+		{&chromaStringFree, "chroma_string_free"},
+		{&chromaGetLastError, "chroma_get_last_error"},
+		{&chromaVersion, "chroma_version"},
+	}
+
+	for _, registration := range registrations {
+		if err := registerLibFunction(registration.target, registration.name); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func registerLibFunction(target any, name string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = errors.Errorf("failed to register FFI symbol %q: %v", name, recovered)
+		}
+	}()
+	purego.RegisterLibFunc(target, libHandle, name)
+	return nil
+}
+
+func nullPointerError(details string) error {
+	details = strings.TrimSpace(details)
+	if details == "" {
+		return ErrNullPointer
+	}
+	return fmt.Errorf("%w: %s", ErrNullPointer, details)
+}
+
+func callFFICode(call func() int32) error {
+	rc := call()
+	if rc != Success {
+		return errorFromCode(rc, getLastError())
+	}
+	return nil
+}
+
+func callFFIHandle(call func() uintptr) (uintptr, error) {
+	handle := call()
+	if handle == 0 {
+		return 0, nullPointerError(getLastError())
+	}
+	return handle, nil
 }
 
 func getLastError() string {
@@ -116,6 +165,7 @@ func getLastError() string {
 	if ptr == nil {
 		return ""
 	}
+	defer chromaStringFree(ptr)
 	return goStringFromPtr(ptr)
 }
 
@@ -125,7 +175,7 @@ func goStringFromPtr(ptr *byte) string {
 	}
 	var n uintptr
 	q := unsafe.Pointer(ptr)
-	for *(*byte)(unsafe.Add(q, n)) != 0 {
+	for n < maxCStringLen && *(*byte)(unsafe.Add(q, n)) != 0 {
 		n++
 	}
 	return string(unsafe.Slice(ptr, n))
@@ -155,19 +205,19 @@ func StartServer(config StartServerConfig) (*Server, error) {
 	}
 
 	var handle uintptr
+	var err error
 	switch {
 	case config.ConfigPath != "":
 		pathBytes := cStringFromGo(config.ConfigPath)
-		handle = chromaServerStart(&pathBytes[0])
+		handle, err = callFFIHandle(func() uintptr { return chromaServerStart(&pathBytes[0]) })
 	case config.ConfigString != "":
 		yamlBytes := cStringFromGo(config.ConfigString)
-		handle = chromaServerStartFromString(&yamlBytes[0])
+		handle, err = callFFIHandle(func() uintptr { return chromaServerStartFromString(&yamlBytes[0]) })
 	default:
 		return nil, errors.New("either ConfigPath or ConfigString must be provided")
 	}
-
-	if handle == 0 {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+	if err != nil {
+		return nil, err
 	}
 
 	port := chromaServerPort(handle)
@@ -211,11 +261,7 @@ func (s *Server) Stop() error {
 		return ErrServerNotStarted
 	}
 
-	rc := chromaServerStop(s.handle)
-	if rc != Success {
-		return errorFromCode(rc, getLastError())
-	}
-	return nil
+	return callFFICode(func() int32 { return chromaServerStop(s.handle) })
 }
 
 // Close stops the server and frees resources.
@@ -232,12 +278,18 @@ func (s *Server) Close() error {
 
 // Version returns the version of the Chroma shim library.
 func Version() string {
+	version, _ := VersionWithError()
+	return version
+}
+
+// VersionWithError returns the version of the Chroma shim library.
+func VersionWithError() (string, error) {
 	if libHandle == 0 {
-		return ""
+		return "", ErrLibraryNotLoaded
 	}
 	ptr := chromaVersion()
 	if ptr == nil {
-		return ""
+		return "", nullPointerError(getLastError())
 	}
-	return goStringFromPtr(ptr)
+	return goStringFromPtr(ptr), nil
 }
