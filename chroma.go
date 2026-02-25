@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -15,6 +16,7 @@ var (
 	libHandle uintptr
 	libOnce   sync.Once
 	libErr    error
+	ffiMu     sync.Mutex
 
 	// FFI functions
 	chromaServerStart              func(*byte) uintptr
@@ -144,23 +146,29 @@ func nullPointerError(details string) error {
 	return fmt.Errorf("%w: %s", ErrNullPointer, details)
 }
 
-func callFFICode(call func() int32) error {
-	rc := call()
-	if rc != Success {
-		return errorFromCode(rc, getLastError())
-	}
-	return nil
-}
-
 func callFFIHandle(call func() uintptr) (uintptr, error) {
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+
 	handle := call()
 	if handle == 0 {
-		return 0, nullPointerError(getLastError())
+		return 0, nullPointerError(getLastErrorUnlocked())
 	}
 	return handle, nil
 }
 
-func getLastError() string {
+func callFFIPointer(call func() *byte) (*byte, error) {
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+
+	ptr := call()
+	if ptr == nil {
+		return nil, nullPointerError(getLastErrorUnlocked())
+	}
+	return ptr, nil
+}
+
+func getLastErrorUnlocked() string {
 	ptr := chromaGetLastError()
 	if ptr == nil {
 		return ""
@@ -220,12 +228,17 @@ func StartServer(config StartServerConfig) (*Server, error) {
 		return nil, err
 	}
 
-	port := chromaServerPort(handle)
-	addrPtr := chromaServerAddress(handle)
+	var port int32
 	addr := ""
-	if addrPtr != nil {
-		addr = goStringFromPtr(addrPtr)
-	}
+	func() {
+		ffiMu.Lock()
+		defer ffiMu.Unlock()
+		port = chromaServerPort(handle)
+		addrPtr := chromaServerAddress(handle)
+		if addrPtr != nil {
+			addr = goStringFromPtr(addrPtr)
+		}
+	}()
 
 	server := &Server{
 		handle: handle,
@@ -257,22 +270,54 @@ func (s *Server) URL() string {
 
 // Stop gracefully stops the server.
 func (s *Server) Stop() error {
-	if s.handle == 0 {
+	if s == nil {
+		return ErrServerNotStarted
+	}
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(s)
+
+	handle := atomic.LoadUintptr(&s.handle)
+	if handle == 0 {
 		return ErrServerNotStarted
 	}
 
-	return callFFICode(func() int32 { return chromaServerStop(s.handle) })
+	rc := chromaServerStop(handle)
+	if rc != Success {
+		return errorFromCode(rc, getLastErrorUnlocked())
+	}
+	return nil
 }
 
 // Close stops the server and frees resources.
 func (s *Server) Close() error {
-	if s.handle == 0 {
+	if s == nil {
 		return nil
 	}
 
-	_ = s.Stop() // Ignore error, server might already be stopped
-	chromaServerFree(s.handle)
-	s.handle = 0
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(s)
+
+	handle := atomic.SwapUintptr(&s.handle, 0)
+	if handle == 0 {
+		return nil
+	}
+
+	stopRC := chromaServerStop(handle)
+	stopErrMsg := ""
+	if stopRC != Success {
+		stopErrMsg = getLastErrorUnlocked()
+	}
+	chromaServerFree(handle)
+
+	if stopRC != Success {
+		stopErr := errorFromCode(stopRC, stopErrMsg)
+		if errors.Is(stopErr, ErrServerAlreadyStop) {
+			return nil
+		}
+		return stopErr
+	}
 	return nil
 }
 
@@ -287,9 +332,10 @@ func VersionWithError() (string, error) {
 	if libHandle == 0 {
 		return "", ErrLibraryNotLoaded
 	}
-	ptr := chromaVersion()
-	if ptr == nil {
-		return "", nullPointerError(getLastError())
+	// chroma_version returns a static C string owned by Rust; do not free it.
+	ptr, err := callFFIPointer(func() *byte { return chromaVersion() })
+	if err != nil {
+		return "", err
 	}
 	return goStringFromPtr(ptr), nil
 }

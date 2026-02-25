@@ -115,6 +115,22 @@ func TestNormalizeMetadataSlicePromotesIntsToFloats(t *testing.T) {
 	require.Equal(t, "[1.0,2.5,3.0]", string(encoded))
 }
 
+func TestNormalizeMetadataSlicePromotesFloatFirstThenInts(t *testing.T) {
+	normalized, err := normalizeMetadataSlice(
+		"metadatas[0].scores",
+		reflect.ValueOf([]any{float64(1.5), int64(2), int32(3)}),
+	)
+	require.NoError(t, err)
+
+	values, ok := normalized.([]metadataFloat64)
+	require.True(t, ok)
+	require.Equal(t, []metadataFloat64{1.5, 2, 3}, values)
+
+	encoded, err := json.Marshal(values)
+	require.NoError(t, err)
+	require.Equal(t, "[1.5,2.0,3.0]", string(encoded))
+}
+
 func TestAddRejectsNilMetadataValues(t *testing.T) {
 	fakeEmbedded := &Embedded{handle: 1}
 
