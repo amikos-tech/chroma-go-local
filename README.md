@@ -271,6 +271,7 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 |----------|-------------|
 | `Init(libPath string) error` | Initialize the library. Uses `CHROMA_LIB_PATH` env if path is empty. |
 | `Version() string` | Returns the shim version. |
+| `VersionWithError() (string, error)` | Returns shim version with explicit error details. |
 | `NewServer(opts ...ServerOption) (*Server, error)` | Start a server with builder options. |
 | `StartServer(config StartServerConfig) (*Server, error)` | Start a server with YAML config. |
 | `(*Server) Port() int` | Get the server port. |
@@ -307,6 +308,16 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
 | `(*Embedded) Close() error` | Free embedded resources. |
+
+### Metadata Value Rules (Embedded Record APIs)
+
+For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, and `EmbeddedUpsertRecordsRequest.Metadatas`:
+
+- Supported scalar values: `bool`, integer types, float types, `string`
+- Supported arrays: homogeneous arrays of one supported scalar type
+- Unsupported values: nested objects/maps, mixed-type arrays, structs
+
+`UpdateRecords` and `UpsertRecords` allow `nil` metadata values to clear keys. Float metadata values are encoded with an explicit decimal representation to avoid integer/float array ambiguity at the Go/Rust boundary. On read-back through `EmbeddedGetRecordsResponse`, numeric metadata values decode as `float64` due standard Go JSON decoding.
 
 ## Testing
 

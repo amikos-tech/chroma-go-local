@@ -2,6 +2,7 @@ package chroma
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -160,6 +161,7 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 	if err := embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
 		CollectionID: collection.ID,
 		NewName:      renamedCollectionName,
+		DatabaseName: databaseName,
 	}); err != nil {
 		t.Fatalf("UpdateCollection failed: %v", err)
 	}
@@ -236,6 +238,20 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 			{0.9, 0.1, 0.1},
 		},
 		Documents: []string{"first", "second"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"alpha", "beta"},
+				"scores": []float64{1.1, 2.2},
+				"flags":  []bool{true, false},
+				"levels": []int{1, 2},
+			},
+			{
+				"labels": []string{"beta", "gamma"},
+				"scores": []float64{3.3, 4.4},
+				"flags":  []bool{false, true},
+				"levels": []int{3, 4},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -254,7 +270,7 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		CollectionID: collection.ID,
 		DatabaseName: databaseName,
 		IDs:          []string{"doc-1"},
-		Include:      []string{"documents"},
+		Include:      []string{"documents", "metadatas"},
 	})
 	if err != nil {
 		t.Fatalf("GetRecords failed: %v", err)
@@ -265,12 +281,78 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 	if len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "first" {
 		t.Fatalf("expected document first, got %#v", getResp.Documents)
 	}
+	if len(getResp.Metadatas) != 1 {
+		t.Fatalf("expected one metadata entry, got %#v", getResp.Metadatas)
+	}
+	labelsRaw, ok := getResp.Metadatas[0]["labels"]
+	if !ok {
+		t.Fatalf("expected metadata labels key, got %#v", getResp.Metadatas[0])
+	}
+	labels, ok := labelsRaw.([]any)
+	if !ok {
+		t.Fatalf("expected labels to decode as []any, got %T", labelsRaw)
+	}
+	require.Contains(t, labels, "alpha")
+	require.Contains(t, labels, "beta")
+	scoresRaw, ok := getResp.Metadatas[0]["scores"]
+	if !ok {
+		t.Fatalf("expected metadata scores key, got %#v", getResp.Metadatas[0])
+	}
+	scores, ok := scoresRaw.([]any)
+	if !ok {
+		t.Fatalf("expected scores to decode as []any, got %T", scoresRaw)
+	}
+	require.Len(t, scores, 2)
+	score0, ok := scores[0].(float64)
+	if !ok {
+		t.Fatalf("expected score[0] to decode as float64, got %T", scores[0])
+	}
+	score1, ok := scores[1].(float64)
+	if !ok {
+		t.Fatalf("expected score[1] to decode as float64, got %T", scores[1])
+	}
+	require.InDelta(t, 1.1, score0, 1e-9)
+	require.InDelta(t, 2.2, score1, 1e-9)
+	flagsRaw, ok := getResp.Metadatas[0]["flags"]
+	if !ok {
+		t.Fatalf("expected metadata flags key, got %#v", getResp.Metadatas[0])
+	}
+	flags, ok := flagsRaw.([]any)
+	if !ok {
+		t.Fatalf("expected flags to decode as []any, got %T", flagsRaw)
+	}
+	require.Equal(t, []any{true, false}, flags)
+	levelsRaw, ok := getResp.Metadatas[0]["levels"]
+	if !ok {
+		t.Fatalf("expected metadata levels key, got %#v", getResp.Metadatas[0])
+	}
+	levels, ok := levelsRaw.([]any)
+	if !ok {
+		t.Fatalf("expected levels to decode as []any, got %T", levelsRaw)
+	}
+	require.Len(t, levels, 2)
+	level0, ok := levels[0].(float64)
+	if !ok {
+		t.Fatalf("expected levels[0] to decode as float64, got %T", levels[0])
+	}
+	level1, ok := levels[1].(float64)
+	if !ok {
+		t.Fatalf("expected levels[1] to decode as float64, got %T", levels[1])
+	}
+	require.Equal(t, 1.0, level0)
+	require.Equal(t, 2.0, level1)
 
 	err = embedded.UpdateRecords(EmbeddedUpdateRecordsRequest{
 		CollectionID: collection.ID,
 		DatabaseName: databaseName,
 		IDs:          []string{"doc-1"},
 		Documents:    []string{"first-updated"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"alpha", "updated"},
+				"flags":  []bool{true, true},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpdateRecords failed: %v", err)
@@ -281,10 +363,91 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 			CollectionID: collection.ID,
 			DatabaseName: databaseName,
 			IDs:          []string{"doc-1"},
-			Include:      []string{"documents"},
+			Include:      []string{"documents", "metadatas"},
 		})
-		return err == nil && len(getResp.Documents) == 1 && getResp.Documents[0] != nil && *getResp.Documents[0] == "first-updated"
+		if err != nil || len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "first-updated" {
+			return false
+		}
+		if len(getResp.Metadatas) != 1 {
+			return false
+		}
+		labelsRaw, ok := getResp.Metadatas[0]["labels"]
+		if !ok {
+			return false
+		}
+		labels, ok := labelsRaw.([]any)
+		if !ok {
+			return false
+		}
+		if len(labels) != 2 || labels[0] != "alpha" || labels[1] != "updated" {
+			return false
+		}
+		flagsRaw, ok := getResp.Metadatas[0]["flags"]
+		if !ok {
+			return false
+		}
+		flags, ok := flagsRaw.([]any)
+		if !ok || len(flags) != 2 {
+			return false
+		}
+		return flags[0] == true && flags[1] == true
 	}, 5*time.Second, 200*time.Millisecond, "GetRecords did not return updated document")
+
+	err = embedded.UpdateRecords(EmbeddedUpdateRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		IDs:          []string{"doc-1"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"alpha", "updated"},
+				"scores": []float64{9.9, 10.1},
+				"flags":  []bool{false, true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRecords metadatas-only failed: %v", err)
+	}
+
+	require.Eventually(t, func() bool {
+		getResp, err = embedded.GetRecords(EmbeddedGetRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+			IDs:          []string{"doc-1"},
+			Include:      []string{"documents", "metadatas"},
+		})
+		if err != nil || len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "first-updated" {
+			return false
+		}
+		if len(getResp.Metadatas) != 1 {
+			return false
+		}
+		scoresRaw, ok := getResp.Metadatas[0]["scores"]
+		if !ok {
+			return false
+		}
+		scores, ok := scoresRaw.([]any)
+		if !ok || len(scores) != 2 {
+			return false
+		}
+		score0, ok := scores[0].(float64)
+		if !ok {
+			return false
+		}
+		score1, ok := scores[1].(float64)
+		if !ok {
+			return false
+		}
+		flagsRaw, ok := getResp.Metadatas[0]["flags"]
+		if !ok {
+			return false
+		}
+		flags, ok := flagsRaw.([]any)
+		if !ok || len(flags) != 2 {
+			return false
+		}
+		return math.Abs(score0-9.9) < 1e-9 && math.Abs(score1-10.1) < 1e-9 && flags[0] == false && flags[1] == true
+	}, 5*time.Second, 200*time.Millisecond, "GetRecords did not return metadatas-only update")
 
 	err = embedded.UpsertRecords(EmbeddedUpsertRecordsRequest{
 		CollectionID: collection.ID,
@@ -292,6 +455,13 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		IDs:          []string{"doc-3"},
 		Embeddings:   [][]float32{{0.0, 0.0, 1.0}},
 		Documents:    []string{"third"},
+		Metadatas: []map[string]any{
+			{
+				"labels": []string{"third", "delta"},
+				"scores": []float64{7.7, 8.8},
+				"flags":  []bool{true, false},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertRecords failed: %v", err)
@@ -305,8 +475,60 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		return err == nil && recordCount == 3
 	}, 5*time.Second, 200*time.Millisecond, "CountRecords did not reach expected value after upsert")
 
+	require.Eventually(t, func() bool {
+		getResp, err = embedded.GetRecords(EmbeddedGetRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+			IDs:          []string{"doc-3"},
+			Include:      []string{"documents", "metadatas"},
+		})
+		if err != nil || len(getResp.IDs) != 1 || getResp.IDs[0] != "doc-3" {
+			return false
+		}
+		if len(getResp.Documents) != 1 || getResp.Documents[0] == nil || *getResp.Documents[0] != "third" {
+			return false
+		}
+		if len(getResp.Metadatas) != 1 {
+			return false
+		}
+		labelsRaw, ok := getResp.Metadatas[0]["labels"]
+		if !ok {
+			return false
+		}
+		labels, ok := labelsRaw.([]any)
+		if !ok || len(labels) != 2 || labels[0] != "third" || labels[1] != "delta" {
+			return false
+		}
+		scoresRaw, ok := getResp.Metadatas[0]["scores"]
+		if !ok {
+			return false
+		}
+		scores, ok := scoresRaw.([]any)
+		if !ok || len(scores) != 2 {
+			return false
+		}
+		score0, ok := scores[0].(float64)
+		if !ok {
+			return false
+		}
+		score1, ok := scores[1].(float64)
+		if !ok {
+			return false
+		}
+		flagsRaw, ok := getResp.Metadatas[0]["flags"]
+		if !ok {
+			return false
+		}
+		flags, ok := flagsRaw.([]any)
+		if !ok || len(flags) != 2 {
+			return false
+		}
+		return math.Abs(score0-7.7) < 1e-9 && math.Abs(score1-8.8) < 1e-9 && flags[0] == true && flags[1] == false
+	}, 5*time.Second, 200*time.Millisecond, "Upsert metadata round-trip did not match expected values")
+
 	indexingStatus, err := embedded.IndexingStatus(EmbeddedIndexingStatusRequest{
 		CollectionID: collection.ID,
+		DatabaseName: databaseName,
 	})
 	if err != nil {
 		lower := strings.ToLower(err.Error())
@@ -346,6 +568,22 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		})
 		return err == nil && queryResp != nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0
 	}, 5*time.Second, 200*time.Millisecond, "Query did not return IDs")
+	require.Equal(t, "doc-1", queryResp.IDs[0][0])
+
+	require.Eventually(t, func() bool {
+		queryResp, err = embedded.Query(EmbeddedQueryRequest{
+			CollectionID:    collection.ID,
+			DatabaseName:    databaseName,
+			QueryEmbeddings: [][]float32{{0.1, 0.2, 0.3}},
+			NResults:        1,
+			Where: map[string]any{
+				"labels": map[string]any{
+					"$contains": "updated",
+				},
+			},
+		})
+		return err == nil && queryResp != nil && len(queryResp.IDs) > 0 && len(queryResp.IDs[0]) > 0
+	}, 5*time.Second, 200*time.Millisecond, "Query with metadata array contains filter did not return IDs")
 	require.Equal(t, "doc-1", queryResp.IDs[0][0])
 
 	require.Eventually(t, func() bool {

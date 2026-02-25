@@ -3,8 +3,12 @@ package chroma
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/pkg/errors"
 )
@@ -183,6 +187,7 @@ type EmbeddedCountCollectionsRequest struct {
 type EmbeddedUpdateCollectionRequest struct {
 	CollectionID string `json:"collection_id"`
 	NewName      string `json:"new_name"`
+	DatabaseName string `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteCollectionRequest deletes a collection by name.
@@ -207,8 +212,11 @@ type EmbeddedAddRequest struct {
 	Embeddings   [][]float32 `json:"embeddings"`
 	Documents    []string    `json:"documents,omitempty"`
 	URIs         []string    `json:"uris,omitempty"`
-	TenantID     string      `json:"tenant_id,omitempty"`
-	DatabaseName string      `json:"database_name,omitempty"`
+	// Metadatas accepts bool/int/float/string values and homogeneous arrays of those scalar types.
+	// Floats are encoded with an explicit decimal to avoid accidental int-array coercion.
+	Metadatas    []map[string]any `json:"metadatas,omitempty"`
+	TenantID     string           `json:"tenant_id,omitempty"`
+	DatabaseName string           `json:"database_name,omitempty"`
 }
 
 // EmbeddedQueryRequest queries vectors from a collection.
@@ -251,12 +259,14 @@ type EmbeddedGetRecordsRequest struct {
 
 // EmbeddedGetRecordsResponse contains fetched record fields.
 type EmbeddedGetRecordsResponse struct {
-	IDs        []string         `json:"ids"`
-	Embeddings [][]float32      `json:"embeddings,omitempty"`
-	Documents  []*string        `json:"documents,omitempty"`
-	URIs       []*string        `json:"uris,omitempty"`
-	Metadatas  []map[string]any `json:"metadatas,omitempty"`
-	Include    []string         `json:"include,omitempty"`
+	IDs        []string    `json:"ids"`
+	Embeddings [][]float32 `json:"embeddings,omitempty"`
+	Documents  []*string   `json:"documents,omitempty"`
+	URIs       []*string   `json:"uris,omitempty"`
+	// Metadatas decodes through encoding/json into map[string]any.
+	// Numeric values (including integer metadata) round-trip back as float64.
+	Metadatas []map[string]any `json:"metadatas,omitempty"`
+	Include   []string         `json:"include,omitempty"`
 }
 
 // EmbeddedUpdateRecordsRequest updates existing records by id.
@@ -266,8 +276,12 @@ type EmbeddedUpdateRecordsRequest struct {
 	Embeddings   [][]float32 `json:"embeddings,omitempty"`
 	Documents    []string    `json:"documents,omitempty"`
 	URIs         []string    `json:"uris,omitempty"`
-	TenantID     string      `json:"tenant_id,omitempty"`
-	DatabaseName string      `json:"database_name,omitempty"`
+	// Metadatas accepts bool/int/float/string values and homogeneous arrays of those scalar types.
+	// Floats are encoded with an explicit decimal to avoid accidental int-array coercion.
+	// Nil metadata values are allowed in update/upsert and forwarded as metadata key deletion.
+	Metadatas    []map[string]any `json:"metadatas,omitempty"`
+	TenantID     string           `json:"tenant_id,omitempty"`
+	DatabaseName string           `json:"database_name,omitempty"`
 }
 
 // EmbeddedUpsertRecordsRequest upserts records by id.
@@ -277,8 +291,12 @@ type EmbeddedUpsertRecordsRequest struct {
 	Embeddings   [][]float32 `json:"embeddings"`
 	Documents    []string    `json:"documents,omitempty"`
 	URIs         []string    `json:"uris,omitempty"`
-	TenantID     string      `json:"tenant_id,omitempty"`
-	DatabaseName string      `json:"database_name,omitempty"`
+	// Metadatas accepts bool/int/float/string values and homogeneous arrays of those scalar types.
+	// Floats are encoded with an explicit decimal to avoid accidental int-array coercion.
+	// Nil metadata values are allowed in update/upsert and forwarded as metadata key deletion.
+	Metadatas    []map[string]any `json:"metadatas,omitempty"`
+	TenantID     string           `json:"tenant_id,omitempty"`
+	DatabaseName string           `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteRecordsRequest deletes records by ids and/or filters.
@@ -294,6 +312,7 @@ type EmbeddedDeleteRecordsRequest struct {
 // EmbeddedIndexingStatusRequest gets indexing progress for a collection.
 type EmbeddedIndexingStatusRequest struct {
 	CollectionID string `json:"collection_id"`
+	DatabaseName string `json:"database_name,omitempty"`
 }
 
 // EmbeddedIndexingStatusResponse describes indexing progress in local mode.
@@ -326,6 +345,9 @@ func StartEmbedded(config StartEmbeddedConfig) (*Embedded, error) {
 		return nil, ErrLibraryNotLoaded
 	}
 
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+
 	var handle uintptr
 	switch {
 	case config.ConfigPath != "":
@@ -339,7 +361,7 @@ func StartEmbedded(config StartEmbeddedConfig) (*Embedded, error) {
 	}
 
 	if handle == 0 {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, nullPointerError(getLastErrorUnlocked())
 	}
 
 	embedded := &Embedded{handle: handle}
@@ -351,35 +373,61 @@ func StartEmbedded(config StartEmbeddedConfig) (*Embedded, error) {
 
 // Heartbeat returns unix nanoseconds from in-process frontend heartbeat.
 func (e *Embedded) Heartbeat() (uint64, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return 0, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return 0, ErrEmbeddedNotStarted
 	}
 
 	var heartbeat uint64
-	rc := chromaEmbeddedHeartbeat(e.handle, &heartbeat)
+	rc := chromaEmbeddedHeartbeat(handle, &heartbeat)
 	if rc != Success {
-		return 0, errorFromCode(rc, getLastError())
+		return 0, errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return heartbeat, nil
 }
 
 // MaxBatchSize returns the configured max batch size.
 func (e *Embedded) MaxBatchSize() (uint32, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return 0, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return 0, ErrEmbeddedNotStarted
 	}
 
 	var maxBatchSize uint32
-	rc := chromaEmbeddedGetMaxBatchSize(e.handle, &maxBatchSize)
+	rc := chromaEmbeddedGetMaxBatchSize(handle, &maxBatchSize)
 	if rc != Success {
-		return 0, errorFromCode(rc, getLastError())
+		return 0, errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return maxBatchSize, nil
 }
 
 // CreateTenant creates a tenant.
 func (e *Embedded) CreateTenant(request EmbeddedCreateTenantRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -391,16 +439,24 @@ func (e *Embedded) CreateTenant(request EmbeddedCreateTenantRequest) error {
 		return err
 	}
 
-	rc := chromaEmbeddedCreateTenant(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedCreateTenant(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // GetTenant gets a tenant by name.
 func (e *Embedded) GetTenant(request EmbeddedGetTenantRequest) (*EmbeddedTenant, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -412,9 +468,9 @@ func (e *Embedded) GetTenant(request EmbeddedGetTenantRequest) (*EmbeddedTenant,
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedGetTenant(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedGetTenant(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -427,7 +483,15 @@ func (e *Embedded) GetTenant(request EmbeddedGetTenantRequest) (*EmbeddedTenant,
 
 // UpdateTenant updates tenant properties.
 func (e *Embedded) UpdateTenant(request EmbeddedUpdateTenantRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.TenantID) == "" {
@@ -442,22 +506,31 @@ func (e *Embedded) UpdateTenant(request EmbeddedUpdateTenantRequest) error {
 		return err
 	}
 
-	rc := chromaEmbeddedUpdateTenant(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedUpdateTenant(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // Healthcheck returns local readiness of internal embedded components.
 func (e *Embedded) Healthcheck() (*EmbeddedHealthCheckResponse, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
 		return nil, ErrEmbeddedNotStarted
 	}
 
-	respPtr := chromaEmbeddedHealthcheck(e.handle)
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	respPtr := chromaEmbeddedHealthcheck(handle)
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -470,7 +543,15 @@ func (e *Embedded) Healthcheck() (*EmbeddedHealthCheckResponse, error) {
 
 // IndexingStatus reports indexing progress for a collection.
 func (e *Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -482,9 +563,9 @@ func (e *Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*Embed
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedIndexingStatus(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedIndexingStatus(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -497,20 +578,37 @@ func (e *Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*Embed
 
 // Reset resets local state if allow_reset is enabled.
 func (e *Embedded) Reset() error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
 		return ErrEmbeddedNotStarted
 	}
 
-	rc := chromaEmbeddedReset(e.handle)
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
+		return ErrEmbeddedNotStarted
+	}
+
+	rc := chromaEmbeddedReset(handle)
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // CreateDatabase creates a database.
 func (e *Embedded) CreateDatabase(request EmbeddedCreateDatabaseRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -522,16 +620,24 @@ func (e *Embedded) CreateDatabase(request EmbeddedCreateDatabaseRequest) error {
 		return err
 	}
 
-	rc := chromaEmbeddedCreateDatabase(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedCreateDatabase(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // ListDatabases lists databases.
 func (e *Embedded) ListDatabases(request EmbeddedListDatabasesRequest) ([]EmbeddedDatabase, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 
@@ -540,9 +646,9 @@ func (e *Embedded) ListDatabases(request EmbeddedListDatabasesRequest) ([]Embedd
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedListDatabases(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedListDatabases(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -555,7 +661,15 @@ func (e *Embedded) ListDatabases(request EmbeddedListDatabasesRequest) ([]Embedd
 
 // GetDatabase gets a database by name.
 func (e *Embedded) GetDatabase(request EmbeddedGetDatabaseRequest) (*EmbeddedDatabase, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -567,9 +681,9 @@ func (e *Embedded) GetDatabase(request EmbeddedGetDatabaseRequest) (*EmbeddedDat
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedGetDatabase(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedGetDatabase(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -582,7 +696,15 @@ func (e *Embedded) GetDatabase(request EmbeddedGetDatabaseRequest) (*EmbeddedDat
 
 // DeleteDatabase deletes a database by name.
 func (e *Embedded) DeleteDatabase(request EmbeddedDeleteDatabaseRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -594,16 +716,24 @@ func (e *Embedded) DeleteDatabase(request EmbeddedDeleteDatabaseRequest) error {
 		return err
 	}
 
-	rc := chromaEmbeddedDeleteDatabase(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedDeleteDatabase(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // ListCollections lists collections for a database.
 func (e *Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 
@@ -612,9 +742,9 @@ func (e *Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]Em
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedListCollections(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedListCollections(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -627,7 +757,15 @@ func (e *Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]Em
 
 // GetCollection gets a collection by name.
 func (e *Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -639,9 +777,9 @@ func (e *Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*Embedde
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedGetCollection(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedGetCollection(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -654,7 +792,15 @@ func (e *Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*Embedde
 
 // CountCollections counts collections for a database.
 func (e *Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (uint32, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return 0, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return 0, ErrEmbeddedNotStarted
 	}
 
@@ -664,16 +810,24 @@ func (e *Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (ui
 	}
 
 	var count uint32
-	rc := chromaEmbeddedCountCollections(e.handle, &requestBytes[0], &count)
+	rc := chromaEmbeddedCountCollections(handle, &requestBytes[0], &count)
 	if rc != Success {
-		return 0, errorFromCode(rc, getLastError())
+		return 0, errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return count, nil
 }
 
 // UpdateCollection updates collection properties (currently supports rename).
 func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -688,16 +842,24 @@ func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) err
 		return err
 	}
 
-	rc := chromaEmbeddedUpdateCollection(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedUpdateCollection(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // DeleteCollection deletes a collection by name.
 func (e *Embedded) DeleteCollection(request EmbeddedDeleteCollectionRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -709,16 +871,24 @@ func (e *Embedded) DeleteCollection(request EmbeddedDeleteCollectionRequest) err
 		return err
 	}
 
-	rc := chromaEmbeddedDeleteCollection(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedDeleteCollection(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // ForkCollection forks a source collection into a target collection.
 func (e *Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.SourceCollectionID) == "" {
@@ -733,9 +903,9 @@ func (e *Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*Embed
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedForkCollection(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedForkCollection(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -748,7 +918,15 @@ func (e *Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*Embed
 
 // CountRecords counts records in a collection.
 func (e *Embedded) CountRecords(request EmbeddedCountRecordsRequest) (uint32, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return 0, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return 0, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -761,16 +939,24 @@ func (e *Embedded) CountRecords(request EmbeddedCountRecordsRequest) (uint32, er
 	}
 
 	var count uint32
-	rc := chromaEmbeddedCount(e.handle, &requestBytes[0], &count)
+	rc := chromaEmbeddedCount(handle, &requestBytes[0], &count)
 	if rc != Success {
-		return 0, errorFromCode(rc, getLastError())
+		return 0, errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return count, nil
 }
 
 // GetRecords fetches records from a collection.
 func (e *Embedded) GetRecords(request EmbeddedGetRecordsRequest) (*EmbeddedGetRecordsResponse, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -782,9 +968,9 @@ func (e *Embedded) GetRecords(request EmbeddedGetRecordsRequest) (*EmbeddedGetRe
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedGet(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedGet(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -797,7 +983,15 @@ func (e *Embedded) GetRecords(request EmbeddedGetRecordsRequest) (*EmbeddedGetRe
 
 // UpdateRecords updates existing records by id.
 func (e *Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -806,34 +1000,50 @@ func (e *Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error {
 	if len(request.IDs) == 0 {
 		return errors.New("ids must not be empty")
 	}
-	if len(request.Embeddings) > 0 && len(request.Embeddings) != len(request.IDs) {
-		return errors.New("embeddings must have same length as ids when provided")
+	if err := validateOptionalLength("embeddings", len(request.Embeddings), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.Documents) > 0 && len(request.Documents) != len(request.IDs) {
-		return errors.New("documents must have same length as ids when provided")
+	if err := validateOptionalLength("documents", len(request.Documents), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
-		return errors.New("uris must have same length as ids when provided")
+	if err := validateOptionalLength("uris", len(request.URIs), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.Embeddings) == 0 && len(request.Documents) == 0 && len(request.URIs) == 0 {
-		return errors.New("at least one of embeddings, documents, or uris must be provided")
+	if err := validateOptionalLength("metadatas", len(request.Metadatas), len(request.IDs)); err != nil {
+		return err
 	}
+	if len(request.Embeddings) == 0 && len(request.Documents) == 0 && len(request.URIs) == 0 && len(request.Metadatas) == 0 {
+		return errors.New("at least one of embeddings, documents, uris, or metadatas must be provided")
+	}
+	normalizedMetadatas, err := validateAndNormalizeMetadatas(request.Metadatas, true)
+	if err != nil {
+		return errors.Wrap(err, "invalid metadatas")
+	}
+	request.Metadatas = normalizedMetadatas
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
 		return err
 	}
 
-	rc := chromaEmbeddedUpdate(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedUpdate(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // UpsertRecords upserts records by id.
 func (e *Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -848,28 +1058,44 @@ func (e *Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error {
 	if len(request.IDs) != len(request.Embeddings) {
 		return errors.New("ids and embeddings must have same length")
 	}
-	if len(request.Documents) > 0 && len(request.Documents) != len(request.IDs) {
-		return errors.New("documents must have same length as ids when provided")
+	if err := validateOptionalLength("documents", len(request.Documents), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
-		return errors.New("uris must have same length as ids when provided")
+	if err := validateOptionalLength("uris", len(request.URIs), len(request.IDs)); err != nil {
+		return err
 	}
+	if err := validateOptionalLength("metadatas", len(request.Metadatas), len(request.IDs)); err != nil {
+		return err
+	}
+	normalizedMetadatas, err := validateAndNormalizeMetadatas(request.Metadatas, true)
+	if err != nil {
+		return errors.Wrap(err, "invalid metadatas")
+	}
+	request.Metadatas = normalizedMetadatas
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
 		return err
 	}
 
-	rc := chromaEmbeddedUpsert(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedUpsert(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // DeleteRecords deletes records by ids and/or filters.
 func (e *Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -884,16 +1110,24 @@ func (e *Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error {
 		return err
 	}
 
-	rc := chromaEmbeddedDeleteRecords(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedDeleteRecords(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // CreateCollection creates a collection and returns a compact response object.
 func (e *Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*EmbeddedCollection, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.Name) == "" {
@@ -905,9 +1139,9 @@ func (e *Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*E
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedCreateCollection(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedCreateCollection(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -920,7 +1154,15 @@ func (e *Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*E
 
 // Add adds records into an existing collection.
 func (e *Embedded) Add(request EmbeddedAddRequest) error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -935,28 +1177,44 @@ func (e *Embedded) Add(request EmbeddedAddRequest) error {
 	if len(request.IDs) != len(request.Embeddings) {
 		return errors.New("ids and embeddings must have same length")
 	}
-	if len(request.Documents) > 0 && len(request.Documents) != len(request.IDs) {
-		return errors.New("documents must have same length as ids when provided")
+	if err := validateOptionalLength("documents", len(request.Documents), len(request.IDs)); err != nil {
+		return err
 	}
-	if len(request.URIs) > 0 && len(request.URIs) != len(request.IDs) {
-		return errors.New("uris must have same length as ids when provided")
+	if err := validateOptionalLength("uris", len(request.URIs), len(request.IDs)); err != nil {
+		return err
 	}
+	if err := validateOptionalLength("metadatas", len(request.Metadatas), len(request.IDs)); err != nil {
+		return err
+	}
+	normalizedMetadatas, err := validateAndNormalizeMetadatas(request.Metadatas, false)
+	if err != nil {
+		return errors.Wrap(err, "invalid metadatas")
+	}
+	request.Metadatas = normalizedMetadatas
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
 		return err
 	}
 
-	rc := chromaEmbeddedAdd(e.handle, &requestBytes[0])
+	rc := chromaEmbeddedAdd(handle, &requestBytes[0])
 	if rc != Success {
-		return errorFromCode(rc, getLastError())
+		return errorFromCode(rc, getLastErrorUnlocked())
 	}
 	return nil
 }
 
 // Query runs nearest-neighbor search against a collection.
 func (e *Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error) {
-	if e == nil || e.handle == 0 {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+	handle := atomic.LoadUintptr(&e.handle)
+	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
 	}
 	if strings.TrimSpace(request.CollectionID) == "" {
@@ -971,9 +1229,9 @@ func (e *Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, 
 		return nil, err
 	}
 
-	respPtr := chromaEmbeddedQuery(e.handle, &requestBytes[0])
+	respPtr := chromaEmbeddedQuery(handle, &requestBytes[0])
 	if respPtr == nil {
-		return nil, errors.Wrap(ErrNullPointer, getLastError())
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
 	defer chromaStringFree(respPtr)
 
@@ -986,13 +1244,236 @@ func (e *Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, 
 
 // Close releases embedded mode resources.
 func (e *Embedded) Close() error {
-	if e == nil || e.handle == 0 {
+	if e == nil {
 		return nil
 	}
 
-	chromaEmbeddedFree(e.handle)
-	e.handle = 0
+	ffiMu.Lock()
+	defer ffiMu.Unlock()
+	defer runtime.KeepAlive(e)
+
+	handle := atomic.SwapUintptr(&e.handle, 0)
+	if handle == 0 {
+		return nil
+	}
+
+	chromaEmbeddedFree(handle)
 	return nil
+}
+
+func validateOptionalLength(field string, valueLen, idsLen int) error {
+	if valueLen > 0 && valueLen != idsLen {
+		return errors.Errorf("%s must have same length as ids when provided", field)
+	}
+	return nil
+}
+
+// metadataFloat64 preserves explicit floating-point representation in JSON.
+// This avoids ambiguous encoding of whole floats (for example 1.0 -> 1).
+type metadataFloat64 float64
+
+func (f metadataFloat64) MarshalJSON() ([]byte, error) {
+	v := float64(f)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, errors.New("float metadata values must be finite")
+	}
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	return []byte(s), nil
+}
+
+func validateAndNormalizeMetadatas(metadatas []map[string]any, allowNilValues bool) ([]map[string]any, error) {
+	if len(metadatas) == 0 {
+		return metadatas, nil
+	}
+
+	normalized := make([]map[string]any, len(metadatas))
+	for i, metadata := range metadatas {
+		if metadata == nil {
+			normalized[i] = nil
+			continue
+		}
+
+		normalizedMetadata := make(map[string]any, len(metadata))
+		for key, value := range metadata {
+			path := fmt.Sprintf("metadatas[%d].%s", i, key)
+			normalizedValue, err := normalizeMetadataValue(path, value, allowNilValues)
+			if err != nil {
+				return nil, err
+			}
+			normalizedMetadata[key] = normalizedValue
+		}
+		normalized[i] = normalizedMetadata
+	}
+
+	return normalized, nil
+}
+
+func normalizeMetadataValue(path string, value any, allowNil bool) (any, error) {
+	if value == nil {
+		if allowNil {
+			return nil, nil
+		}
+		return nil, errors.Errorf("%s cannot be null", path)
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Bool:
+		return rv.Bool(), nil
+	case reflect.String:
+		return rv.String(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		u := rv.Uint()
+		if u > uint64(^uint64(0)>>1) {
+			return nil, errors.Errorf("%s integer value %d exceeds int64 range", path, u)
+		}
+		return int64(u), nil
+	case reflect.Float32, reflect.Float64:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, errors.Errorf("%s float metadata values must be finite", path)
+		}
+		return metadataFloat64(f), nil
+	case reflect.Ptr:
+		if rv.IsNil() {
+			if allowNil {
+				return nil, nil
+			}
+			return nil, errors.Errorf("%s cannot be null", path)
+		}
+		return normalizeMetadataValue(path, rv.Elem().Interface(), allowNil)
+	case reflect.Slice, reflect.Array:
+		return normalizeMetadataSlice(path, rv)
+	case reflect.Map:
+		return nil, errors.Errorf("%s has unsupported metadata value type %T (nested objects are not supported)", path, value)
+	default:
+		return nil, errors.Errorf("%s has unsupported metadata value type %T", path, value)
+	}
+}
+
+func normalizeMetadataSlice(path string, rv reflect.Value) (any, error) {
+	if rv.Type().Elem().Kind() == reflect.Uint8 {
+		return nil, errors.Errorf("%s has unsupported metadata array type %s", path, rv.Type().String())
+	}
+
+	if rv.Len() == 0 {
+		switch rv.Type().Elem().Kind() {
+		case reflect.Bool:
+			return []bool{}, nil
+		case reflect.String:
+			return []string{}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return []int64{}, nil
+		case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return []int64{}, nil
+		case reflect.Float32, reflect.Float64:
+			return []metadataFloat64{}, nil
+		default:
+			return nil, errors.Errorf("%s cannot use empty arrays of type %s", path, rv.Type().String())
+		}
+	}
+
+	type scalarKind int
+	const (
+		scalarUnknown scalarKind = iota
+		scalarBool
+		scalarString
+		scalarInt
+		scalarFloat
+	)
+
+	kind := scalarUnknown
+	var bools []bool
+	var stringsOut []string
+	var ints []int64
+	var floats []metadataFloat64
+
+	for i := 0; i < rv.Len(); i++ {
+		itemPath := fmt.Sprintf("%s[%d]", path, i)
+		normalized, err := normalizeMetadataValue(itemPath, rv.Index(i).Interface(), false)
+		if err != nil {
+			return nil, err
+		}
+
+		switch v := normalized.(type) {
+		case bool:
+			if kind != scalarUnknown && kind != scalarBool {
+				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			kind = scalarBool
+			if bools == nil {
+				bools = make([]bool, 0, rv.Len())
+			}
+			bools = append(bools, v)
+		case string:
+			if kind != scalarUnknown && kind != scalarString {
+				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			kind = scalarString
+			if stringsOut == nil {
+				stringsOut = make([]string, 0, rv.Len())
+			}
+			stringsOut = append(stringsOut, v)
+		case int64:
+			if kind == scalarUnknown || kind == scalarInt {
+				kind = scalarInt
+				if ints == nil {
+					ints = make([]int64, 0, rv.Len())
+				}
+				ints = append(ints, v)
+				continue
+			}
+			if kind == scalarFloat {
+				if floats == nil {
+					floats = make([]metadataFloat64, 0, rv.Len())
+				}
+				floats = append(floats, metadataFloat64(float64(v)))
+				continue
+			}
+			return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+		case metadataFloat64:
+			if kind == scalarUnknown {
+				kind = scalarFloat
+			}
+			if kind == scalarInt {
+				if floats == nil {
+					floats = make([]metadataFloat64, 0, rv.Len())
+				}
+				for _, iv := range ints {
+					floats = append(floats, metadataFloat64(float64(iv)))
+				}
+				ints = nil
+				kind = scalarFloat
+			}
+			if kind != scalarFloat {
+				return nil, errors.Errorf("%s must be a homogeneous array of bool, int, float, or string", path)
+			}
+			if floats == nil {
+				floats = make([]metadataFloat64, 0, rv.Len())
+			}
+			floats = append(floats, v)
+		default:
+			return nil, errors.Errorf("%s has unsupported metadata array element type %T", itemPath, normalized)
+		}
+	}
+
+	switch kind {
+	case scalarBool:
+		return bools, nil
+	case scalarString:
+		return stringsOut, nil
+	case scalarInt:
+		return ints, nil
+	case scalarFloat:
+		return floats, nil
+	default:
+		return nil, errors.Errorf("%s has unsupported metadata array type %s", path, rv.Type().String())
+	}
 }
 
 func marshalRequestJSON(v any) ([]byte, error) {

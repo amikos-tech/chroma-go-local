@@ -19,7 +19,24 @@ func TestInitAndVersion(t *testing.T) {
 	if version == "" {
 		t.Fatal("Version returned empty string")
 	}
+
+	versionWithError, err := VersionWithError()
+	require.NoError(t, err)
+	require.Equal(t, version, versionWithError)
+
 	t.Logf("Chroma shim version: %s", version)
+}
+
+func TestVersionWithErrorWhenLibraryNotLoaded(t *testing.T) {
+	originalHandle := libHandle
+	libHandle = 0
+	t.Cleanup(func() {
+		libHandle = originalHandle
+	})
+
+	version, err := VersionWithError()
+	require.ErrorIs(t, err, ErrLibraryNotLoaded)
+	require.Empty(t, version)
 }
 
 func TestStartServerFromString(t *testing.T) {
@@ -61,6 +78,41 @@ allow_reset: true
 	}, 10*time.Second, 100*time.Millisecond, "server heartbeat did not become ready")
 
 	t.Log("Server is running and responding to heartbeat")
+}
+
+func TestStartServerFromStringReportsBindConflicts(t *testing.T) {
+	if err := Init(""); err != nil {
+		t.Fatalf("Failed to initialize: %v", err)
+	}
+
+	config := `
+port: 8766
+listen_address: "127.0.0.1"
+persist_path: "./chroma_test_data_bind_conflict"
+allow_reset: true
+`
+
+	firstServer, err := StartServer(StartServerConfig{
+		ConfigString: config,
+	})
+	require.NoError(t, err)
+	defer func() { _ = firstServer.Close() }()
+
+	require.Eventually(t, func() bool {
+		resp, err := http.Get("http://127.0.0.1:8766/api/v2/heartbeat")
+		if err != nil {
+			return false
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 10*time.Second, 100*time.Millisecond, "first server did not become ready")
+
+	_, err = StartServer(StartServerConfig{
+		ConfigString: config,
+	})
+	require.Error(t, err)
+	require.Contains(t, strings.ToLower(err.Error()), "startup")
 }
 
 func TestServerConfigToYAML(t *testing.T) {
