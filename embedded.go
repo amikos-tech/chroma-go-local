@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/pkg/errors"
@@ -22,7 +23,11 @@ const (
 
 // Embedded represents an in-process Chroma frontend (no HTTP server).
 type Embedded struct {
-	handle uintptr
+	stateMu sync.RWMutex
+
+	handle      uintptr
+	config      StartEmbeddedConfig
+	persistPath string
 }
 
 // StartEmbeddedConfig contains configuration options for starting embedded mode.
@@ -364,7 +369,22 @@ func StartEmbedded(config StartEmbeddedConfig) (*Embedded, error) {
 		return nil, nullPointerError(getLastErrorUnlocked())
 	}
 
-	embedded := &Embedded{handle: handle}
+	persistPathPtr := chromaEmbeddedPersistPath(handle)
+	persistPath := ""
+	if persistPathPtr != nil {
+		persistPath = goStringFromPtr(persistPathPtr)
+	}
+	resolvedPersistPath, persistPathErr := normalizePersistPath(persistPath)
+	if persistPathErr != nil {
+		chromaEmbeddedFree(handle)
+		return nil, errors.Wrap(persistPathErr, "failed to resolve persist path from runtime config")
+	}
+
+	embedded := &Embedded{
+		handle:      handle,
+		config:      config,
+		persistPath: resolvedPersistPath,
+	}
 	runtime.SetFinalizer(embedded, func(e *Embedded) {
 		_ = e.Close()
 	})
@@ -1247,6 +1267,8 @@ func (e *Embedded) Close() error {
 	if e == nil {
 		return nil
 	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()

@@ -28,6 +28,7 @@ Implemented server lifecycle APIs:
 - `(*Server).URL() string`
 - `(*Server).Stop() error`
 - `(*Server).Close() error`
+- `(*Server).Backup(options ServerBackupOptions) (*BackupManifest, error)`
 
 Example:
 
@@ -45,12 +46,28 @@ defer srv.Close()
 fmt.Println("running at", srv.URL())
 ```
 
+Server backup example:
+
+```go
+manifest, err := srv.Backup(chroma.ServerBackupOptions{
+    BackupOptions: chroma.BackupOptions{
+        DestinationPath: "./backups/server-2026-02-25",
+        IncludeMetadata: true,
+    },
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println("backup manifest:", manifest.ManifestPath)
+```
+
 ## 3. Embedded Mode API
 
 ### 3.1 Start and Stop
 
 - `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)`
 - `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)`
+- `(*Embedded).Backup(options EmbeddedBackupOptions) (*BackupManifest, error)`
 - `(*Embedded).Close() error`
 
 ```go
@@ -62,6 +79,21 @@ if err != nil {
     panic(err)
 }
 defer embedded.Close()
+```
+
+Embedded backup example:
+
+```go
+manifest, err := embedded.Backup(chroma.EmbeddedBackupOptions{
+    BackupOptions: chroma.BackupOptions{
+        DestinationPath: "./backups/embedded-2026-02-25",
+        IncludeMetadata: true,
+    },
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println("snapshot dir:", manifest.SnapshotPath)
 ```
 
 ### 3.2 Health and Runtime Status

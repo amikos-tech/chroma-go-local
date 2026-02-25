@@ -279,6 +279,7 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Server) URL() string` | Get the full server URL. |
 | `(*Server) Stop() error` | Gracefully stop the server. |
 | `(*Server) Close() error` | Stop and free resources. |
+| `(*Server) Backup(options ServerBackupOptions) (*BackupManifest, error)` | Snapshot persisted data with optional restart. |
 | `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
 | `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)` | Start embedded mode from YAML config. |
 | `(*Embedded) Heartbeat() (uint64, error)` | Read in-process heartbeat nanoseconds. |
@@ -307,7 +308,27 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
+| `(*Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error)` | Snapshot persisted data with optional reopen. |
 | `(*Embedded) Close() error` | Free embedded resources. |
+
+### Backup API
+
+Backup writes a consistent snapshot for either managed server mode or embedded mode:
+
+- destination directory: `<destination>/persist`
+- manifest file: `<destination>/backup_manifest.json`
+
+Options:
+
+- `BackupOptions`:
+  - `DestinationPath string` (required)
+  - `IncludeMetadata bool` (adds per-file metadata in the manifest)
+- `ServerBackupOptions`:
+  - embeds `BackupOptions`
+  - `LeaveStopped bool` (default flow restarts the server)
+- `EmbeddedBackupOptions`:
+  - embeds `BackupOptions`
+  - `LeaveClosed bool` (default flow reopens embedded mode)
 
 ### Metadata Value Rules (Embedded Record APIs)
 

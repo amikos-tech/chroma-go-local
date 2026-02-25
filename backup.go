@@ -1,0 +1,514 @@
+package chroma
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/pkg/errors"
+)
+
+const (
+	backupManifestFilename = "backup_manifest.json"
+	backupSnapshotDirname  = "persist"
+	backupSchemaVersion    = "v1"
+)
+
+// BackupMode identifies the runtime mode that produced a backup.
+type BackupMode string
+
+const (
+	BackupModeServer   BackupMode = "server"
+	BackupModeEmbedded BackupMode = "embedded"
+)
+
+// BackupOptions defines shared backup controls.
+type BackupOptions struct {
+	// DestinationPath is the target directory where backup data is written.
+	// The directory must not exist, or it must exist and be empty.
+	DestinationPath string
+	// IncludeMetadata includes per-file metadata in the generated manifest.
+	IncludeMetadata bool
+}
+
+// ServerBackupOptions defines backup behavior for managed server mode.
+type ServerBackupOptions struct {
+	BackupOptions
+	// LeaveStopped keeps the server stopped after backup. By default, Backup restarts it.
+	LeaveStopped bool
+}
+
+// EmbeddedBackupOptions defines backup behavior for embedded mode.
+type EmbeddedBackupOptions struct {
+	BackupOptions
+	// LeaveClosed keeps embedded mode closed after backup. By default, Backup reopens it.
+	LeaveClosed bool
+}
+
+// BackupFileMetadata captures metadata for a copied file.
+type BackupFileMetadata struct {
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"size_bytes"`
+	// Mode is a parseable POSIX permission string (for example "0644").
+	Mode       string    `json:"mode"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
+// BackupManifest describes a completed backup operation.
+type BackupManifest struct {
+	SchemaVersion   string               `json:"schema_version"`
+	Mode            BackupMode           `json:"mode"`
+	CreatedAt       time.Time            `json:"created_at"`
+	WrapperVersion  string               `json:"wrapper_version"`
+	SourcePaths     []string             `json:"source_paths"`
+	DestinationPath string               `json:"destination_path"`
+	SnapshotPath    string               `json:"snapshot_path"`
+	ManifestPath    string               `json:"manifest_path"`
+	IncludeMetadata bool                 `json:"include_metadata"`
+	FileCount       int                  `json:"file_count"`
+	TotalBytes      int64                `json:"total_bytes"`
+	Files           []BackupFileMetadata `json:"files,omitempty"`
+}
+
+type backupPlan struct {
+	sourcePersistPath string
+	sourcePathExists  bool
+	sourcePaths       []string
+	destinationPath   string
+	includeMetadata   bool
+	wrapperVersion    string
+}
+
+// Backup stops the server, snapshots its persistence directory, writes a manifest,
+// and restarts the server unless LeaveStopped is true.
+func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
+	if s == nil {
+		return nil, ErrServerNotStarted
+	}
+	config, persistPath, err := s.snapshotBackupInputs()
+	if err != nil {
+		return nil, err
+	}
+
+	plan, err := newBackupPlan(persistPath, config.ConfigPath, options.BackupOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.Close(); err != nil {
+		return nil, err
+	}
+
+	manifest, backupErr := executeBackup(BackupModeServer, plan)
+	if options.LeaveStopped {
+		return manifest, backupErr
+	}
+
+	restartErr := s.restartFromConfig(config)
+	switch {
+	case backupErr != nil && restartErr != nil:
+		return nil, fmt.Errorf("%w; restart failed: %v", backupErr, restartErr)
+	case backupErr != nil:
+		return nil, backupErr
+	case restartErr != nil:
+		return manifest, errors.Wrap(restartErr, "backup completed but server restart failed")
+	default:
+		return manifest, nil
+	}
+}
+
+// Backup closes embedded mode, snapshots its persistence directory, writes a
+// manifest, and reopens embedded mode unless LeaveClosed is true.
+func (e *Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error) {
+	if e == nil {
+		return nil, ErrEmbeddedNotStarted
+	}
+	config, persistPath, err := e.snapshotBackupInputs()
+	if err != nil {
+		return nil, err
+	}
+
+	plan, err := newBackupPlan(persistPath, config.ConfigPath, options.BackupOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := e.Close(); err != nil {
+		return nil, err
+	}
+
+	manifest, backupErr := executeBackup(BackupModeEmbedded, plan)
+	if options.LeaveClosed {
+		return manifest, backupErr
+	}
+
+	reopenErr := e.reopenFromConfig(config)
+	switch {
+	case backupErr != nil && reopenErr != nil:
+		return nil, fmt.Errorf("%w; reopen failed: %v", backupErr, reopenErr)
+	case backupErr != nil:
+		return nil, backupErr
+	case reopenErr != nil:
+		return manifest, errors.Wrap(reopenErr, "backup completed but embedded reopen failed")
+	default:
+		return manifest, nil
+	}
+}
+
+func (s *Server) restartFromConfig(config StartServerConfig) error {
+	restarted, err := StartServer(config)
+	if err != nil {
+		return err
+	}
+
+	handle := atomic.SwapUintptr(&restarted.handle, 0)
+	runtime.SetFinalizer(restarted, nil)
+	atomic.StoreUintptr(&s.handle, handle)
+	s.stateMu.Lock()
+	s.port = restarted.port
+	s.addr = restarted.addr
+	s.config = restarted.config
+	s.persistPath = restarted.persistPath
+	s.stateMu.Unlock()
+	runtime.KeepAlive(restarted)
+	return nil
+}
+
+func (e *Embedded) reopenFromConfig(config StartEmbeddedConfig) error {
+	restarted, err := StartEmbedded(config)
+	if err != nil {
+		return err
+	}
+
+	handle := atomic.SwapUintptr(&restarted.handle, 0)
+	runtime.SetFinalizer(restarted, nil)
+	atomic.StoreUintptr(&e.handle, handle)
+	e.stateMu.Lock()
+	e.config = restarted.config
+	e.persistPath = restarted.persistPath
+	e.stateMu.Unlock()
+	runtime.KeepAlive(restarted)
+	return nil
+}
+
+func (s *Server) snapshotBackupInputs() (StartServerConfig, string, error) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+
+	if atomic.LoadUintptr(&s.handle) == 0 {
+		return StartServerConfig{}, "", ErrServerNotStarted
+	}
+	return s.config, s.persistPath, nil
+}
+
+func (e *Embedded) snapshotBackupInputs() (StartEmbeddedConfig, string, error) {
+	e.stateMu.RLock()
+	defer e.stateMu.RUnlock()
+
+	if atomic.LoadUintptr(&e.handle) == 0 {
+		return StartEmbeddedConfig{}, "", ErrEmbeddedNotStarted
+	}
+	return e.config, e.persistPath, nil
+}
+
+func newBackupPlan(persistPath, configPath string, options BackupOptions) (*backupPlan, error) {
+	dest := strings.TrimSpace(options.DestinationPath)
+	if dest == "" {
+		return nil, errors.New("destination_path is required")
+	}
+	destAbs, err := filepath.Abs(dest)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to resolve destination path")
+	}
+
+	sourceAbs, err := normalizePersistPath(persistPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to resolve source persist path")
+	}
+	sourceResolved, err := resolvePathForContainment(sourceAbs)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to canonicalize source persist path")
+	}
+	sourcePathExists, err := inspectSourcePath(sourceResolved)
+	if err != nil {
+		return nil, err
+	}
+
+	snapshotPath := filepath.Join(destAbs, backupSnapshotDirname)
+	snapshotResolved, err := resolvePathForContainment(snapshotPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to canonicalize destination snapshot path")
+	}
+	if isWithinPath(snapshotResolved, sourceResolved) {
+		return nil, errors.Errorf("destination path %q cannot be inside source persist path %q", destAbs, sourceAbs)
+	}
+
+	version, err := VersionWithError()
+	if err != nil {
+		version = "unknown"
+	}
+
+	sourcePaths := []string{sourceResolved}
+	if configPath != "" {
+		configAbs, cfgErr := filepath.Abs(configPath)
+		if cfgErr == nil {
+			sourcePaths = append(sourcePaths, filepath.Clean(configAbs))
+		} else {
+			sourcePaths = append(sourcePaths, filepath.Clean(configPath))
+		}
+	}
+
+	return &backupPlan{
+		sourcePersistPath: sourceResolved,
+		sourcePathExists:  sourcePathExists,
+		sourcePaths:       sourcePaths,
+		destinationPath:   filepath.Clean(destAbs),
+		includeMetadata:   options.IncludeMetadata,
+		wrapperVersion:    version,
+	}, nil
+}
+
+func inspectSourcePath(sourcePath string) (bool, error) {
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, errors.Wrap(err, "failed to inspect source persist path")
+	}
+	if !info.IsDir() {
+		return false, errors.Errorf("source persist path %q must be a directory", sourcePath)
+	}
+	return true, nil
+}
+
+func executeBackup(mode BackupMode, plan *backupPlan) (*BackupManifest, error) {
+	if err := ensureEmptyDir(plan.destinationPath); err != nil {
+		return nil, err
+	}
+
+	snapshotPath := filepath.Join(plan.destinationPath, backupSnapshotDirname)
+	fileCount := 0
+	totalBytes := int64(0)
+	files := []BackupFileMetadata(nil)
+	if plan.sourcePathExists {
+		var copyErr error
+		fileCount, totalBytes, files, copyErr = copyDirectory(plan.sourcePersistPath, snapshotPath, plan.includeMetadata)
+		if copyErr != nil {
+			return nil, copyErr
+		}
+	} else if err := os.MkdirAll(snapshotPath, 0o755); err != nil {
+		return nil, errors.Wrap(err, "failed to create backup snapshot directory")
+	}
+
+	manifestPath := filepath.Join(plan.destinationPath, backupManifestFilename)
+	manifest := &BackupManifest{
+		SchemaVersion:   backupSchemaVersion,
+		Mode:            mode,
+		CreatedAt:       time.Now().UTC(),
+		WrapperVersion:  plan.wrapperVersion,
+		SourcePaths:     plan.sourcePaths,
+		DestinationPath: plan.destinationPath,
+		SnapshotPath:    snapshotPath,
+		ManifestPath:    manifestPath,
+		IncludeMetadata: plan.includeMetadata,
+		FileCount:       fileCount,
+		TotalBytes:      totalBytes,
+		Files:           files,
+	}
+
+	if err := writeManifest(manifest); err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+func writeManifest(manifest *BackupManifest) error {
+	payload, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return errors.Wrap(err, "failed to encode backup manifest")
+	}
+	payload = append(payload, '\n')
+	if err := os.WriteFile(manifest.ManifestPath, payload, 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backup manifest")
+	}
+	return nil
+}
+
+func ensureEmptyDir(path string) error {
+	info, err := os.Stat(path)
+	switch {
+	case os.IsNotExist(err):
+		return os.MkdirAll(path, 0o755)
+	case err != nil:
+		return errors.Wrap(err, "failed to inspect destination path")
+	case !info.IsDir():
+		return errors.Errorf("destination path %q must be a directory", path)
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return errors.Wrap(err, "failed to inspect destination directory contents")
+	}
+	if len(entries) > 0 {
+		return errors.Errorf("destination path %q must be empty", path)
+	}
+	return nil
+}
+
+func copyDirectory(sourceDir, destinationDir string, includeMetadata bool) (int, int64, []BackupFileMetadata, error) {
+	if err := os.MkdirAll(destinationDir, 0o755); err != nil {
+		return 0, 0, nil, errors.Wrap(err, "failed to create backup snapshot directory")
+	}
+
+	fileCount := 0
+	totalBytes := int64(0)
+	files := []BackupFileMetadata(nil)
+
+	err := filepath.WalkDir(sourceDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		rel, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		destPath := filepath.Join(destinationDir, rel)
+
+		if entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(destPath, info.Mode().Perm()); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		if entry.Type()&os.ModeSymlink != 0 {
+			return errors.Errorf("backup does not support symbolic links: %q", path)
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if err := copyFile(path, destPath, info); err != nil {
+			return err
+		}
+
+		fileCount++
+		totalBytes += info.Size()
+		if includeMetadata {
+			files = append(files, BackupFileMetadata{
+				Path:       filepath.ToSlash(rel),
+				SizeBytes:  info.Size(),
+				Mode:       fmt.Sprintf("%#o", uint32(info.Mode().Perm())),
+				ModifiedAt: info.ModTime().UTC(),
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(err, "failed to copy persistence directory")
+	}
+
+	return fileCount, totalBytes, files, nil
+}
+
+func copyFile(sourcePath, destinationPath string, info os.FileInfo) error {
+	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+		return err
+	}
+
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sourceFile.Close() }()
+
+	destinationFile, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = destinationFile.Close() }()
+
+	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+		return err
+	}
+	if err := destinationFile.Sync(); err != nil {
+		return err
+	}
+	return os.Chtimes(destinationPath, info.ModTime(), info.ModTime())
+}
+
+func normalizePersistPath(path string) (string, error) {
+	cleaned := strings.TrimSpace(path)
+	if cleaned == "" {
+		return "", errors.New("persist path is empty")
+	}
+
+	absPath, err := filepath.Abs(cleaned)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to resolve persist path")
+	}
+	return filepath.Clean(absPath), nil
+}
+
+func resolvePathForContainment(path string) (string, error) {
+	absPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", errors.Wrap(err, "failed to resolve path")
+	}
+
+	resolved, err := evalSymlinksWithMissingSegments(absPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func evalSymlinksWithMissingSegments(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", errors.Wrap(err, "failed to evaluate symlinks")
+	}
+
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path, nil
+	}
+
+	resolvedParent, err := evalSymlinksWithMissingSegments(parent)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(resolvedParent, filepath.Base(path)), nil
+}
+
+func isWithinPath(path, parent string) bool {
+	rel, err := filepath.Rel(parent, path)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	prefix := ".." + string(filepath.Separator)
+	return rel != ".." && !strings.HasPrefix(rel, prefix)
+}

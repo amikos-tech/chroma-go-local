@@ -130,6 +130,7 @@ struct ServerHandle {
     shutdown_tx: Option<oneshot::Sender<()>>,
     port: u16,
     listen_address: CString,
+    persist_path: CString,
 }
 
 struct EmbeddedHandle {
@@ -137,6 +138,7 @@ struct EmbeddedHandle {
     frontend: Mutex<Frontend>,
     _system: System,
     _registry: Registry,
+    persist_path: CString,
 }
 
 #[derive(Debug, Deserialize)]
@@ -849,6 +851,13 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
             return ptr::null_mut();
         }
     };
+    let persist_path = match CString::new(resolved_config.persist_path.clone()) {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error("persist_path contains null byte");
+            return ptr::null_mut();
+        }
+    };
 
     // Use unit type () which implements both AuthenticateAndAuthorize and QuotaEnforcer.
     let auth: Arc<dyn chroma_frontend::auth::AuthenticateAndAuthorize> = Arc::new(());
@@ -894,6 +903,7 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
         shutdown_tx: Some(shutdown_tx),
         port,
         listen_address,
+        persist_path,
     });
 
     Box::into_raw(handle) as *mut c_void
@@ -929,6 +939,23 @@ pub unsafe extern "C" fn chroma_server_address(handle: *mut c_void) -> *const c_
         }
         let server = &*(handle as *const ServerHandle);
         server.listen_address.as_ptr()
+    })
+}
+
+/// Get the effective persist path used by the server runtime.
+/// Returns NULL on invalid handle.
+/// The returned string is valid until the handle is freed.
+///
+/// # Safety
+/// `handle` must be a valid handle from `chroma_server_start*` or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_server_persist_path(handle: *mut c_void) -> *const c_char {
+    ffi_guard_ptr_const!({
+        if handle.is_null() {
+            return ptr::null();
+        }
+        let server = &*(handle as *const ServerHandle);
+        server.persist_path.as_ptr()
     })
 }
 
@@ -1046,6 +1073,13 @@ fn start_embedded_with_config(config: FrontendServerConfig) -> *mut c_void {
             return ptr::null_mut();
         }
     };
+    let persist_path = match CString::new(resolved_config.persist_path.clone()) {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error("persist_path contains null byte");
+            return ptr::null_mut();
+        }
+    };
 
     let system = System::new();
     let registry = Registry::new();
@@ -1069,6 +1103,7 @@ fn start_embedded_with_config(config: FrontendServerConfig) -> *mut c_void {
         frontend: Mutex::new(frontend),
         _system: system,
         _registry: registry,
+        persist_path,
     });
 
     Box::into_raw(handle) as *mut c_void
@@ -1085,6 +1120,23 @@ pub unsafe extern "C" fn chroma_embedded_free(handle: *mut c_void) {
         if !handle.is_null() {
             let _ = Box::from_raw(handle as *mut EmbeddedHandle);
         }
+    })
+}
+
+/// Get the effective persist path used by embedded runtime.
+/// Returns NULL on invalid handle.
+/// The returned string is valid until the handle is freed.
+///
+/// # Safety
+/// `handle` must be a valid handle from `chroma_embedded_start*` or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_persist_path(handle: *mut c_void) -> *const c_char {
+    ffi_guard_ptr_const!({
+        if handle.is_null() {
+            return ptr::null();
+        }
+        let embedded = &*(handle as *const EmbeddedHandle);
+        embedded.persist_path.as_ptr()
     })
 }
 
