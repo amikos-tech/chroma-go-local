@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -114,6 +115,7 @@ func TestServerBackupRejectsNonEmptyDestinationWithoutStoppingServer(t *testing.
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Close() })
+	originalHandle := atomic.LoadUintptr(&server.handle)
 
 	requireServerHeartbeat(t, server.URL())
 
@@ -128,8 +130,9 @@ func TestServerBackupRejectsNonEmptyDestinationWithoutStoppingServer(t *testing.
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must be empty")
+	require.Equal(t, originalHandle, atomic.LoadUintptr(&server.handle))
 
-	// Backup should recover server availability after restart.
+	// Validation should fail before closing the server.
 	requireServerHeartbeat(t, server.URL())
 }
 
@@ -463,6 +466,35 @@ func TestNewBackupPlanRejectsSymlinkDestinationInsideSource(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot be inside source persist path")
+}
+
+func TestExecuteBackupCreatesEmptySnapshotWhenSourceMissing(t *testing.T) {
+	destinationPath := filepath.Join(t.TempDir(), "backup-destination")
+	plan := &backupPlan{
+		sourcePersistPath: filepath.Join(t.TempDir(), "missing-persist"),
+		sourcePathExists:  false,
+		sourcePaths:       []string{"missing"},
+		destinationPath:   destinationPath,
+		includeMetadata:   false,
+		wrapperVersion:    "test",
+	}
+
+	require.NoError(t, ensureEmptyDir(destinationPath))
+
+	manifest, err := executeBackup(BackupModeServer, plan)
+	require.NoError(t, err)
+	require.NotNil(t, manifest)
+	require.Equal(t, 0, manifest.FileCount)
+	require.Zero(t, manifest.TotalBytes)
+
+	info, err := os.Stat(filepath.Join(destinationPath, backupSnapshotDirname))
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+}
+
+func TestIsWithinPathReturnsErrorForMixedPathTypes(t *testing.T) {
+	_, err := isWithinPath("/tmp/a", "relative-parent")
+	require.Error(t, err)
 }
 
 func TestServerCloseWaitsForStateLock(t *testing.T) {

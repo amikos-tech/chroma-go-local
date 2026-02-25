@@ -255,14 +255,22 @@ func StartServer(config StartServerConfig) (*Server, error) {
 
 	resolvedPersistPath, persistPathErr := normalizePersistPath(persistPath)
 	if persistPathErr != nil {
+		baseErr := errors.Wrap(persistPathErr, "failed to resolve persist path from runtime config")
+
 		ffiMu.Lock()
 		stopRC := chromaServerStop(handle)
+		stopErrMsg := ""
 		if stopRC != Success {
-			_ = getLastErrorUnlocked()
+			stopErrMsg = getLastErrorUnlocked()
 		}
 		chromaServerFree(handle)
 		ffiMu.Unlock()
-		return nil, errors.Wrap(persistPathErr, "failed to resolve persist path from runtime config")
+
+		if stopRC != Success {
+			stopErr := errorFromCode(stopRC, stopErrMsg)
+			return nil, fmt.Errorf("%w; cleanup stop failed: %v", baseErr, stopErr)
+		}
+		return nil, baseErr
 	}
 
 	server := &Server{

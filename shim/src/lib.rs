@@ -60,13 +60,23 @@ static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 fn set_last_error(msg: &str) {
     let sanitized = msg.replace('\0', "\\0");
-    if let Ok(mut slot) = LAST_ERROR.lock() {
-        *slot = Some(sanitized);
+    match LAST_ERROR.lock() {
+        Ok(mut slot) => {
+            *slot = Some(sanitized);
+        }
+        Err(poisoned) => {
+            // Preserve error reporting even after an earlier panic poisoned the mutex.
+            let mut slot = poisoned.into_inner();
+            *slot = Some(sanitized);
+        }
     }
 }
 
 fn last_error_cstring() -> Option<CString> {
-    let slot = LAST_ERROR.lock().ok()?;
+    let slot = match LAST_ERROR.lock() {
+        Ok(slot) => slot,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     let msg = slot.as_ref()?;
     CString::new(msg.as_str()).ok()
 }

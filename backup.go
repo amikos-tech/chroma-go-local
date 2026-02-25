@@ -86,7 +86,7 @@ type backupPlan struct {
 	wrapperVersion    string
 }
 
-// Backup stops the server, snapshots its persistence directory, writes a manifest,
+// Backup closes the server, snapshots its persistence directory, writes a manifest,
 // and restarts the server unless LeaveStopped is true.
 func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
 	if s == nil {
@@ -99,6 +99,9 @@ func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
 
 	plan, err := newBackupPlan(persistPath, config.ConfigPath, options.BackupOptions)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureEmptyDir(plan.destinationPath); err != nil {
 		return nil, err
 	}
 
@@ -139,6 +142,9 @@ func (e *Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureEmptyDir(plan.destinationPath); err != nil {
+		return nil, err
+	}
 
 	if err := e.Close(); err != nil {
 		return nil, err
@@ -170,12 +176,12 @@ func (s *Server) restartFromConfig(config StartServerConfig) error {
 
 	handle := atomic.SwapUintptr(&restarted.handle, 0)
 	runtime.SetFinalizer(restarted, nil)
-	atomic.StoreUintptr(&s.handle, handle)
 	s.stateMu.Lock()
 	s.port = restarted.port
 	s.addr = restarted.addr
 	s.config = restarted.config
 	s.persistPath = restarted.persistPath
+	atomic.StoreUintptr(&s.handle, handle)
 	s.stateMu.Unlock()
 	runtime.KeepAlive(restarted)
 	return nil
@@ -189,10 +195,10 @@ func (e *Embedded) reopenFromConfig(config StartEmbeddedConfig) error {
 
 	handle := atomic.SwapUintptr(&restarted.handle, 0)
 	runtime.SetFinalizer(restarted, nil)
-	atomic.StoreUintptr(&e.handle, handle)
 	e.stateMu.Lock()
 	e.config = restarted.config
 	e.persistPath = restarted.persistPath
+	atomic.StoreUintptr(&e.handle, handle)
 	e.stateMu.Unlock()
 	runtime.KeepAlive(restarted)
 	return nil
@@ -246,7 +252,11 @@ func newBackupPlan(persistPath, configPath string, options BackupOptions) (*back
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to canonicalize destination snapshot path")
 	}
-	if isWithinPath(snapshotResolved, sourceResolved) {
+	insideSource, withinErr := isWithinPath(snapshotResolved, sourceResolved)
+	if withinErr != nil {
+		return nil, errors.Wrap(withinErr, "failed to validate destination path containment")
+	}
+	if insideSource {
 		return nil, errors.Errorf("destination path %q cannot be inside source persist path %q", destAbs, sourceAbs)
 	}
 
@@ -290,10 +300,6 @@ func inspectSourcePath(sourcePath string) (bool, error) {
 }
 
 func executeBackup(mode BackupMode, plan *backupPlan) (*BackupManifest, error) {
-	if err := ensureEmptyDir(plan.destinationPath); err != nil {
-		return nil, err
-	}
-
 	snapshotPath := filepath.Join(plan.destinationPath, backupSnapshotDirname)
 	fileCount := 0
 	totalBytes := int64(0)
@@ -443,12 +449,16 @@ func copyFile(sourcePath, destinationPath string, info os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = destinationFile.Close() }()
 
 	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+		_ = destinationFile.Close()
 		return err
 	}
 	if err := destinationFile.Sync(); err != nil {
+		_ = destinationFile.Close()
+		return err
+	}
+	if err := destinationFile.Close(); err != nil {
 		return err
 	}
 	return os.Chtimes(destinationPath, info.ModTime(), info.ModTime())
@@ -501,14 +511,14 @@ func evalSymlinksWithMissingSegments(path string) (string, error) {
 	return filepath.Join(resolvedParent, filepath.Base(path)), nil
 }
 
-func isWithinPath(path, parent string) bool {
+func isWithinPath(path, parent string) (bool, error) {
 	rel, err := filepath.Rel(parent, path)
 	if err != nil {
-		return false
+		return false, err
 	}
 	if rel == "." {
-		return true
+		return true, nil
 	}
 	prefix := ".." + string(filepath.Separator)
-	return rel != ".." && !strings.HasPrefix(rel, prefix)
+	return rel != ".." && !strings.HasPrefix(rel, prefix), nil
 }
