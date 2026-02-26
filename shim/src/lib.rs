@@ -12,13 +12,14 @@ use chroma_frontend::frontend_service_entrypoint_with_config_system_registry;
 use chroma_frontend::Frontend;
 use chroma_system::System;
 use chroma_types::{
-    AddCollectionRecordsRequest, CollectionConfiguration, CollectionUuid, CountCollectionsRequest,
-    CountRequest, CreateCollectionRequest, CreateDatabaseRequest, CreateTenantRequest,
-    DatabaseName, DeleteCollectionRecordsRequest, DeleteCollectionRequest, DeleteDatabaseRequest,
-    ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest, GetRequest, GetTenantRequest,
-    IncludeList, ListCollectionsRequest, ListDatabasesRequest, Metadata, QueryRequest,
-    RawWhereFields, Schema, UpdateCollectionRecordsRequest, UpdateCollectionRequest,
-    UpdateMetadata, UpdateTenantRequest, UpsertCollectionRecordsRequest, Where,
+    AddCollectionRecordsRequest, CollectionConfiguration, CollectionMetadataUpdate, CollectionUuid,
+    CountCollectionsRequest, CountRequest, CreateCollectionRequest, CreateDatabaseRequest,
+    CreateTenantRequest, DatabaseName, DeleteCollectionRecordsRequest, DeleteCollectionRequest,
+    DeleteDatabaseRequest, ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest,
+    GetRequest, GetTenantRequest, IncludeList, ListCollectionsRequest, ListDatabasesRequest,
+    Metadata, QueryRequest, RawWhereFields, Schema, UpdateCollectionRecordsRequest,
+    UpdateCollectionRequest, UpdateMetadata, UpdateTenantRequest, UpsertCollectionRecordsRequest,
+    Where,
 };
 use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
@@ -466,7 +467,10 @@ struct EmbeddedUpdateCollectionPayload {
     #[serde(default)]
     database_name: Option<String>,
     collection_id: String,
-    new_name: String,
+    #[serde(default)]
+    new_name: Option<String>,
+    #[serde(default)]
+    new_metadata: Option<UpdateMetadata>,
 }
 
 impl EmbeddedUpdateCollectionPayload {
@@ -474,11 +478,17 @@ impl EmbeddedUpdateCollectionPayload {
         let database_name = self.database_name.map(parse_database_name).transpose()?;
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
+        if self.new_name.is_none() && self.new_metadata.is_none() {
+            return Err("at least one of new_name or new_metadata is required".to_string());
+        }
+        let new_metadata = self
+            .new_metadata
+            .map(CollectionMetadataUpdate::UpdateMetadata);
         UpdateCollectionRequest::try_new(
             database_name,
             collection_id,
-            Some(self.new_name),
-            None,
+            self.new_name,
+            new_metadata,
             None,
         )
         .map_err(|e| e.to_string())
@@ -2774,6 +2784,55 @@ allow_reset: true
             .into_request()
             .expect_err("payload should fail when schema payload is invalid");
         assert!(err.contains("invalid schema payload"));
+    }
+
+    #[test]
+    fn test_update_collection_payload_accepts_new_metadata_without_name() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "new_metadata": {
+                "owner": "qa",
+                "version": 2,
+                "deprecated": null
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.new_name.is_none());
+        assert!(matches!(
+            request.new_metadata,
+            Some(CollectionMetadataUpdate::UpdateMetadata(_))
+        ));
+    }
+
+    #[test]
+    fn test_update_collection_payload_requires_name_or_metadata() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001"
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail without update fields");
+        assert!(err.contains("at least one of new_name or new_metadata is required"));
+    }
+
+    #[test]
+    fn test_update_collection_payload_rejects_invalid_new_metadata() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "new_metadata": {
+                "$reserved": "bad"
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail for invalid metadata key");
+        assert!(err.to_lowercase().contains("metadata"));
     }
 
     #[test]

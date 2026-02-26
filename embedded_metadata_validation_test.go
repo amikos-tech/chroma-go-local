@@ -203,6 +203,88 @@ func TestCreateCollectionWrapsMarshalErrors(t *testing.T) {
 	require.Contains(t, err.Error(), "create collection request")
 }
 
+func TestUpdateCollectionRequiresNameOrMetadata(t *testing.T) {
+	fakeEmbedded := &Embedded{handle: 1}
+
+	err := fakeEmbedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: "collection-id",
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "at least one of new_name or new_metadata is required")
+}
+
+func TestUpdateCollectionRejectsEmptyNewMetadata(t *testing.T) {
+	fakeEmbedded := &Embedded{handle: 1}
+
+	err := fakeEmbedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: "collection-id",
+		NewMetadata:  map[string]any{},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "new_metadata must not be empty")
+}
+
+func TestUpdateCollectionRejectsInvalidNewMetadata(t *testing.T) {
+	fakeEmbedded := &Embedded{handle: 1}
+
+	err := fakeEmbedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: "collection-id",
+		NewMetadata: map[string]any{
+			"nested": map[string]any{"unsupported": true},
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid new_metadata")
+	require.Contains(t, err.Error(), "nested objects are not supported")
+}
+
+func TestUpdateCollectionValidNewMetadataIsSerialized(t *testing.T) {
+	originalUpdate := chromaEmbeddedUpdateCollection
+	defer func() { chromaEmbeddedUpdateCollection = originalUpdate }()
+
+	var capturedPayload string
+	chromaEmbeddedUpdateCollection = func(_ uintptr, requestJSON *byte) int32 {
+		capturedPayload = goStringFromPtr(requestJSON)
+		return Success
+	}
+
+	embedded := &Embedded{handle: 1}
+	err := embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: "00000000-0000-0000-0000-000000000001",
+		NewMetadata: map[string]any{
+			"owner":      "qa",
+			"score":      1.0,
+			"levels":     []int{1, 2},
+			"deprecated": nil,
+		},
+	})
+	require.NoError(t, err)
+
+	var payload struct {
+		NewMetadata map[string]any `json:"new_metadata"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(capturedPayload), &payload))
+	require.NotNil(t, payload.NewMetadata)
+
+	require.Equal(t, "qa", payload.NewMetadata["owner"])
+	score, ok := payload.NewMetadata["score"].(float64)
+	require.True(t, ok)
+	require.Equal(t, 1.0, score)
+
+	levelsRaw, ok := payload.NewMetadata["levels"]
+	require.True(t, ok)
+	levels, ok := levelsRaw.([]any)
+	require.True(t, ok)
+	require.Equal(t, []any{1.0, 2.0}, levels)
+
+	deprecated, ok := payload.NewMetadata["deprecated"]
+	require.True(t, ok)
+	require.Nil(t, deprecated)
+}
+
 func TestCreateCollectionValidMetadataIsSerialized(t *testing.T) {
 	originalCreate := chromaEmbeddedCreateCollection
 	originalStringFree := chromaStringFree

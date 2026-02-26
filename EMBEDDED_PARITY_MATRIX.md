@@ -36,7 +36,7 @@ Legend:
 | List collections | done | `(*Embedded).ListCollections()` |
 | Get collection | done | `(*Embedded).GetCollection()` |
 | Count collections | done | `(*Embedded).CountCollections()` |
-| Update collection | done | `(*Embedded).UpdateCollection()` (rename-focused) |
+| Update collection | done | `(*Embedded).UpdateCollection()` (name and metadata updates) |
 | Delete collection | done | `(*Embedded).DeleteCollection()` |
 | Fork collection | done | `(*Embedded).ForkCollection()` (may return unimplemented on local Chroma backend) |
 

@@ -195,11 +195,12 @@ type EmbeddedCountCollectionsRequest struct {
 	DatabaseName string `json:"database_name,omitempty"`
 }
 
-// EmbeddedUpdateCollectionRequest renames a collection.
+// EmbeddedUpdateCollectionRequest updates collection properties.
 type EmbeddedUpdateCollectionRequest struct {
-	CollectionID string `json:"collection_id"`
-	NewName      string `json:"new_name"`
-	DatabaseName string `json:"database_name,omitempty"`
+	CollectionID string         `json:"collection_id"`
+	NewName      string         `json:"new_name,omitempty"`
+	NewMetadata  map[string]any `json:"new_metadata,omitempty"`
+	DatabaseName string         `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteCollectionRequest deletes a collection by name.
@@ -844,7 +845,7 @@ func (e *Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (ui
 	return count, nil
 }
 
-// UpdateCollection updates collection properties (currently supports rename).
+// UpdateCollection updates collection properties.
 func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error {
 	if e == nil {
 		return ErrEmbeddedNotStarted
@@ -860,13 +861,27 @@ func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) err
 	if strings.TrimSpace(request.CollectionID) == "" {
 		return errors.New("collection_id is required")
 	}
-	if strings.TrimSpace(request.NewName) == "" {
-		return errors.New("new_name is required")
+	hasNewName := strings.TrimSpace(request.NewName) != ""
+	hasNewMetadata := request.NewMetadata != nil
+	if !hasNewName && !hasNewMetadata {
+		return errors.New("at least one of new_name or new_metadata is required")
+	}
+	if hasNewMetadata && len(request.NewMetadata) == 0 {
+		return errors.New("new_metadata must not be empty when provided")
 	}
 
-	requestBytes, err := marshalRequestJSON(request)
+	requestPayload := request
+	if hasNewMetadata {
+		normalizedMetadata, err := validateAndNormalizeMetadata(request.NewMetadata, true)
+		if err != nil {
+			return errors.Wrap(err, "invalid new_metadata")
+		}
+		requestPayload.NewMetadata = normalizedMetadata
+	}
+
+	requestBytes, err := marshalRequestJSON(requestPayload)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "update collection request")
 	}
 
 	rc := chromaEmbeddedUpdateCollection(handle, &requestBytes[0])

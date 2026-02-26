@@ -269,6 +269,14 @@ fmt.Println(result.IDs)
 - `ConfigurationJSON` (JSON key: `configuration_json`)
 - `Schema`
 
+`EmbeddedUpdateCollectionRequest` fields:
+- `CollectionID`
+- `NewName` (optional)
+- `NewMetadata` (optional; nil values delete metadata keys)
+- `DatabaseName` (optional)
+
+At least one of `NewName` or `NewMetadata` is required.
+
 ### Configuration Options
 
 | Option | Description | Default |
@@ -336,7 +344,7 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error)` | List collections for a database (includes metadata/configuration_json/schema in each item). |
 | `(*Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error)` | Get a collection by name (includes metadata/configuration_json/schema). |
 | `(*Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (uint32, error)` | Count collections for a database. |
-| `(*Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error` | Update a collection (rename-focused). |
+| `(*Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error` | Update a collection name and/or metadata. |
 | `(*Embedded) DeleteCollection(request EmbeddedDeleteCollectionRequest) error` | Delete a collection by name. |
 | `(*Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error)` | Fork a collection (may be unimplemented in local mode). |
 | `(*Embedded) CountRecords(request EmbeddedCountRecordsRequest) (uint32, error)` | Count records for a collection. |

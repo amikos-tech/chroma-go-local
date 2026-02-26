@@ -169,7 +169,7 @@ fmt.Println("database:", db.Name)
 - `(*Embedded).ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error)`
 - `(*Embedded).GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error)`
 - `(*Embedded).CountCollections(request EmbeddedCountCollectionsRequest) (uint32, error)`
-- `(*Embedded).UpdateCollection(request EmbeddedUpdateCollectionRequest) error` (rename-focused)
+- `(*Embedded).UpdateCollection(request EmbeddedUpdateCollectionRequest) error` (name and/or metadata)
 - `(*Embedded).DeleteCollection(request EmbeddedDeleteCollectionRequest) error`
 - `(*Embedded).ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error)`
 
@@ -187,6 +187,14 @@ fmt.Println("database:", db.Name)
 - `Metadata`
 - `ConfigurationJSON` (JSON key `configuration_json`)
 - `Schema`
+
+`EmbeddedUpdateCollectionRequest` fields:
+- `CollectionID`
+- `NewName` (optional)
+- `NewMetadata map[string]any` (optional; nil values delete keys)
+- `DatabaseName` (optional)
+
+At least one of `NewName` or `NewMetadata` is required.
 
 ```go
 col, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
@@ -214,6 +222,15 @@ copyCol, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
 _ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
     CollectionID: col.ID,
     NewName:      "docs_v2",
+    DatabaseName: "my_db",
+})
+
+_ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
+    CollectionID: col.ID,
+    NewMetadata: map[string]any{
+        "owner": "platform",
+        "deprecated_field": nil, // delete key
+    },
     DatabaseName: "my_db",
 })
 
