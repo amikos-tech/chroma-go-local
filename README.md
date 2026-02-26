@@ -279,6 +279,7 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Server) URL() string` | Get the full server URL. |
 | `(*Server) Stop() error` | Gracefully stop the server. |
 | `(*Server) Close() error` | Stop and free resources. |
+| `(*Server) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional restart. |
 | `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
 | `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)` | Start embedded mode from YAML config. |
 | `(*Embedded) Heartbeat() (uint64, error)` | Read in-process heartbeat nanoseconds. |
@@ -307,7 +308,70 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
+| `(*Embedded) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional reopen. |
 | `(*Embedded) Close() error` | Free embedded resources. |
+
+### Backup API
+
+Backup writes a consistent snapshot for either managed server mode or embedded mode:
+
+- destination directory: `<destination>/persist`
+- manifest file: `<destination>/backup_manifest.json`
+
+Backup options:
+
+- `WithDestination(path string)` (required; must be provided exactly once)
+- `WithIncludeMetadata()` (optional; include per-file metadata in manifest)
+- `WithLeaveStopped()` (optional; server backups only)
+- `WithLeaveClosed()` (optional; embedded backups only)
+
+Backup validates all provided options before side effects (close/restart/reopen). Invalid or mode-incompatible options return an error.
+
+When `WithIncludeMetadata()` is used, each manifest file entry includes:
+- `path`
+- `size_bytes`
+- `mode` (octal string, for example `"0644"`)
+- `sha256` (hex-encoded SHA-256 of copied file bytes)
+- `modified_at`
+
+Constraints and error conditions:
+
+- `DestinationPath` must not exist or must be an empty directory.
+- `<destination>/persist` must not be inside the source persist path.
+  This containment check resolves symlinks.
+- Symlinks inside the source persist tree are rejected and cause backup to fail.
+
+Practical example (managed server mode):
+
+```go
+backupRoot := "./backups"
+destination := filepath.Join(
+    backupRoot,
+    time.Now().UTC().Format("20060102-150405"),
+)
+
+manifest, err := srv.Backup(
+    chroma.WithDestination(destination),
+    chroma.WithIncludeMetadata(),
+)
+if err != nil {
+    panic(err)
+}
+
+fmt.Printf("backup created: %s (%d files)\n", manifest.SnapshotPath, manifest.FileCount)
+
+// Optional restore validation: start another server from the snapshot.
+restored, err := chroma.NewServer(
+    chroma.WithPort(8010),
+    chroma.WithListenAddress("127.0.0.1"),
+    chroma.WithPersistPath(manifest.SnapshotPath),
+    chroma.WithAllowReset(true),
+)
+if err != nil {
+    panic(err)
+}
+defer restored.Close()
+```
 
 ### Metadata Value Rules (Embedded Record APIs)
 

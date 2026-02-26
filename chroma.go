@@ -23,10 +23,12 @@ var (
 	chromaServerStartFromString    func(*byte) uintptr
 	chromaServerPort               func(uintptr) int32
 	chromaServerAddress            func(uintptr) *byte
+	chromaServerPersistPath        func(uintptr) *byte
 	chromaServerStop               func(uintptr) int32
 	chromaServerFree               func(uintptr)
 	chromaEmbeddedStart            func(*byte) uintptr
 	chromaEmbeddedStartFromString  func(*byte) uintptr
+	chromaEmbeddedPersistPath      func(uintptr) *byte
 	chromaEmbeddedFree             func(uintptr)
 	chromaEmbeddedHeartbeat        func(uintptr, *uint64) int32
 	chromaEmbeddedGetMaxBatchSize  func(uintptr, *uint32) int32
@@ -83,10 +85,12 @@ func registerFunctions() error {
 		{&chromaServerStartFromString, "chroma_server_start_from_string"},
 		{&chromaServerPort, "chroma_server_port"},
 		{&chromaServerAddress, "chroma_server_address"},
+		{&chromaServerPersistPath, "chroma_server_persist_path"},
 		{&chromaServerStop, "chroma_server_stop"},
 		{&chromaServerFree, "chroma_server_free"},
 		{&chromaEmbeddedStart, "chroma_embedded_start"},
 		{&chromaEmbeddedStartFromString, "chroma_embedded_start_from_string"},
+		{&chromaEmbeddedPersistPath, "chroma_embedded_persist_path"},
 		{&chromaEmbeddedFree, "chroma_embedded_free"},
 		{&chromaEmbeddedHeartbeat, "chroma_embedded_heartbeat"},
 		{&chromaEmbeddedGetMaxBatchSize, "chroma_embedded_get_max_batch_size"},
@@ -195,9 +199,14 @@ func cStringFromGo(s string) []byte {
 
 // Server represents a running Chroma server instance.
 type Server struct {
-	handle uintptr
-	port   int
-	addr   string
+	stateMu  sync.RWMutex
+	backupMu sync.Mutex
+
+	handle      uintptr
+	port        int
+	addr        string
+	config      StartServerConfig
+	persistPath string
 }
 
 // StartServerConfig contains configuration options for starting a server.
@@ -230,6 +239,7 @@ func StartServer(config StartServerConfig) (*Server, error) {
 
 	var port int32
 	addr := ""
+	persistPath := ""
 	func() {
 		ffiMu.Lock()
 		defer ffiMu.Unlock()
@@ -238,12 +248,38 @@ func StartServer(config StartServerConfig) (*Server, error) {
 		if addrPtr != nil {
 			addr = goStringFromPtr(addrPtr)
 		}
+		persistPathPtr := chromaServerPersistPath(handle)
+		if persistPathPtr != nil {
+			persistPath = goStringFromPtr(persistPathPtr)
+		}
 	}()
 
+	resolvedPersistPath, persistPathErr := normalizePersistPath(persistPath)
+	if persistPathErr != nil {
+		baseErr := errors.Wrap(persistPathErr, "failed to resolve persist path from runtime config")
+
+		ffiMu.Lock()
+		stopRC := chromaServerStop(handle)
+		stopErrMsg := ""
+		if stopRC != Success {
+			stopErrMsg = getLastErrorUnlocked()
+		}
+		chromaServerFree(handle)
+		ffiMu.Unlock()
+
+		if stopRC != Success {
+			stopErr := errorFromCode(stopRC, stopErrMsg)
+			return nil, fmt.Errorf("%w; cleanup stop failed: %v", baseErr, stopErr)
+		}
+		return nil, baseErr
+	}
+
 	server := &Server{
-		handle: handle,
-		port:   int(port),
-		addr:   addr,
+		handle:      handle,
+		port:        int(port),
+		addr:        addr,
+		config:      config,
+		persistPath: resolvedPersistPath,
 	}
 
 	runtime.SetFinalizer(server, func(s *Server) {
@@ -255,16 +291,22 @@ func StartServer(config StartServerConfig) (*Server, error) {
 
 // Port returns the port the server is listening on.
 func (s *Server) Port() int {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	return s.port
 }
 
 // Address returns the address the server is listening on.
 func (s *Server) Address() string {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	return s.addr
 }
 
 // URL returns the full URL of the server (e.g., "http://127.0.0.1:8000").
 func (s *Server) URL() string {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	return fmt.Sprintf("http://%s:%d", s.addr, s.port)
 }
 
@@ -294,6 +336,8 @@ func (s *Server) Close() error {
 	if s == nil {
 		return nil
 	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
