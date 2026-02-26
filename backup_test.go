@@ -18,23 +18,7 @@ import (
 )
 
 func TestServerBackupRestartsAndWritesManifest(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
-
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
-
-	requireServerHeartbeat(t, server.URL())
+	server, _ := startTestServer(t)
 
 	backupDir := filepath.Join(t.TempDir(), "server-backup")
 	manifest, err := server.Backup(ServerBackupOptions{
@@ -79,22 +63,9 @@ func TestServerBackupRestartsAndWritesManifest(t *testing.T) {
 }
 
 func TestServerBackupRejectsEmptyDestinationWithoutStoppingServer(t *testing.T) {
-	require.NoError(t, Init(""))
+	server, _ := startTestServer(t)
 
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
-
-	requireServerHeartbeat(t, server.URL())
-
-	_, err = server.Backup(ServerBackupOptions{
+	_, err := server.Backup(ServerBackupOptions{
 		BackupOptions: BackupOptions{},
 	})
 	require.Error(t, err)
@@ -104,27 +75,14 @@ func TestServerBackupRejectsEmptyDestinationWithoutStoppingServer(t *testing.T) 
 }
 
 func TestServerBackupRejectsNonEmptyDestinationWithoutStoppingServer(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
+	server, _ := startTestServer(t)
 	originalHandle := atomic.LoadUintptr(&server.handle)
-
-	requireServerHeartbeat(t, server.URL())
 
 	backupDir := filepath.Join(t.TempDir(), "server-backup")
 	require.NoError(t, os.MkdirAll(backupDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(backupDir, "preexisting.txt"), []byte("occupied"), 0o644))
 
-	_, err = server.Backup(ServerBackupOptions{
+	_, err := server.Backup(ServerBackupOptions{
 		BackupOptions: BackupOptions{
 			DestinationPath: backupDir,
 		},
@@ -138,25 +96,9 @@ func TestServerBackupRejectsNonEmptyDestinationWithoutStoppingServer(t *testing.
 }
 
 func TestServerBackupRejectsDestinationInsideSourceWithoutStoppingServer(t *testing.T) {
-	require.NoError(t, Init(""))
+	server, persistDir := startTestServer(t)
 
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
-
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
-
-	requireServerHeartbeat(t, server.URL())
-
-	_, err = server.Backup(ServerBackupOptions{
+	_, err := server.Backup(ServerBackupOptions{
 		BackupOptions: BackupOptions{
 			DestinationPath: filepath.Join(persistDir, "nested-backup"),
 		},
@@ -169,23 +111,7 @@ func TestServerBackupRejectsDestinationInsideSourceWithoutStoppingServer(t *test
 }
 
 func TestServerBackupLeaveStoppedSkipsRestart(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
-
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
-
-	requireServerHeartbeat(t, server.URL())
+	server, _ := startTestServer(t)
 
 	backupDir := filepath.Join(t.TempDir(), "server-backup")
 	manifest, err := server.Backup(ServerBackupOptions{
@@ -246,21 +172,7 @@ func TestServerBackupReportsRestartFailureAfterSuccessfulSnapshot(t *testing.T) 
 }
 
 func TestServerBackupConcurrentCallFailsWhileFirstBackupLeavesServerStopped(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
-
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
+	server, _ := startTestServer(t)
 
 	firstResult := make(chan error, 1)
 	backupDirOne := filepath.Join(t.TempDir(), "server-backup-one")
@@ -277,7 +189,7 @@ func TestServerBackupConcurrentCallFailsWhileFirstBackupLeavesServerStopped(t *t
 	requireServerUnavailable(t, server.URL())
 
 	backupDirTwo := filepath.Join(t.TempDir(), "server-backup-two")
-	_, err = server.Backup(ServerBackupOptions{
+	_, err := server.Backup(ServerBackupOptions{
 		BackupOptions: BackupOptions{
 			DestinationPath: backupDirTwo,
 		},
@@ -287,21 +199,7 @@ func TestServerBackupConcurrentCallFailsWhileFirstBackupLeavesServerStopped(t *t
 }
 
 func TestServerBackupConcurrentCallsWithRestartBothSucceed(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
-
-	port := reserveFreeLoopbackPort(t)
-	server, err := NewServer(
-		WithPort(port),
-		WithListenAddress("127.0.0.1"),
-		WithPersistPath(persistDir),
-		WithAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
+	server, _ := startTestServer(t)
 
 	type backupResult struct {
 		manifest *BackupManifest
@@ -408,18 +306,7 @@ func TestServerBackupUsesRuntimePersistPathFromEnvOverride(t *testing.T) {
 }
 
 func TestEmbeddedBackupReopensAndPreservesData(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
-
-	embedded, err := NewEmbedded(
-		WithEmbeddedPersistPath(persistDir),
-		WithEmbeddedAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = embedded.Close() })
+	embedded, _ := startTestEmbedded(t)
 
 	collectionName := fmt.Sprintf("backup_%d", time.Now().UnixNano())
 	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
@@ -487,18 +374,7 @@ func TestEmbeddedBackupReopensAndPreservesData(t *testing.T) {
 }
 
 func TestEmbeddedBackupLeaveClosedSkipsReopen(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
-
-	embedded, err := NewEmbedded(
-		WithEmbeddedPersistPath(persistDir),
-		WithEmbeddedAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = embedded.Close() })
+	embedded, _ := startTestEmbedded(t)
 
 	backupDir := filepath.Join(t.TempDir(), "embedded-backup")
 	manifest, err := embedded.Backup(EmbeddedBackupOptions{
@@ -553,18 +429,7 @@ func TestEmbeddedBackupReportsReopenFailureAfterSuccessfulSnapshot(t *testing.T)
 }
 
 func TestEmbeddedBackupConcurrentCallFailsWhileFirstBackupLeavesEmbeddedClosed(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
-
-	embedded, err := NewEmbedded(
-		WithEmbeddedPersistPath(persistDir),
-		WithEmbeddedAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = embedded.Close() })
+	embedded, _ := startTestEmbedded(t)
 
 	firstResult := make(chan error, 1)
 	backupDirOne := filepath.Join(t.TempDir(), "embedded-backup-one")
@@ -581,7 +446,7 @@ func TestEmbeddedBackupConcurrentCallFailsWhileFirstBackupLeavesEmbeddedClosed(t
 	requireEmbeddedUnavailable(t, embedded)
 
 	backupDirTwo := filepath.Join(t.TempDir(), "embedded-backup-two")
-	_, err = embedded.Backup(EmbeddedBackupOptions{
+	_, err := embedded.Backup(EmbeddedBackupOptions{
 		BackupOptions: BackupOptions{
 			DestinationPath: backupDirTwo,
 		},
@@ -591,18 +456,7 @@ func TestEmbeddedBackupConcurrentCallFailsWhileFirstBackupLeavesEmbeddedClosed(t
 }
 
 func TestEmbeddedBackupConcurrentCallsWithReopenBothSucceed(t *testing.T) {
-	require.NoError(t, Init(""))
-
-	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
-	require.NoError(t, os.MkdirAll(persistDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
-
-	embedded, err := NewEmbedded(
-		WithEmbeddedPersistPath(persistDir),
-		WithEmbeddedAllowReset(true),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = embedded.Close() })
+	embedded, _ := startTestEmbedded(t)
 
 	type backupResult struct {
 		manifest *BackupManifest
@@ -973,6 +827,44 @@ func TestEmbeddedCloseWaitsForStateLock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close did not complete after releasing state lock")
 	}
+}
+
+func startTestServer(t *testing.T) (*Server, string) {
+	t.Helper()
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "server-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
+
+	port := reserveFreeLoopbackPort(t)
+	server, err := NewServer(
+		WithPort(port),
+		WithListenAddress("127.0.0.1"),
+		WithPersistPath(persistDir),
+		WithAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close() })
+	requireServerHeartbeat(t, server.URL())
+	return server, persistDir
+}
+
+func startTestEmbedded(t *testing.T) (*Embedded, string) {
+	t.Helper()
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
+
+	embedded, err := NewEmbedded(
+		WithEmbeddedPersistPath(persistDir),
+		WithEmbeddedAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = embedded.Close() })
+	return embedded, persistDir
 }
 
 func reserveFreeLoopbackPort(t *testing.T) int {

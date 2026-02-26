@@ -240,13 +240,9 @@ func newBackupPlan(persistPath, configPath string, options BackupOptions) (*back
 		return nil, errors.Wrap(err, "failed to resolve destination path")
 	}
 
-	sourceAbs, err := normalizePersistPath(persistPath)
+	sourceResolved, err := resolveSourcePersistPath(persistPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to resolve source persist path")
-	}
-	sourceResolved, err := resolvePathForContainment(sourceAbs)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to canonicalize source persist path")
 	}
 	sourcePathExists, err := inspectSourcePath(sourceResolved)
 	if err != nil {
@@ -263,7 +259,7 @@ func newBackupPlan(persistPath, configPath string, options BackupOptions) (*back
 		return nil, errors.Wrap(withinErr, "failed to validate destination path containment")
 	}
 	if insideSource {
-		return nil, errors.Errorf("destination path %q cannot be inside source persist path %q", destAbs, sourceAbs)
+		return nil, errors.Errorf("destination path %q cannot be inside source persist path %q", destAbs, sourceResolved)
 	}
 
 	version, err := VersionWithError()
@@ -489,6 +485,22 @@ func normalizePersistPath(path string) (string, error) {
 		return "", errors.Wrap(err, "failed to resolve persist path")
 	}
 	return filepath.Clean(absPath), nil
+}
+
+func resolveSourcePersistPath(path string) (string, error) {
+	cleaned := strings.TrimSpace(path)
+	if cleaned == "" {
+		return "", errors.New("persist path is empty")
+	}
+	absPath, err := filepath.Abs(cleaned)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to resolve persist path")
+	}
+	resolved, err := evalSymlinksWithMissingSegments(filepath.Clean(absPath))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
 }
 
 func resolvePathForContainment(path string) (string, error) {
