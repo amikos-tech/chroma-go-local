@@ -1,6 +1,8 @@
 package chroma
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +49,8 @@ func TestServerBackupRestartsAndWritesManifest(t *testing.T) {
 	data, err := os.ReadFile(snapshotSentinel)
 	require.NoError(t, err)
 	require.Equal(t, "server-backup", string(data))
+	sentinelMetadata := requireFileMetadataByPath(t, manifest.Files, "sentinel.txt")
+	require.Equal(t, sha256Hex([]byte("server-backup")), sentinelMetadata.SHA256)
 
 	requireServerHeartbeat(t, server.URL())
 
@@ -65,9 +69,7 @@ func TestServerBackupRestartsAndWritesManifest(t *testing.T) {
 func TestServerBackupRejectsEmptyDestinationWithoutStoppingServer(t *testing.T) {
 	server, _ := startTestServer(t)
 
-	_, err := server.Backup(ServerBackupOptions{
-		BackupOptions: BackupOptions{},
-	})
+	_, err := server.Backup()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "destination_path is required")
 
@@ -82,11 +84,7 @@ func TestServerBackupRejectsNonEmptyDestinationWithoutStoppingServer(t *testing.
 	require.NoError(t, os.MkdirAll(backupDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(backupDir, "preexisting.txt"), []byte("occupied"), 0o644))
 
-	_, err := server.Backup(ServerBackupOptions{
-		BackupOptions: BackupOptions{
-			DestinationPath: backupDir,
-		},
-	})
+	_, err := server.Backup(WithDestination(backupDir))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must be empty")
 	require.Equal(t, originalHandle, atomic.LoadUintptr(&server.handle))
@@ -98,15 +96,37 @@ func TestServerBackupRejectsNonEmptyDestinationWithoutStoppingServer(t *testing.
 func TestServerBackupRejectsDestinationInsideSourceWithoutStoppingServer(t *testing.T) {
 	server, persistDir := startTestServer(t)
 
-	_, err := server.Backup(ServerBackupOptions{
-		BackupOptions: BackupOptions{
-			DestinationPath: filepath.Join(persistDir, "nested-backup"),
-		},
-	})
+	_, err := server.Backup(WithDestination(filepath.Join(persistDir, "nested-backup")))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot be inside source persist path")
 
 	// Rejected before shutdown; server should remain available.
+	requireServerHeartbeat(t, server.URL())
+}
+
+func TestServerBackupRejectsEmbeddedOnlyOptionWithoutStoppingServer(t *testing.T) {
+	server, _ := startTestServer(t)
+
+	_, err := server.Backup(
+		WithDestination(filepath.Join(t.TempDir(), "server-backup")),
+		WithLeaveClosed(),
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "WithLeaveClosed is only valid for embedded backups")
+
+	requireServerHeartbeat(t, server.URL())
+}
+
+func TestServerBackupRejectsDuplicateDestinationOptionWithoutStoppingServer(t *testing.T) {
+	server, _ := startTestServer(t)
+
+	_, err := server.Backup(
+		WithDestination(filepath.Join(t.TempDir(), "server-backup-a")),
+		WithDestination(filepath.Join(t.TempDir(), "server-backup-b")),
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "destination path already set")
+
 	requireServerHeartbeat(t, server.URL())
 }
 
@@ -358,6 +378,8 @@ func TestEmbeddedBackupReopensAndPreservesData(t *testing.T) {
 	data, err := os.ReadFile(snapshotSentinel)
 	require.NoError(t, err)
 	require.Equal(t, "embedded-backup", string(data))
+	sentinelMetadata := requireFileMetadataByPath(t, manifest.Files, "sentinel.txt")
+	require.Equal(t, sha256Hex([]byte("embedded-backup")), sentinelMetadata.SHA256)
 
 	restoredEmbedded, err := NewEmbedded(
 		WithEmbeddedPersistPath(filepath.Join(backupDir, backupSnapshotDirname)),
@@ -390,6 +412,21 @@ func TestEmbeddedBackupLeaveClosedSkipsReopen(t *testing.T) {
 	require.Empty(t, manifest.Files)
 	_, err = embedded.Heartbeat()
 	require.ErrorIs(t, err, ErrEmbeddedNotStarted)
+}
+
+func TestEmbeddedBackupRejectsServerOnlyOptionWithoutClosingEmbedded(t *testing.T) {
+	embedded, _ := startTestEmbedded(t)
+
+	_, err := embedded.Backup(
+		WithDestination(filepath.Join(t.TempDir(), "embedded-backup")),
+		WithLeaveStopped(),
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "WithLeaveStopped is only valid for server backups")
+
+	heartbeat, err := embedded.Heartbeat()
+	require.NoError(t, err)
+	require.NotZero(t, heartbeat)
 }
 
 func TestEmbeddedBackupReportsReopenFailureAfterSuccessfulSnapshot(t *testing.T) {
@@ -911,4 +948,20 @@ func requireEmbeddedUnavailable(t *testing.T, embedded *Embedded) {
 		_, err := embedded.Heartbeat()
 		return errors.Is(err, ErrEmbeddedNotStarted)
 	}, 5*time.Second, 100*time.Millisecond, "embedded mode remained reachable")
+}
+
+func requireFileMetadataByPath(t *testing.T, files []BackupFileMetadata, path string) BackupFileMetadata {
+	t.Helper()
+	for _, file := range files {
+		if file.Path == path {
+			return file
+		}
+	}
+	t.Fatalf("manifest metadata for path %q not found", path)
+	return BackupFileMetadata{}
+}
+
+func sha256Hex(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }

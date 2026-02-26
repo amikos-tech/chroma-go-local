@@ -43,6 +43,8 @@ Notes:
 - Maintain resource cleanup behavior (`Stop`, `Close`, and finalizers).
 - Keep public API changes backward compatible unless explicitly requested.
 - Add or update tests for behavior changes.
+- Prefer public API call sites in functional-option form (`WithX(...)`) over nested option structs when introducing or refactoring APIs.
+- Validate functional options in the entrypoint method by looping over all provided options and returning clear errors before any side effects.
 
 ## Validation Before Handoff
 

@@ -1,6 +1,8 @@
 package chroma
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,17 +41,110 @@ type BackupOptions struct {
 }
 
 // ServerBackupOptions defines backup behavior for managed server mode.
+//
+// Deprecated: prefer Backup option helpers (`WithDestination`, `WithIncludeMetadata`, `WithLeaveStopped`).
 type ServerBackupOptions struct {
 	BackupOptions
 	// LeaveStopped keeps the server stopped after backup. By default, Backup restarts it.
 	LeaveStopped bool
 }
 
+func (o ServerBackupOptions) apply(options *backupCallOptions) error {
+	if strings.TrimSpace(o.DestinationPath) != "" {
+		if err := WithDestination(o.DestinationPath).apply(options); err != nil {
+			return err
+		}
+	}
+	if o.IncludeMetadata {
+		options.includeMetadata = true
+	}
+	if o.LeaveStopped {
+		options.leaveStopped = true
+	}
+	return nil
+}
+
 // EmbeddedBackupOptions defines backup behavior for embedded mode.
+//
+// Deprecated: prefer Backup option helpers (`WithDestination`, `WithIncludeMetadata`, `WithLeaveClosed`).
 type EmbeddedBackupOptions struct {
 	BackupOptions
 	// LeaveClosed keeps embedded mode closed after backup. By default, Backup reopens it.
 	LeaveClosed bool
+}
+
+func (o EmbeddedBackupOptions) apply(options *backupCallOptions) error {
+	if strings.TrimSpace(o.DestinationPath) != "" {
+		if err := WithDestination(o.DestinationPath).apply(options); err != nil {
+			return err
+		}
+	}
+	if o.IncludeMetadata {
+		options.includeMetadata = true
+	}
+	if o.LeaveClosed {
+		options.leaveClosed = true
+	}
+	return nil
+}
+
+// BackupOption configures backup behavior.
+type BackupOption interface {
+	apply(*backupCallOptions) error
+}
+
+type backupOptionFunc func(*backupCallOptions) error
+
+func (f backupOptionFunc) apply(options *backupCallOptions) error {
+	return f(options)
+}
+
+type backupCallOptions struct {
+	destinationPath string
+	includeMetadata bool
+	leaveStopped    bool
+	leaveClosed     bool
+
+	destinationSet bool
+}
+
+// WithDestination sets the backup destination directory.
+func WithDestination(path string) BackupOption {
+	return backupOptionFunc(func(options *backupCallOptions) error {
+		if options.destinationSet {
+			return errors.New("destination path already set")
+		}
+		if strings.TrimSpace(path) == "" {
+			return errors.New("destination_path is required")
+		}
+		options.destinationPath = path
+		options.destinationSet = true
+		return nil
+	})
+}
+
+// WithIncludeMetadata includes per-file metadata in the generated manifest.
+func WithIncludeMetadata() BackupOption {
+	return backupOptionFunc(func(options *backupCallOptions) error {
+		options.includeMetadata = true
+		return nil
+	})
+}
+
+// WithLeaveStopped keeps managed server mode stopped after backup.
+func WithLeaveStopped() BackupOption {
+	return backupOptionFunc(func(options *backupCallOptions) error {
+		options.leaveStopped = true
+		return nil
+	})
+}
+
+// WithLeaveClosed keeps embedded mode closed after backup.
+func WithLeaveClosed() BackupOption {
+	return backupOptionFunc(func(options *backupCallOptions) error {
+		options.leaveClosed = true
+		return nil
+	})
 }
 
 // BackupFileMetadata captures metadata for a copied file.
@@ -58,6 +153,7 @@ type BackupFileMetadata struct {
 	SizeBytes int64  `json:"size_bytes"`
 	// Mode is a parseable POSIX permission string (for example "0644").
 	Mode       string    `json:"mode"`
+	SHA256     string    `json:"sha256"`
 	ModifiedAt time.Time `json:"modified_at"`
 }
 
@@ -86,12 +182,52 @@ type backupPlan struct {
 	wrapperVersion    string
 }
 
+func resolveBackupOptions(mode BackupMode, options []BackupOption) (BackupOptions, bool, error) {
+	resolved := backupCallOptions{}
+	for i, option := range options {
+		if option == nil {
+			return BackupOptions{}, false, errors.Errorf("backup option at index %d is nil", i)
+		}
+		if err := option.apply(&resolved); err != nil {
+			return BackupOptions{}, false, errors.Wrapf(err, "invalid backup option at index %d", i)
+		}
+	}
+
+	if !resolved.destinationSet {
+		return BackupOptions{}, false, errors.New("destination_path is required")
+	}
+
+	backupOptions := BackupOptions{
+		DestinationPath: resolved.destinationPath,
+		IncludeMetadata: resolved.includeMetadata,
+	}
+	switch mode {
+	case BackupModeServer:
+		if resolved.leaveClosed {
+			return BackupOptions{}, false, errors.New("WithLeaveClosed is only valid for embedded backups")
+		}
+		return backupOptions, resolved.leaveStopped, nil
+	case BackupModeEmbedded:
+		if resolved.leaveStopped {
+			return BackupOptions{}, false, errors.New("WithLeaveStopped is only valid for server backups")
+		}
+		return backupOptions, resolved.leaveClosed, nil
+	default:
+		return BackupOptions{}, false, errors.Errorf("unsupported backup mode %q", mode)
+	}
+}
+
 // Backup closes the server, snapshots its persistence directory, writes a manifest,
-// and restarts the server unless LeaveStopped is true.
-func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
+// and restarts the server unless WithLeaveStopped is provided.
+func (s *Server) Backup(options ...BackupOption) (*BackupManifest, error) {
 	if s == nil {
 		return nil, ErrServerNotStarted
 	}
+	resolvedOptions, leaveStopped, err := resolveBackupOptions(BackupModeServer, options)
+	if err != nil {
+		return nil, err
+	}
+
 	s.backupMu.Lock()
 	defer s.backupMu.Unlock()
 
@@ -100,7 +236,7 @@ func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
 		return nil, err
 	}
 
-	plan, err := newBackupPlan(persistPath, config.ConfigPath, options.BackupOptions)
+	plan, err := newBackupPlan(persistPath, config.ConfigPath, resolvedOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +249,7 @@ func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
 	}
 
 	manifest, backupErr := executeBackup(BackupModeServer, plan)
-	if options.LeaveStopped {
+	if leaveStopped {
 		return manifest, backupErr
 	}
 
@@ -131,11 +267,16 @@ func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
 }
 
 // Backup closes embedded mode, snapshots its persistence directory, writes a
-// manifest, and reopens embedded mode unless LeaveClosed is true.
-func (e *Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error) {
+// manifest, and reopens embedded mode unless WithLeaveClosed is provided.
+func (e *Embedded) Backup(options ...BackupOption) (*BackupManifest, error) {
 	if e == nil {
 		return nil, ErrEmbeddedNotStarted
 	}
+	resolvedOptions, leaveClosed, err := resolveBackupOptions(BackupModeEmbedded, options)
+	if err != nil {
+		return nil, err
+	}
+
 	e.backupMu.Lock()
 	defer e.backupMu.Unlock()
 
@@ -144,7 +285,7 @@ func (e *Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error
 		return nil, err
 	}
 
-	plan, err := newBackupPlan(persistPath, config.ConfigPath, options.BackupOptions)
+	plan, err := newBackupPlan(persistPath, config.ConfigPath, resolvedOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +298,7 @@ func (e *Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error
 	}
 
 	manifest, backupErr := executeBackup(BackupModeEmbedded, plan)
-	if options.LeaveClosed {
+	if leaveClosed {
 		return manifest, backupErr
 	}
 
@@ -413,7 +554,8 @@ func copyDirectory(sourceDir, destinationDir string, includeMetadata bool) (int,
 		if err != nil {
 			return err
 		}
-		if err := copyFile(path, destPath, info); err != nil {
+		checksum, err := copyFile(path, destPath, info)
+		if err != nil {
 			return err
 		}
 
@@ -424,6 +566,7 @@ func copyDirectory(sourceDir, destinationDir string, includeMetadata bool) (int,
 				Path:       filepath.ToSlash(rel),
 				SizeBytes:  info.Size(),
 				Mode:       fmt.Sprintf("%#o", uint32(info.Mode().Perm())),
+				SHA256:     checksum,
 				ModifiedAt: info.ModTime().UTC(),
 			})
 		}
@@ -436,14 +579,14 @@ func copyDirectory(sourceDir, destinationDir string, includeMetadata bool) (int,
 	return fileCount, totalBytes, files, nil
 }
 
-func copyFile(sourcePath, destinationPath string, info os.FileInfo) (err error) {
+func copyFile(sourcePath, destinationPath string, info os.FileInfo) (checksum string, err error) {
 	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
-		return err
+		return "", err
 	}
 
 	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
 		closeErr := sourceFile.Close()
@@ -457,21 +600,25 @@ func copyFile(sourcePath, destinationPath string, info os.FileInfo) (err error) 
 
 	destinationFile, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+	hash := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(destinationFile, hash), sourceFile); err != nil {
 		_ = destinationFile.Close()
-		return err
+		return "", err
 	}
 	if err := destinationFile.Sync(); err != nil {
 		_ = destinationFile.Close()
-		return err
+		return "", err
 	}
 	if err := destinationFile.Close(); err != nil {
-		return err
+		return "", err
 	}
-	return os.Chtimes(destinationPath, info.ModTime(), info.ModTime())
+	if err := os.Chtimes(destinationPath, info.ModTime(), info.ModTime()); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func normalizePersistPath(path string) (string, error) {

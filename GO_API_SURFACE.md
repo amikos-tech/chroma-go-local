@@ -28,7 +28,7 @@ Implemented server lifecycle APIs:
 - `(*Server).URL() string`
 - `(*Server).Stop() error`
 - `(*Server).Close() error`
-- `(*Server).Backup(options ServerBackupOptions) (*BackupManifest, error)`
+- `(*Server).Backup(options ...BackupOption) (*BackupManifest, error)`
 
 Example:
 
@@ -49,12 +49,10 @@ fmt.Println("running at", srv.URL())
 Server backup example:
 
 ```go
-manifest, err := srv.Backup(chroma.ServerBackupOptions{
-    BackupOptions: chroma.BackupOptions{
-        DestinationPath: "./backups/server-2026-02-25",
-        IncludeMetadata: true,
-    },
-})
+manifest, err := srv.Backup(
+    chroma.WithDestination("./backups/server-2026-02-25"),
+    chroma.WithIncludeMetadata(),
+)
 if err != nil {
     panic(err)
 }
@@ -66,6 +64,8 @@ Backup constraints (applies to server and embedded backup):
 - `DestinationPath` must not exist or must be an empty directory.
 - `<destination>/persist` must not be inside the source persist path (symlink-aware check).
 - Symlinks inside the source persist tree are rejected and cause backup to fail.
+- `WithLeaveStopped()` is server-only; `WithLeaveClosed()` is embedded-only.
+- `WithIncludeMetadata()` adds per-file entries with `path`, `size_bytes`, `mode`, `sha256`, and `modified_at`.
 
 ## 3. Embedded Mode API
 
@@ -73,7 +73,7 @@ Backup constraints (applies to server and embedded backup):
 
 - `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)`
 - `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)`
-- `(*Embedded).Backup(options EmbeddedBackupOptions) (*BackupManifest, error)`
+- `(*Embedded).Backup(options ...BackupOption) (*BackupManifest, error)`
 - `(*Embedded).Close() error`
 
 ```go
@@ -90,12 +90,10 @@ defer embedded.Close()
 Embedded backup example:
 
 ```go
-manifest, err := embedded.Backup(chroma.EmbeddedBackupOptions{
-    BackupOptions: chroma.BackupOptions{
-        DestinationPath: "./backups/embedded-2026-02-25",
-        IncludeMetadata: true,
-    },
-})
+manifest, err := embedded.Backup(
+    chroma.WithDestination("./backups/embedded-2026-02-25"),
+    chroma.WithIncludeMetadata(),
+)
 if err != nil {
     panic(err)
 }

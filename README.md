@@ -279,7 +279,7 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Server) URL() string` | Get the full server URL. |
 | `(*Server) Stop() error` | Gracefully stop the server. |
 | `(*Server) Close() error` | Stop and free resources. |
-| `(*Server) Backup(options ServerBackupOptions) (*BackupManifest, error)` | Snapshot persisted data with optional restart. |
+| `(*Server) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional restart. |
 | `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
 | `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)` | Start embedded mode from YAML config. |
 | `(*Embedded) Heartbeat() (uint64, error)` | Read in-process heartbeat nanoseconds. |
@@ -308,7 +308,7 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
-| `(*Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error)` | Snapshot persisted data with optional reopen. |
+| `(*Embedded) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional reopen. |
 | `(*Embedded) Close() error` | Free embedded resources. |
 
 ### Backup API
@@ -318,17 +318,21 @@ Backup writes a consistent snapshot for either managed server mode or embedded m
 - destination directory: `<destination>/persist`
 - manifest file: `<destination>/backup_manifest.json`
 
-Options:
+Backup options:
 
-- `BackupOptions`:
-  - `DestinationPath string` (required)
-  - `IncludeMetadata bool` (adds per-file metadata in the manifest)
-- `ServerBackupOptions`:
-  - embeds `BackupOptions`
-  - `LeaveStopped bool` (default flow restarts the server)
-- `EmbeddedBackupOptions`:
-  - embeds `BackupOptions`
-  - `LeaveClosed bool` (default flow reopens embedded mode)
+- `WithDestination(path string)` (required; must be provided exactly once)
+- `WithIncludeMetadata()` (optional; include per-file metadata in manifest)
+- `WithLeaveStopped()` (optional; server backups only)
+- `WithLeaveClosed()` (optional; embedded backups only)
+
+Backup validates all provided options before side effects (close/restart/reopen). Invalid or mode-incompatible options return an error.
+
+When `WithIncludeMetadata()` is used, each manifest file entry includes:
+- `path`
+- `size_bytes`
+- `mode` (octal string, for example `"0644"`)
+- `sha256` (hex-encoded SHA-256 of copied file bytes)
+- `modified_at`
 
 Constraints and error conditions:
 
@@ -346,12 +350,10 @@ destination := filepath.Join(
     time.Now().UTC().Format("20060102-150405"),
 )
 
-manifest, err := srv.Backup(chroma.ServerBackupOptions{
-    BackupOptions: chroma.BackupOptions{
-        DestinationPath: destination,
-        IncludeMetadata: true,
-    },
-})
+manifest, err := srv.Backup(
+    chroma.WithDestination(destination),
+    chroma.WithIncludeMetadata(),
+)
 if err != nil {
     panic(err)
 }
