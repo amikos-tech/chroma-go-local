@@ -12,13 +12,14 @@ use chroma_frontend::frontend_service_entrypoint_with_config_system_registry;
 use chroma_frontend::Frontend;
 use chroma_system::System;
 use chroma_types::{
-    AddCollectionRecordsRequest, CollectionUuid, CountCollectionsRequest, CountRequest,
-    CreateCollectionRequest, CreateDatabaseRequest, CreateTenantRequest, DatabaseName,
-    DeleteCollectionRecordsRequest, DeleteCollectionRequest, DeleteDatabaseRequest,
-    ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest, GetRequest, GetTenantRequest,
-    IncludeList, ListCollectionsRequest, ListDatabasesRequest, Metadata, QueryRequest,
-    RawWhereFields, UpdateCollectionRecordsRequest, UpdateCollectionRequest, UpdateMetadata,
-    UpdateTenantRequest, UpsertCollectionRecordsRequest, Where,
+    AddCollectionRecordsRequest, CollectionConfiguration, CollectionMetadataUpdate, CollectionUuid,
+    CountCollectionsRequest, CountRequest, CreateCollectionRequest, CreateDatabaseRequest,
+    CreateTenantRequest, DatabaseName, DeleteCollectionRecordsRequest, DeleteCollectionRequest,
+    DeleteDatabaseRequest, ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest,
+    GetRequest, GetTenantRequest, IncludeList, ListCollectionsRequest, ListDatabasesRequest,
+    Metadata, QueryRequest, RawWhereFields, Schema, UpdateCollectionRecordsRequest,
+    UpdateCollectionRequest, UpdateMetadata, UpdateTenantRequest, UpsertCollectionRecordsRequest,
+    Where,
 };
 use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
@@ -159,6 +160,12 @@ struct EmbeddedCreateCollectionPayload {
     #[serde(default)]
     database_name: Option<String>,
     #[serde(default)]
+    metadata: Option<Metadata>,
+    #[serde(default, alias = "configuration_json")]
+    configuration: Option<Value>,
+    #[serde(default)]
+    schema: Option<Value>,
+    #[serde(default)]
     get_or_create: bool,
 }
 
@@ -166,14 +173,33 @@ impl EmbeddedCreateCollectionPayload {
     fn into_request(self) -> Result<CreateCollectionRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
         let database_name = resolve_database_name_typed(self.database_name)?;
+        let configuration = self
+            .configuration
+            .map(|raw_configuration| {
+                let configuration: CollectionConfiguration =
+                    serde_json::from_value(raw_configuration)
+                        .map_err(|e| format!("invalid configuration payload: {e}"))?;
+                configuration
+                    .try_into()
+                    .map_err(|e| format!("invalid configuration value: {e}"))
+            })
+            .transpose()?;
+        let schema = self
+            .schema
+            .map(|raw_schema| -> Result<Schema, String> {
+                let schema: Schema = serde_json::from_value(raw_schema)
+                    .map_err(|e| format!("invalid schema payload: {e}"))?;
+                Ok(schema)
+            })
+            .transpose()?;
 
         CreateCollectionRequest::try_new(
             tenant_id,
             database_name,
             self.name,
-            None,
-            None,
-            None,
+            self.metadata,
+            configuration,
+            schema,
             self.get_or_create,
         )
         .map_err(|e| e.to_string())
@@ -441,7 +467,10 @@ struct EmbeddedUpdateCollectionPayload {
     #[serde(default)]
     database_name: Option<String>,
     collection_id: String,
-    new_name: String,
+    #[serde(default)]
+    new_name: Option<String>,
+    #[serde(default)]
+    new_metadata: Option<UpdateMetadata>,
 }
 
 impl EmbeddedUpdateCollectionPayload {
@@ -449,11 +478,17 @@ impl EmbeddedUpdateCollectionPayload {
         let database_name = self.database_name.map(parse_database_name).transpose()?;
         let collection_id = CollectionUuid::from_str(&self.collection_id)
             .map_err(|e| format!("invalid collection_id: {e}"))?;
+        if self.new_name.is_none() && self.new_metadata.is_none() {
+            return Err("at least one of new_name or new_metadata is required".to_string());
+        }
+        let new_metadata = self
+            .new_metadata
+            .map(CollectionMetadataUpdate::UpdateMetadata);
         UpdateCollectionRequest::try_new(
             database_name,
             collection_id,
-            Some(self.new_name),
-            None,
+            self.new_name,
+            new_metadata,
             None,
         )
         .map_err(|e| e.to_string())
@@ -2662,6 +2697,163 @@ allow_reset: true
 
         let request = payload.into_request().expect("request should build");
         assert!(request.metadatas.is_some());
+    }
+
+    #[test]
+    fn test_create_collection_payload_accepts_metadata_and_configuration() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection",
+            "metadata": {
+                "owner": "qa",
+                "priority": 3
+            },
+            "configuration": {
+                "hnsw": {
+                    "space": "cosine",
+                    "ef_construction": 200
+                }
+            },
+            "get_or_create": true
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.metadata.is_some());
+        assert!(request.configuration.is_some());
+        assert!(request.get_or_create);
+    }
+
+    #[test]
+    fn test_create_collection_payload_accepts_configuration_json_alias() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_alias",
+            "configuration_json": {
+                "hnsw": {
+                    "space": "ip"
+                }
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.configuration.is_some());
+    }
+
+    #[test]
+    fn test_create_collection_payload_rejects_invalid_configuration() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_invalid_config",
+            "configuration": {
+                "hnsw": {
+                    "space": "invalid_space"
+                }
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail when configuration payload is invalid");
+        assert!(err.contains("invalid configuration payload"));
+    }
+
+    #[test]
+    fn test_create_collection_payload_accepts_schema() {
+        let schema = serde_json::to_value(Schema::default()).expect("schema should serialize");
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_schema",
+            "schema": schema
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.schema.is_some());
+    }
+
+    #[test]
+    fn test_create_collection_payload_rejects_invalid_schema() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_invalid_schema",
+            "schema": {
+                "defaults": "invalid"
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail when schema payload is invalid");
+        assert!(err.contains("invalid schema payload"));
+    }
+
+    #[test]
+    fn test_update_collection_payload_accepts_new_metadata_without_name() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "new_metadata": {
+                "owner": "qa",
+                "version": 2,
+                "deprecated": null
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.new_name.is_none());
+        assert!(matches!(
+            request.new_metadata,
+            Some(CollectionMetadataUpdate::UpdateMetadata(_))
+        ));
+    }
+
+    #[test]
+    fn test_update_collection_payload_accepts_name_and_new_metadata() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "new_name": "test_collection_v2",
+            "new_metadata": {
+                "owner": "qa"
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert_eq!(request.new_name.as_deref(), Some("test_collection_v2"));
+        match request.new_metadata {
+            Some(CollectionMetadataUpdate::UpdateMetadata(metadata)) => {
+                assert!(metadata.contains_key("owner"));
+            }
+            _ => panic!("expected update metadata variant"),
+        }
+    }
+
+    #[test]
+    fn test_update_collection_payload_requires_name_or_metadata() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001"
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail without update fields");
+        assert!(err.contains("at least one of new_name or new_metadata is required"));
+    }
+
+    #[test]
+    fn test_update_collection_payload_rejects_invalid_new_metadata() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "new_metadata": {
+                "$reserved": "bad"
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail for invalid metadata key");
+        assert!(err.to_lowercase().contains("metadata"));
     }
 
     #[test]

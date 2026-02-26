@@ -169,14 +169,53 @@ fmt.Println("database:", db.Name)
 - `(*Embedded).ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error)`
 - `(*Embedded).GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error)`
 - `(*Embedded).CountCollections(request EmbeddedCountCollectionsRequest) (uint32, error)`
-- `(*Embedded).UpdateCollection(request EmbeddedUpdateCollectionRequest) error` (rename-focused)
+- `(*Embedded).UpdateCollection(request EmbeddedUpdateCollectionRequest) error` (name and/or metadata)
 - `(*Embedded).DeleteCollection(request EmbeddedDeleteCollectionRequest) error`
 - `(*Embedded).ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error)`
+
+`EmbeddedCreateCollectionRequest` fields:
+- `Name`
+- `TenantID` (optional)
+- `DatabaseName` (optional)
+- `Metadata map[string]any` (optional)
+- `Configuration map[string]any` (optional)
+- `Schema map[string]any` (optional)
+- `GetOrCreate` (optional)
+
+`EmbeddedCollection` includes:
+- `ID`, `Name`, `Tenant`, `Database`
+- `Metadata`
+- `ConfigurationJSON` (JSON key `configuration_json`)
+- `Schema`
+
+`EmbeddedUpdateCollectionRequest` fields:
+- `CollectionID`
+- `NewName` (optional)
+- `NewMetadata map[string]any` (optional; nil values delete keys)
+- `DatabaseName` (optional)
+
+At least one of `NewName` or `NewMetadata` is required.
 
 ```go
 col, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
     Name:         "docs",
     DatabaseName: "my_db",
+    Metadata: map[string]any{
+        "owner": "qa",
+        "active": true,
+    },
+    Configuration: map[string]any{
+        "hnsw": map[string]any{
+            "space": "cosine",
+        },
+    },
+    GetOrCreate:  true,
+})
+
+copyCol, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
+    Name:         "docs_schema_copy",
+    DatabaseName: "my_db",
+    Schema:       col.Schema,
     GetOrCreate:  true,
 })
 
@@ -185,6 +224,17 @@ _ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
     NewName:      "docs_v2",
     DatabaseName: "my_db",
 })
+
+_ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
+    CollectionID: col.ID,
+    NewMetadata: map[string]any{
+        "owner": "platform",
+        "deprecated_field": nil, // delete key
+    },
+    DatabaseName: "my_db",
+})
+
+_ = copyCol
 ```
 
 ### 3.6 Record APIs

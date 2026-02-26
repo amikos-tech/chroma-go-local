@@ -246,6 +246,27 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		gen.Float64Range(-1e6, 1e6),
 	))
 
+	properties.Property("Create metadata normalization encodes float values with decimal or exponent", prop.ForAll(
+		func(f float64) bool {
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				return true
+			}
+			normalized, err := validateAndNormalizeMetadata(map[string]any{
+				"score": f,
+			}, false)
+			if err != nil {
+				return false
+			}
+			encoded, err := json.Marshal(normalized)
+			if err != nil {
+				return false
+			}
+			jsonStr := string(encoded)
+			return strings.ContainsAny(jsonStr, ".eE")
+		},
+		gen.Float64Range(-1e6, 1e6),
+	))
+
 	properties.Property("Metadata normalization allows nil values for updates", prop.ForAll(
 		func(key string) bool {
 			if strings.TrimSpace(key) == "" {

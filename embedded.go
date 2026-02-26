@@ -100,18 +100,24 @@ func (c *EmbeddedConfig) toYAML() string {
 
 // EmbeddedCreateCollectionRequest creates a collection in embedded mode.
 type EmbeddedCreateCollectionRequest struct {
-	Name         string `json:"name"`
-	TenantID     string `json:"tenant_id,omitempty"`
-	DatabaseName string `json:"database_name,omitempty"`
-	GetOrCreate  bool   `json:"get_or_create,omitempty"`
+	Name          string         `json:"name"`
+	TenantID      string         `json:"tenant_id,omitempty"`
+	DatabaseName  string         `json:"database_name,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	Configuration map[string]any `json:"configuration,omitempty"`
+	Schema        map[string]any `json:"schema,omitempty"`
+	GetOrCreate   bool           `json:"get_or_create,omitempty"`
 }
 
 // EmbeddedCollection is a compact view of a created collection.
 type EmbeddedCollection struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Tenant   string `json:"tenant"`
-	Database string `json:"database"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	Tenant            string         `json:"tenant"`
+	Database          string         `json:"database"`
+	Metadata          map[string]any `json:"metadata"`
+	ConfigurationJSON map[string]any `json:"configuration_json"`
+	Schema            map[string]any `json:"schema"`
 }
 
 // EmbeddedDatabase is a compact view of a database.
@@ -189,11 +195,12 @@ type EmbeddedCountCollectionsRequest struct {
 	DatabaseName string `json:"database_name,omitempty"`
 }
 
-// EmbeddedUpdateCollectionRequest renames a collection.
+// EmbeddedUpdateCollectionRequest updates collection properties.
 type EmbeddedUpdateCollectionRequest struct {
-	CollectionID string `json:"collection_id"`
-	NewName      string `json:"new_name"`
-	DatabaseName string `json:"database_name,omitempty"`
+	CollectionID string         `json:"collection_id"`
+	NewName      string         `json:"new_name,omitempty"`
+	NewMetadata  map[string]any `json:"new_metadata,omitempty"`
+	DatabaseName string         `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteCollectionRequest deletes a collection by name.
@@ -838,7 +845,7 @@ func (e *Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (ui
 	return count, nil
 }
 
-// UpdateCollection updates collection properties (currently supports rename).
+// UpdateCollection updates collection properties.
 func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error {
 	if e == nil {
 		return ErrEmbeddedNotStarted
@@ -854,13 +861,27 @@ func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) err
 	if strings.TrimSpace(request.CollectionID) == "" {
 		return errors.New("collection_id is required")
 	}
-	if strings.TrimSpace(request.NewName) == "" {
-		return errors.New("new_name is required")
+	hasNewName := strings.TrimSpace(request.NewName) != ""
+	hasNewMetadata := request.NewMetadata != nil
+	if !hasNewName && !hasNewMetadata {
+		return errors.New("at least one of new_name or new_metadata is required")
+	}
+	if hasNewMetadata && len(request.NewMetadata) == 0 {
+		return errors.New("new_metadata must not be empty when provided")
 	}
 
-	requestBytes, err := marshalRequestJSON(request)
+	requestPayload := request
+	if hasNewMetadata {
+		normalizedMetadata, err := validateAndNormalizeMetadata(request.NewMetadata, true)
+		if err != nil {
+			return errors.Wrap(err, "invalid new_metadata")
+		}
+		requestPayload.NewMetadata = normalizedMetadata
+	}
+
+	requestBytes, err := marshalRequestJSON(requestPayload)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "update collection request")
 	}
 
 	rc := chromaEmbeddedUpdateCollection(handle, &requestBytes[0])
@@ -1154,10 +1175,15 @@ func (e *Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*E
 	if strings.TrimSpace(request.Name) == "" {
 		return nil, errors.New("name is required")
 	}
+	normalizedMetadata, err := validateAndNormalizeMetadata(request.Metadata, false)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid metadata")
+	}
+	request.Metadata = normalizedMetadata
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "create collection request")
 	}
 
 	respPtr := chromaEmbeddedCreateCollection(handle, &requestBytes[0])
@@ -1289,6 +1315,23 @@ func validateOptionalLength(field string, valueLen, idsLen int) error {
 		return errors.Errorf("%s must have same length as ids when provided", field)
 	}
 	return nil
+}
+
+func validateAndNormalizeMetadata(metadata map[string]any, allowNilValues bool) (map[string]any, error) {
+	if len(metadata) == 0 {
+		return metadata, nil
+	}
+
+	normalizedMetadata := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		path := fmt.Sprintf("metadata.%s", key)
+		normalizedValue, err := normalizeMetadataValue(path, value, allowNilValues)
+		if err != nil {
+			return nil, err
+		}
+		normalizedMetadata[key] = normalizedValue
+	}
+	return normalizedMetadata, nil
 }
 
 // metadataFloat64 preserves explicit floating-point representation in JSON.

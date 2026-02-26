@@ -177,6 +177,34 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("expected renamed collection id %q, got %q", collection.ID, renamedCollection.ID)
 	}
 
+	if err := embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		NewMetadata: map[string]any{
+			"owner":   "qa",
+			"version": 2,
+		},
+	}); err != nil {
+		t.Fatalf("UpdateCollection metadata failed: %v", err)
+	}
+
+	updatedCollection, err := embedded.GetCollection(EmbeddedGetCollectionRequest{
+		Name:         renamedCollectionName,
+		DatabaseName: databaseName,
+	})
+	if err != nil {
+		t.Fatalf("GetCollection after metadata update failed: %v", err)
+	}
+	if updatedCollection.Metadata == nil {
+		t.Fatal("expected metadata after UpdateCollection")
+	}
+	if owner, ok := updatedCollection.Metadata["owner"].(string); !ok || owner != "qa" {
+		t.Fatalf("expected owner metadata to be %q, got %#v", "qa", updatedCollection.Metadata["owner"])
+	}
+	if version, ok := updatedCollection.Metadata["version"].(float64); !ok || version != 2 {
+		t.Fatalf("expected version metadata to be 2, got %#v", updatedCollection.Metadata["version"])
+	}
+
 	forkName := fmt.Sprintf("%s_fork", collectionName)
 	forkedCollection, err := embedded.ForkCollection(EmbeddedForkCollectionRequest{
 		SourceCollectionID:   collection.ID,

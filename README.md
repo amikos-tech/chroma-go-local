@@ -204,10 +204,35 @@ defer embedded.Close()
 
 collection, err := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
     Name: "docs",
+    Metadata: map[string]any{
+        "owner": "qa",
+        "active": true,
+    },
+    Configuration: map[string]any{
+        "hnsw": map[string]any{
+            "space": "cosine",
+        },
+    },
+    GetOrCreate: true,
 })
 if err != nil {
     panic(err)
 }
+
+// Response includes metadata, configuration_json, and schema.
+fmt.Println(collection.Metadata["owner"])
+fmt.Println(collection.ConfigurationJSON["hnsw"])
+
+// You can also create a collection from an existing schema.
+schemaCopy, err := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
+    Name:        "docs_schema_copy",
+    Schema:      collection.Schema,
+    GetOrCreate: true,
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println(schemaCopy.ID)
 
 err = embedded.Add(chroma.EmbeddedAddRequest{
     CollectionID: collection.ID,
@@ -228,6 +253,29 @@ if err != nil {
 }
 fmt.Println(result.IDs)
 ```
+
+`EmbeddedCreateCollectionRequest` fields:
+- `Name`
+- `TenantID` (optional)
+- `DatabaseName` (optional)
+- `Metadata` (optional)
+- `Configuration` (optional)
+- `Schema` (optional)
+- `GetOrCreate` (optional)
+
+`EmbeddedCollection` response fields include:
+- `ID`, `Name`, `Tenant`, `Database`
+- `Metadata`
+- `ConfigurationJSON` (JSON key: `configuration_json`)
+- `Schema`
+
+`EmbeddedUpdateCollectionRequest` fields:
+- `CollectionID`
+- `NewName` (optional)
+- `NewMetadata` (optional; nil values delete metadata keys)
+- `DatabaseName` (optional)
+
+At least one of `NewName` or `NewMetadata` is required.
 
 ### Configuration Options
 
@@ -292,11 +340,11 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) ListDatabases(request EmbeddedListDatabasesRequest) ([]EmbeddedDatabase, error)` | List databases in embedded mode. |
 | `(*Embedded) GetDatabase(request EmbeddedGetDatabaseRequest) (*EmbeddedDatabase, error)` | Get a database by name. |
 | `(*Embedded) DeleteDatabase(request EmbeddedDeleteDatabaseRequest) error` | Delete a database by name. |
-| `(*Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*EmbeddedCollection, error)` | Create a collection without HTTP. |
-| `(*Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error)` | List collections for a database. |
-| `(*Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error)` | Get a collection by name. |
+| `(*Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*EmbeddedCollection, error)` | Create a collection without HTTP, including optional metadata/configuration/schema. |
+| `(*Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]EmbeddedCollection, error)` | List collections for a database (includes metadata/configuration_json/schema in each item). |
+| `(*Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*EmbeddedCollection, error)` | Get a collection by name (includes metadata/configuration_json/schema). |
 | `(*Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (uint32, error)` | Count collections for a database. |
-| `(*Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error` | Update a collection (rename-focused). |
+| `(*Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) error` | Update a collection name and/or metadata. |
 | `(*Embedded) DeleteCollection(request EmbeddedDeleteCollectionRequest) error` | Delete a collection by name. |
 | `(*Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error)` | Fork a collection (may be unimplemented in local mode). |
 | `(*Embedded) CountRecords(request EmbeddedCountRecordsRequest) (uint32, error)` | Count records for a collection. |
