@@ -2,6 +2,7 @@ package chroma
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -202,6 +203,89 @@ func TestServerBackupLeaveStoppedSkipsRestart(t *testing.T) {
 	require.ErrorIs(t, server.Stop(), ErrServerNotStarted)
 }
 
+func TestServerBackupReportsRestartFailureAfterSuccessfulSnapshot(t *testing.T) {
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "server-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
+
+	port := reserveFreeLoopbackPort(t)
+	server, err := NewServer(
+		WithPort(port),
+		WithListenAddress("127.0.0.1"),
+		WithPersistPath(persistDir),
+		WithAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close() })
+
+	requireServerHeartbeat(t, server.URL())
+
+	server.stateMu.Lock()
+	server.config = StartServerConfig{}
+	server.stateMu.Unlock()
+
+	backupDir := filepath.Join(t.TempDir(), "server-backup")
+	manifest, err := server.Backup(ServerBackupOptions{
+		BackupOptions: BackupOptions{
+			DestinationPath: backupDir,
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "backup completed but server restart failed")
+	require.NotNil(t, manifest)
+
+	snapshotSentinel := filepath.Join(backupDir, backupSnapshotDirname, "sentinel.txt")
+	data, readErr := os.ReadFile(snapshotSentinel)
+	require.NoError(t, readErr)
+	require.Equal(t, "server-backup", string(data))
+
+	requireServerUnavailable(t, server.URL())
+	require.ErrorIs(t, server.Stop(), ErrServerNotStarted)
+}
+
+func TestServerBackupConcurrentCallFailsWhileFirstBackupLeavesServerStopped(t *testing.T) {
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "server-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
+
+	port := reserveFreeLoopbackPort(t)
+	server, err := NewServer(
+		WithPort(port),
+		WithListenAddress("127.0.0.1"),
+		WithPersistPath(persistDir),
+		WithAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close() })
+
+	firstResult := make(chan error, 1)
+	backupDirOne := filepath.Join(t.TempDir(), "server-backup-one")
+	go func() {
+		_, firstErr := server.Backup(ServerBackupOptions{
+			BackupOptions: BackupOptions{
+				DestinationPath: backupDirOne,
+			},
+			LeaveStopped: true,
+		})
+		firstResult <- firstErr
+	}()
+
+	requireServerUnavailable(t, server.URL())
+
+	backupDirTwo := filepath.Join(t.TempDir(), "server-backup-two")
+	_, err = server.Backup(ServerBackupOptions{
+		BackupOptions: BackupOptions{
+			DestinationPath: backupDirTwo,
+		},
+	})
+	require.ErrorIs(t, err, ErrServerNotStarted)
+	require.NoError(t, <-firstResult)
+}
+
 func TestServerBackupGuardsNilAndClosedReceiver(t *testing.T) {
 	require.NoError(t, Init(""))
 
@@ -384,6 +468,80 @@ func TestEmbeddedBackupLeaveClosedSkipsReopen(t *testing.T) {
 	require.ErrorIs(t, err, ErrEmbeddedNotStarted)
 }
 
+func TestEmbeddedBackupReportsReopenFailureAfterSuccessfulSnapshot(t *testing.T) {
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
+
+	embedded, err := NewEmbedded(
+		WithEmbeddedPersistPath(persistDir),
+		WithEmbeddedAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = embedded.Close() })
+
+	embedded.stateMu.Lock()
+	embedded.config = StartEmbeddedConfig{}
+	embedded.stateMu.Unlock()
+
+	backupDir := filepath.Join(t.TempDir(), "embedded-backup")
+	manifest, err := embedded.Backup(EmbeddedBackupOptions{
+		BackupOptions: BackupOptions{
+			DestinationPath: backupDir,
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "backup completed but embedded reopen failed")
+	require.NotNil(t, manifest)
+
+	snapshotSentinel := filepath.Join(backupDir, backupSnapshotDirname, "sentinel.txt")
+	data, readErr := os.ReadFile(snapshotSentinel)
+	require.NoError(t, readErr)
+	require.Equal(t, "embedded-backup", string(data))
+
+	requireEmbeddedUnavailable(t, embedded)
+}
+
+func TestEmbeddedBackupConcurrentCallFailsWhileFirstBackupLeavesEmbeddedClosed(t *testing.T) {
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
+
+	embedded, err := NewEmbedded(
+		WithEmbeddedPersistPath(persistDir),
+		WithEmbeddedAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = embedded.Close() })
+
+	firstResult := make(chan error, 1)
+	backupDirOne := filepath.Join(t.TempDir(), "embedded-backup-one")
+	go func() {
+		_, firstErr := embedded.Backup(EmbeddedBackupOptions{
+			BackupOptions: BackupOptions{
+				DestinationPath: backupDirOne,
+			},
+			LeaveClosed: true,
+		})
+		firstResult <- firstErr
+	}()
+
+	requireEmbeddedUnavailable(t, embedded)
+
+	backupDirTwo := filepath.Join(t.TempDir(), "embedded-backup-two")
+	_, err = embedded.Backup(EmbeddedBackupOptions{
+		BackupOptions: BackupOptions{
+			DestinationPath: backupDirTwo,
+		},
+	})
+	require.ErrorIs(t, err, ErrEmbeddedNotStarted)
+	require.NoError(t, <-firstResult)
+}
+
 func TestEmbeddedBackupGuardsNilAndClosedReceiver(t *testing.T) {
 	require.NoError(t, Init(""))
 
@@ -447,6 +605,54 @@ func TestEmbeddedBackupUsesRuntimePersistPathFromEnvOverride(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
+func TestServerBackupRecoversFromSourceReadFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission semantics differ on windows")
+	}
+
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "server-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "a-readable.txt"), []byte("ok"), 0o644))
+
+	unreadablePath := filepath.Join(persistDir, "z-unreadable.txt")
+	require.NoError(t, os.WriteFile(unreadablePath, []byte("nope"), 0o644))
+	require.NoError(t, os.Chmod(unreadablePath, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(unreadablePath, 0o644) })
+
+	probe, probeErr := os.Open(unreadablePath)
+	if probeErr == nil {
+		_ = probe.Close()
+		t.Skip("filesystem does not enforce unreadable file mode for test process")
+	}
+
+	port := reserveFreeLoopbackPort(t)
+	server, err := NewServer(
+		WithPort(port),
+		WithListenAddress("127.0.0.1"),
+		WithPersistPath(persistDir),
+		WithAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close() })
+
+	requireServerHeartbeat(t, server.URL())
+
+	backupDir := filepath.Join(t.TempDir(), "server-backup")
+	manifest, err := server.Backup(ServerBackupOptions{
+		BackupOptions: BackupOptions{
+			DestinationPath: backupDir,
+		},
+	})
+	require.Error(t, err)
+	require.Nil(t, manifest)
+	require.Contains(t, err.Error(), "failed to copy persistence directory")
+
+	// Backup should recover availability via restart when copy fails.
+	requireServerHeartbeat(t, server.URL())
+}
+
 func TestNewBackupPlanRejectsSymlinkDestinationInsideSource(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior differs on windows")
@@ -490,6 +696,100 @@ func TestExecuteBackupCreatesEmptySnapshotWhenSourceMissing(t *testing.T) {
 	info, err := os.Stat(filepath.Join(destinationPath, backupSnapshotDirname))
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
+}
+
+func TestExecuteBackupLeavesPartialSnapshotOnCopyFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior differs on windows")
+	}
+
+	sourcePersist := filepath.Join(t.TempDir(), "source-persist")
+	require.NoError(t, os.MkdirAll(sourcePersist, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourcePersist, "a-first.txt"), []byte("ok"), 0o644))
+
+	linkPath := filepath.Join(sourcePersist, "b-link")
+	if err := os.Symlink(filepath.Join(sourcePersist, "a-first.txt"), linkPath); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+
+	destinationPath := filepath.Join(t.TempDir(), "backup-destination")
+	require.NoError(t, ensureEmptyDir(destinationPath))
+
+	plan := &backupPlan{
+		sourcePersistPath: sourcePersist,
+		sourcePathExists:  true,
+		sourcePaths:       []string{sourcePersist},
+		destinationPath:   destinationPath,
+		includeMetadata:   false,
+		wrapperVersion:    "test",
+	}
+
+	manifest, err := executeBackup(BackupModeServer, plan)
+	require.Error(t, err)
+	require.Nil(t, manifest)
+	require.Contains(t, err.Error(), "backup does not support symbolic links")
+
+	data, readErr := os.ReadFile(filepath.Join(destinationPath, backupSnapshotDirname, "a-first.txt"))
+	require.NoError(t, readErr)
+	require.Equal(t, "ok", string(data))
+
+	_, statErr := os.Stat(filepath.Join(destinationPath, backupManifestFilename))
+	require.Error(t, statErr)
+	require.True(t, os.IsNotExist(statErr))
+}
+
+func TestExecuteBackupConcurrentWritersOnSameDestinationOneFails(t *testing.T) {
+	sourcePersist := filepath.Join(t.TempDir(), "source-persist")
+	require.NoError(t, os.MkdirAll(sourcePersist, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourcePersist, "file.txt"), []byte("ok"), 0o644))
+
+	destinationPath := filepath.Join(t.TempDir(), "backup-destination")
+	require.NoError(t, ensureEmptyDir(destinationPath))
+
+	plan := &backupPlan{
+		sourcePersistPath: sourcePersist,
+		sourcePathExists:  true,
+		sourcePaths:       []string{sourcePersist},
+		destinationPath:   destinationPath,
+		includeMetadata:   false,
+		wrapperVersion:    "test",
+	}
+
+	type result struct {
+		manifest *BackupManifest
+		err      error
+	}
+
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	runBackup := func() {
+		<-start
+		manifest, err := executeBackup(BackupModeServer, plan)
+		results <- result{manifest: manifest, err: err}
+	}
+
+	go runBackup()
+	go runBackup()
+	close(start)
+
+	first := <-results
+	second := <-results
+
+	successes := 0
+	failures := 0
+	for _, outcome := range []result{first, second} {
+		if outcome.err == nil {
+			successes++
+			require.NotNil(t, outcome.manifest)
+			continue
+		}
+		failures++
+		require.Nil(t, outcome.manifest)
+		require.Contains(t, outcome.err.Error(), "failed to copy persistence directory")
+	}
+
+	require.Equal(t, 1, successes)
+	require.Equal(t, 1, failures)
 }
 
 func TestIsWithinPathReturnsErrorForMixedPathTypes(t *testing.T) {
@@ -616,4 +916,12 @@ func requireServerUnavailable(t *testing.T, url string) {
 		_ = resp.Body.Close()
 		return false
 	}, 5*time.Second, 100*time.Millisecond, "server heartbeat remained reachable")
+}
+
+func requireEmbeddedUnavailable(t *testing.T, embedded *Embedded) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		_, err := embedded.Heartbeat()
+		return errors.Is(err, ErrEmbeddedNotStarted)
+	}, 5*time.Second, 100*time.Millisecond, "embedded mode remained reachable")
 }
