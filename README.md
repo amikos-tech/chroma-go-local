@@ -337,6 +337,40 @@ Constraints and error conditions:
   This containment check resolves symlinks.
 - Symlinks inside the source persist tree are rejected and cause backup to fail.
 
+Practical example (managed server mode):
+
+```go
+backupRoot := "./backups"
+destination := filepath.Join(
+    backupRoot,
+    time.Now().UTC().Format("20060102-150405"),
+)
+
+manifest, err := srv.Backup(chroma.ServerBackupOptions{
+    BackupOptions: chroma.BackupOptions{
+        DestinationPath: destination,
+        IncludeMetadata: true,
+    },
+})
+if err != nil {
+    panic(err)
+}
+
+fmt.Printf("backup created: %s (%d files)\n", manifest.SnapshotPath, manifest.FileCount)
+
+// Optional restore validation: start another server from the snapshot.
+restored, err := chroma.NewServer(
+    chroma.WithPort(8010),
+    chroma.WithListenAddress("127.0.0.1"),
+    chroma.WithPersistPath(manifest.SnapshotPath),
+    chroma.WithAllowReset(true),
+)
+if err != nil {
+    panic(err)
+}
+defer restored.Close()
+```
+
 ### Metadata Value Rules (Embedded Record APIs)
 
 For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, and `EmbeddedUpsertRecordsRequest.Metadatas`:
