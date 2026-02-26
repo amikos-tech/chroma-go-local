@@ -92,6 +92,9 @@ func (s *Server) Backup(options ServerBackupOptions) (*BackupManifest, error) {
 	if s == nil {
 		return nil, ErrServerNotStarted
 	}
+	s.backupMu.Lock()
+	defer s.backupMu.Unlock()
+
 	config, persistPath, err := s.snapshotBackupInputs()
 	if err != nil {
 		return nil, err
@@ -133,6 +136,9 @@ func (e *Embedded) Backup(options EmbeddedBackupOptions) (*BackupManifest, error
 	if e == nil {
 		return nil, ErrEmbeddedNotStarted
 	}
+	e.backupMu.Lock()
+	defer e.backupMu.Unlock()
+
 	config, persistPath, err := e.snapshotBackupInputs()
 	if err != nil {
 		return nil, err
@@ -434,7 +440,7 @@ func copyDirectory(sourceDir, destinationDir string, includeMetadata bool) (int,
 	return fileCount, totalBytes, files, nil
 }
 
-func copyFile(sourcePath, destinationPath string, info os.FileInfo) error {
+func copyFile(sourcePath, destinationPath string, info os.FileInfo) (err error) {
 	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
 		return err
 	}
@@ -443,7 +449,15 @@ func copyFile(sourcePath, destinationPath string, info os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = sourceFile.Close() }()
+	defer func() {
+		closeErr := sourceFile.Close()
+		if closeErr == nil {
+			return
+		}
+		if err == nil {
+			err = errors.Wrap(closeErr, "failed to close source file")
+		}
+	}()
 
 	destinationFile, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
 	if err != nil {

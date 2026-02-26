@@ -199,7 +199,8 @@ func cStringFromGo(s string) []byte {
 
 // Server represents a running Chroma server instance.
 type Server struct {
-	stateMu sync.RWMutex
+	stateMu  sync.RWMutex
+	backupMu sync.Mutex
 
 	handle      uintptr
 	port        int

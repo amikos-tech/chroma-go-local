@@ -23,7 +23,8 @@ const (
 
 // Embedded represents an in-process Chroma frontend (no HTTP server).
 type Embedded struct {
-	stateMu sync.RWMutex
+	stateMu  sync.RWMutex
+	backupMu sync.Mutex
 
 	handle      uintptr
 	config      StartEmbeddedConfig

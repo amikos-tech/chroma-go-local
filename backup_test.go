@@ -286,6 +286,54 @@ func TestServerBackupConcurrentCallFailsWhileFirstBackupLeavesServerStopped(t *t
 	require.NoError(t, <-firstResult)
 }
 
+func TestServerBackupConcurrentCallsWithRestartBothSucceed(t *testing.T) {
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "server-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
+
+	port := reserveFreeLoopbackPort(t)
+	server, err := NewServer(
+		WithPort(port),
+		WithListenAddress("127.0.0.1"),
+		WithPersistPath(persistDir),
+		WithAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close() })
+
+	type backupResult struct {
+		manifest *BackupManifest
+		err      error
+	}
+
+	start := make(chan struct{})
+	results := make(chan backupResult, 2)
+	runBackup := func(destination string) {
+		<-start
+		manifest, backupErr := server.Backup(ServerBackupOptions{
+			BackupOptions: BackupOptions{
+				DestinationPath: destination,
+			},
+		})
+		results <- backupResult{manifest: manifest, err: backupErr}
+	}
+
+	go runBackup(filepath.Join(t.TempDir(), "server-backup-one"))
+	go runBackup(filepath.Join(t.TempDir(), "server-backup-two"))
+	close(start)
+
+	first := <-results
+	second := <-results
+	for _, result := range []backupResult{first, second} {
+		require.NoError(t, result.err)
+		require.NotNil(t, result.manifest)
+	}
+
+	requireServerHeartbeat(t, server.URL())
+}
+
 func TestServerBackupGuardsNilAndClosedReceiver(t *testing.T) {
 	require.NoError(t, Init(""))
 
@@ -540,6 +588,53 @@ func TestEmbeddedBackupConcurrentCallFailsWhileFirstBackupLeavesEmbeddedClosed(t
 	})
 	require.ErrorIs(t, err, ErrEmbeddedNotStarted)
 	require.NoError(t, <-firstResult)
+}
+
+func TestEmbeddedBackupConcurrentCallsWithReopenBothSucceed(t *testing.T) {
+	require.NoError(t, Init(""))
+
+	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
+	require.NoError(t, os.MkdirAll(persistDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
+
+	embedded, err := NewEmbedded(
+		WithEmbeddedPersistPath(persistDir),
+		WithEmbeddedAllowReset(true),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = embedded.Close() })
+
+	type backupResult struct {
+		manifest *BackupManifest
+		err      error
+	}
+
+	start := make(chan struct{})
+	results := make(chan backupResult, 2)
+	runBackup := func(destination string) {
+		<-start
+		manifest, backupErr := embedded.Backup(EmbeddedBackupOptions{
+			BackupOptions: BackupOptions{
+				DestinationPath: destination,
+			},
+		})
+		results <- backupResult{manifest: manifest, err: backupErr}
+	}
+
+	go runBackup(filepath.Join(t.TempDir(), "embedded-backup-one"))
+	go runBackup(filepath.Join(t.TempDir(), "embedded-backup-two"))
+	close(start)
+
+	first := <-results
+	second := <-results
+	for _, result := range []backupResult{first, second} {
+		require.NoError(t, result.err)
+		require.NotNil(t, result.manifest)
+	}
+
+	heartbeat, err := embedded.Heartbeat()
+	require.NoError(t, err)
+	require.NotZero(t, heartbeat)
 }
 
 func TestEmbeddedBackupGuardsNilAndClosedReceiver(t *testing.T) {
