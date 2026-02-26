@@ -2807,6 +2807,27 @@ allow_reset: true
     }
 
     #[test]
+    fn test_update_collection_payload_accepts_name_and_new_metadata() {
+        let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
+            "collection_id": "00000000-0000-0000-0000-000000000001",
+            "new_name": "test_collection_v2",
+            "new_metadata": {
+                "owner": "qa"
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert_eq!(request.new_name.as_deref(), Some("test_collection_v2"));
+        match request.new_metadata {
+            Some(CollectionMetadataUpdate::UpdateMetadata(metadata)) => {
+                assert!(metadata.contains_key("owner"));
+            }
+            _ => panic!("expected update metadata variant"),
+        }
+    }
+
+    #[test]
     fn test_update_collection_payload_requires_name_or_metadata() {
         let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
             "collection_id": "00000000-0000-0000-0000-000000000001"

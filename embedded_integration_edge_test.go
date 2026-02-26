@@ -157,3 +157,58 @@ func TestEmbeddedCreateCollectionRejectsInvalidConfigurationIntegration(t *testi
 	require.Error(t, err)
 	require.Contains(t, strings.ToLower(err.Error()), "invalid configuration")
 }
+
+func TestEmbeddedUpdateCollectionMetadataKeyDeletionRoundTrip(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("update_meta_delete_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collectionName := fmt.Sprintf("update_meta_delete_collection_%d", time.Now().UnixNano())
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         collectionName,
+		DatabaseName: databaseName,
+		Metadata: map[string]any{
+			"keep": "yes",
+			"drop": "remove-me",
+		},
+		GetOrCreate: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+	require.Contains(t, collection.Metadata, "drop")
+
+	err = embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		NewMetadata: map[string]any{
+			"drop": nil,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateCollection metadata deletion failed: %v", err)
+	}
+
+	var lastMetadata map[string]any
+	var lastErr error
+	require.Eventually(t, func() bool {
+		updated, getErr := embedded.GetCollection(EmbeddedGetCollectionRequest{
+			Name:         collectionName,
+			DatabaseName: databaseName,
+		})
+		if getErr != nil {
+			lastErr = getErr
+			return false
+		}
+		lastErr = nil
+		lastMetadata = updated.Metadata
+		if updated.Metadata == nil {
+			return true
+		}
+		_, exists := updated.Metadata["drop"]
+		return !exists
+	}, 5*time.Second, 100*time.Millisecond, "collection metadata key deletion did not converge (last metadata=%#v, last err=%v)", lastMetadata, lastErr)
+}
