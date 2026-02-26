@@ -173,10 +173,41 @@ fmt.Println("database:", db.Name)
 - `(*Embedded).DeleteCollection(request EmbeddedDeleteCollectionRequest) error`
 - `(*Embedded).ForkCollection(request EmbeddedForkCollectionRequest) (*EmbeddedCollection, error)`
 
+`EmbeddedCreateCollectionRequest` fields:
+- `Name`
+- `TenantID` (optional)
+- `DatabaseName` (optional)
+- `Metadata map[string]any` (optional)
+- `Configuration map[string]any` (optional)
+- `Schema map[string]any` (optional)
+- `GetOrCreate` (optional)
+
+`EmbeddedCollection` includes:
+- `ID`, `Name`, `Tenant`, `Database`
+- `Metadata`
+- `ConfigurationJSON` (JSON key `configuration_json`)
+- `Schema`
+
 ```go
 col, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
     Name:         "docs",
     DatabaseName: "my_db",
+    Metadata: map[string]any{
+        "owner": "qa",
+        "active": true,
+    },
+    Configuration: map[string]any{
+        "hnsw": map[string]any{
+            "space": "cosine",
+        },
+    },
+    GetOrCreate:  true,
+})
+
+copyCol, _ := embedded.CreateCollection(chroma.EmbeddedCreateCollectionRequest{
+    Name:         "docs_schema_copy",
+    DatabaseName: "my_db",
+    Schema:       col.Schema,
     GetOrCreate:  true,
 })
 
@@ -185,6 +216,8 @@ _ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
     NewName:      "docs_v2",
     DatabaseName: "my_db",
 })
+
+_ = copyCol
 ```
 
 ### 3.6 Record APIs

@@ -12,13 +12,13 @@ use chroma_frontend::frontend_service_entrypoint_with_config_system_registry;
 use chroma_frontend::Frontend;
 use chroma_system::System;
 use chroma_types::{
-    AddCollectionRecordsRequest, CollectionUuid, CountCollectionsRequest, CountRequest,
-    CreateCollectionRequest, CreateDatabaseRequest, CreateTenantRequest, DatabaseName,
-    DeleteCollectionRecordsRequest, DeleteCollectionRequest, DeleteDatabaseRequest,
+    AddCollectionRecordsRequest, CollectionConfiguration, CollectionUuid, CountCollectionsRequest,
+    CountRequest, CreateCollectionRequest, CreateDatabaseRequest, CreateTenantRequest,
+    DatabaseName, DeleteCollectionRecordsRequest, DeleteCollectionRequest, DeleteDatabaseRequest,
     ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest, GetRequest, GetTenantRequest,
     IncludeList, ListCollectionsRequest, ListDatabasesRequest, Metadata, QueryRequest,
-    RawWhereFields, UpdateCollectionRecordsRequest, UpdateCollectionRequest, UpdateMetadata,
-    UpdateTenantRequest, UpsertCollectionRecordsRequest, Where,
+    RawWhereFields, Schema, UpdateCollectionRecordsRequest, UpdateCollectionRequest,
+    UpdateMetadata, UpdateTenantRequest, UpsertCollectionRecordsRequest, Where,
 };
 use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
@@ -159,6 +159,12 @@ struct EmbeddedCreateCollectionPayload {
     #[serde(default)]
     database_name: Option<String>,
     #[serde(default)]
+    metadata: Option<Metadata>,
+    #[serde(default, alias = "configuration_json")]
+    configuration: Option<Value>,
+    #[serde(default)]
+    schema: Option<Value>,
+    #[serde(default)]
     get_or_create: bool,
 }
 
@@ -166,14 +172,33 @@ impl EmbeddedCreateCollectionPayload {
     fn into_request(self) -> Result<CreateCollectionRequest, String> {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
         let database_name = resolve_database_name_typed(self.database_name)?;
+        let configuration = self
+            .configuration
+            .map(|raw_configuration| {
+                let configuration: CollectionConfiguration =
+                    serde_json::from_value(raw_configuration)
+                        .map_err(|e| format!("invalid configuration payload: {e}"))?;
+                configuration
+                    .try_into()
+                    .map_err(|e| format!("invalid configuration value: {e}"))
+            })
+            .transpose()?;
+        let schema = self
+            .schema
+            .map(|raw_schema| -> Result<Schema, String> {
+                let schema: Schema = serde_json::from_value(raw_schema)
+                    .map_err(|e| format!("invalid schema payload: {e}"))?;
+                Ok(schema)
+            })
+            .transpose()?;
 
         CreateCollectionRequest::try_new(
             tenant_id,
             database_name,
             self.name,
-            None,
-            None,
-            None,
+            self.metadata,
+            configuration,
+            schema,
             self.get_or_create,
         )
         .map_err(|e| e.to_string())
@@ -2662,6 +2687,93 @@ allow_reset: true
 
         let request = payload.into_request().expect("request should build");
         assert!(request.metadatas.is_some());
+    }
+
+    #[test]
+    fn test_create_collection_payload_accepts_metadata_and_configuration() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection",
+            "metadata": {
+                "owner": "qa",
+                "priority": 3
+            },
+            "configuration": {
+                "hnsw": {
+                    "space": "cosine",
+                    "ef_construction": 200
+                }
+            },
+            "get_or_create": true
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.metadata.is_some());
+        assert!(request.configuration.is_some());
+        assert!(request.get_or_create);
+    }
+
+    #[test]
+    fn test_create_collection_payload_accepts_configuration_json_alias() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_alias",
+            "configuration_json": {
+                "hnsw": {
+                    "space": "ip"
+                }
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.configuration.is_some());
+    }
+
+    #[test]
+    fn test_create_collection_payload_rejects_invalid_configuration() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_invalid_config",
+            "configuration": {
+                "hnsw": {
+                    "space": "invalid_space"
+                }
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail when configuration payload is invalid");
+        assert!(err.contains("invalid configuration payload"));
+    }
+
+    #[test]
+    fn test_create_collection_payload_accepts_schema() {
+        let schema = serde_json::to_value(Schema::default()).expect("schema should serialize");
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_schema",
+            "schema": schema
+        }))
+        .expect("payload should deserialize");
+
+        let request = payload.into_request().expect("request should build");
+        assert!(request.schema.is_some());
+    }
+
+    #[test]
+    fn test_create_collection_payload_rejects_invalid_schema() {
+        let payload: EmbeddedCreateCollectionPayload = serde_json::from_value(json!({
+            "name": "test_collection_invalid_schema",
+            "schema": {
+                "defaults": "invalid"
+            }
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should fail when schema payload is invalid");
+        assert!(err.contains("invalid schema payload"));
     }
 
     #[test]

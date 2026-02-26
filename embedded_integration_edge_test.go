@@ -23,7 +23,11 @@ func newEmbeddedForIntegrationTest(t *testing.T) *Embedded {
 	if err != nil {
 		t.Fatalf("Failed to start embedded mode: %v", err)
 	}
-	t.Cleanup(func() { _ = embedded.Close() })
+	t.Cleanup(func() {
+		if closeErr := embedded.Close(); closeErr != nil {
+			t.Errorf("failed to close embedded runtime: %v", closeErr)
+		}
+	})
 	return embedded
 }
 
@@ -136,4 +140,20 @@ func TestEmbeddedDeleteByDocumentFilterOnly(t *testing.T) {
 		})
 		return err == nil && count == 1
 	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after filtered delete")
+}
+
+func TestEmbeddedCreateCollectionRejectsInvalidConfigurationIntegration(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	_, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name: fmt.Sprintf("invalid_config_collection_%d", time.Now().UnixNano()),
+		Configuration: map[string]any{
+			"hnsw": map[string]any{
+				"space": "invalid_space",
+			},
+		},
+		GetOrCreate: true,
+	})
+	require.Error(t, err)
+	require.Contains(t, strings.ToLower(err.Error()), "invalid configuration")
 }

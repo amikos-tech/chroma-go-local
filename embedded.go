@@ -100,18 +100,24 @@ func (c *EmbeddedConfig) toYAML() string {
 
 // EmbeddedCreateCollectionRequest creates a collection in embedded mode.
 type EmbeddedCreateCollectionRequest struct {
-	Name         string `json:"name"`
-	TenantID     string `json:"tenant_id,omitempty"`
-	DatabaseName string `json:"database_name,omitempty"`
-	GetOrCreate  bool   `json:"get_or_create,omitempty"`
+	Name          string         `json:"name"`
+	TenantID      string         `json:"tenant_id,omitempty"`
+	DatabaseName  string         `json:"database_name,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	Configuration map[string]any `json:"configuration,omitempty"`
+	Schema        map[string]any `json:"schema,omitempty"`
+	GetOrCreate   bool           `json:"get_or_create,omitempty"`
 }
 
 // EmbeddedCollection is a compact view of a created collection.
 type EmbeddedCollection struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Tenant   string `json:"tenant"`
-	Database string `json:"database"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	Tenant            string         `json:"tenant"`
+	Database          string         `json:"database"`
+	Metadata          map[string]any `json:"metadata"`
+	ConfigurationJSON map[string]any `json:"configuration_json"`
+	Schema            map[string]any `json:"schema"`
 }
 
 // EmbeddedDatabase is a compact view of a database.
@@ -1154,10 +1160,15 @@ func (e *Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*E
 	if strings.TrimSpace(request.Name) == "" {
 		return nil, errors.New("name is required")
 	}
+	normalizedMetadata, err := validateAndNormalizeMetadata(request.Metadata, false)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid metadata")
+	}
+	request.Metadata = normalizedMetadata
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "create collection request")
 	}
 
 	respPtr := chromaEmbeddedCreateCollection(handle, &requestBytes[0])
@@ -1289,6 +1300,23 @@ func validateOptionalLength(field string, valueLen, idsLen int) error {
 		return errors.Errorf("%s must have same length as ids when provided", field)
 	}
 	return nil
+}
+
+func validateAndNormalizeMetadata(metadata map[string]any, allowNilValues bool) (map[string]any, error) {
+	if len(metadata) == 0 {
+		return metadata, nil
+	}
+
+	normalizedMetadata := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		path := fmt.Sprintf("metadata.%s", key)
+		normalizedValue, err := normalizeMetadataValue(path, value, allowNilValues)
+		if err != nil {
+			return nil, err
+		}
+		normalizedMetadata[key] = normalizedValue
+	}
+	return normalizedMetadata, nil
 }
 
 // metadataFloat64 preserves explicit floating-point representation in JSON.
