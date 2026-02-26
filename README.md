@@ -330,6 +330,13 @@ Options:
   - embeds `BackupOptions`
   - `LeaveClosed bool` (default flow reopens embedded mode)
 
+Constraints and error conditions:
+
+- `DestinationPath` must not exist or must be an empty directory.
+- `<destination>/persist` must not be inside the source persist path.
+  This containment check resolves symlinks.
+- Symlinks inside the source persist tree are rejected and cause backup to fail.
+
 ### Metadata Value Rules (Embedded Record APIs)
 
 For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, and `EmbeddedUpsertRecordsRequest.Metadatas`:

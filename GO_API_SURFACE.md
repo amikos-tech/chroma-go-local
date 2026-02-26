@@ -61,6 +61,12 @@ if err != nil {
 fmt.Println("backup manifest:", manifest.ManifestPath)
 ```
 
+Backup constraints (applies to server and embedded backup):
+
+- `DestinationPath` must not exist or must be an empty directory.
+- `<destination>/persist` must not be inside the source persist path (symlink-aware check).
+- Symlinks inside the source persist tree are rejected and cause backup to fail.
+
 ## 3. Embedded Mode API
 
 ### 3.1 Start and Stop
