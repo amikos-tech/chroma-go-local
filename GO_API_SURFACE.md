@@ -81,6 +81,7 @@ Compaction semantics:
 - This is not a full HNSW rebuild from scratch and does not change collection configuration/schema.
 - In server mode, the server is unavailable while compaction runs (stop -> compact in embedded mode -> restart).
 - `CompactAll` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
+- `result.CollectionCount` is attempted collections, not only successful collections.
 
 Backup constraints (applies to server and embedded backup):
 

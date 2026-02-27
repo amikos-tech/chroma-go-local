@@ -376,6 +376,7 @@ This compaction is not a full index rebuild. In particular, it does not rebuild 
 Operational notes:
 - In server mode, the server is unavailable during compaction because it is stopped, compacted via embedded mode, then restarted.
 - `CompactAll` continues across collections and records per-collection failures in `result.Collections[i].Error`.
+- `result.CollectionCount` is the number of attempted collections (including entries with `Error`).
 
 ### Backup API
 

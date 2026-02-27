@@ -36,6 +36,7 @@ type CompactionCollectionResult struct {
 
 // CompactionResult captures explicit compaction execution metadata.
 type CompactionResult struct {
+	// CollectionCount is the number of collections attempted, including entries with per-collection errors.
 	CollectionCount       uint32                       `json:"collection_count"`
 	DurationMS            uint64                       `json:"duration_ms"`
 	PendingOpsBeforeTotal uint64                       `json:"pending_ops_before_total"`
@@ -178,10 +179,14 @@ func (s *Server) runCompaction(run func(*Embedded) (*CompactionResult, error)) (
 		return nil, err
 	}
 	if err := s.Close(); err != nil {
-		return nil, errors.Wrap(err, "failed to stop server before compaction; server remains stopped")
+		return nil, errors.Wrap(err, "failed to stop server before compaction")
 	}
 
-	embedded, startErr := StartEmbedded(StartEmbeddedConfig(config))
+	//nolint:staticcheck // Keep explicit field mapping so server and embedded config types can evolve independently.
+	embedded, startErr := StartEmbedded(StartEmbeddedConfig{
+		ConfigPath:   config.ConfigPath,
+		ConfigString: config.ConfigString,
+	})
 	if startErr != nil {
 		restartErr := s.restartFromConfig(config)
 		if restartErr != nil {

@@ -2911,7 +2911,7 @@ pub unsafe extern "C" fn chroma_embedded_compact_all(
                         break;
                     }
 
-                    let count = databases.len() as u32;
+                    let count = u32::try_from(databases.len()).unwrap_or(u32::MAX);
                     database_names.extend(databases.into_iter().map(|database| database.name));
                     if count < page_size {
                         break;
@@ -2943,7 +2943,7 @@ pub unsafe extern "C" fn chroma_embedded_compact_all(
                         break;
                     }
 
-                    let count = collections.len() as u32;
+                    let count = u32::try_from(collections.len()).unwrap_or(u32::MAX);
                     for collection in collections {
                         targets.push(compaction_target_from_parts(
                             collection.collection_id,
