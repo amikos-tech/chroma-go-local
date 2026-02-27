@@ -391,7 +391,9 @@ struct EmbeddedCompactionCollectionResult {
     name: String,
     tenant_id: String,
     database_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pending_ops_before: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pending_ops_after: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pending_ops_before_error: Option<String>,
