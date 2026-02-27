@@ -4,13 +4,15 @@ use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use chroma_config::registry::Registry;
 use chroma_config::Configurable;
 use chroma_frontend::config::FrontendServerConfig;
 use chroma_frontend::frontend_service_entrypoint_with_config_system_registry;
 use chroma_frontend::Frontend;
-use chroma_system::System;
+use chroma_log::{BackfillMessage, LocalCompactionManager, PurgeLogsMessage};
+use chroma_system::{ComponentHandle, System};
 use chroma_types::{
     AddCollectionRecordsRequest, CollectionConfiguration, CollectionMetadataUpdate, CollectionUuid,
     CountCollectionsRequest, CountRequest, CreateCollectionRequest, CreateDatabaseRequest,
@@ -23,7 +25,7 @@ use chroma_types::{
 };
 use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
@@ -148,7 +150,7 @@ struct EmbeddedHandle {
     runtime: Runtime,
     frontend: Mutex<Frontend>,
     _system: System,
-    _registry: Registry,
+    registry: Registry,
     persist_path: CString,
 }
 
@@ -338,6 +340,224 @@ impl EmbeddedIndexingStatusPayload {
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         Ok((database_name, collection_id))
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddedCompactCollectionPayload {
+    name: String,
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    database_name: Option<String>,
+}
+
+impl EmbeddedCompactCollectionPayload {
+    fn into_request(self) -> Result<GetCollectionRequest, String> {
+        let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
+        let database_name = resolve_database_name_typed(self.database_name)?;
+        GetCollectionRequest::try_new(tenant_id, database_name, self.name)
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddedCompactAllPayload {
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    database_name: Option<String>,
+}
+
+#[derive(Debug)]
+struct CompactionTarget {
+    collection_id: CollectionUuid,
+    name: String,
+    tenant_id: String,
+    database_name: DatabaseName,
+    database_name_raw: String,
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddedCompactionCollectionResult {
+    collection_id: String,
+    name: String,
+    tenant_id: String,
+    database_name: String,
+    pending_ops_before: Option<u64>,
+    pending_ops_after: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddedCompactionResponse {
+    collection_count: u32,
+    duration_ms: u64,
+    pending_ops_before_total: u64,
+    pending_ops_after_total: u64,
+    collections: Vec<EmbeddedCompactionCollectionResult>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CompactionFailureMode {
+    FailFast,
+    ContinueOnError,
+}
+
+fn compaction_target_from_parts(
+    collection_id: CollectionUuid,
+    name: String,
+    tenant_id: String,
+    database_name_raw: String,
+) -> Result<CompactionTarget, String> {
+    let database_name = parse_database_name(database_name_raw.clone())?;
+    Ok(CompactionTarget {
+        collection_id,
+        name,
+        tenant_id,
+        database_name,
+        database_name_raw,
+    })
+}
+
+async fn run_explicit_compaction(
+    frontend: &mut Frontend,
+    registry: &Registry,
+    targets: Vec<CompactionTarget>,
+    failure_mode: CompactionFailureMode,
+) -> Result<EmbeddedCompactionResponse, String> {
+    if targets.is_empty() {
+        return Ok(EmbeddedCompactionResponse {
+            collection_count: 0,
+            duration_ms: 0,
+            pending_ops_before_total: 0,
+            pending_ops_after_total: 0,
+            collections: Vec::new(),
+        });
+    }
+
+    let compactor_handle = registry
+        .get::<ComponentHandle<LocalCompactionManager>>()
+        .map_err(|e| format!("local compaction manager unavailable: {e}"))?;
+
+    let started_at = Instant::now();
+    let mut pending_ops_before_total: u64 = 0;
+    let mut pending_ops_after_total: u64 = 0;
+    let mut collection_results = Vec::with_capacity(targets.len());
+
+    for target in targets {
+        let CompactionTarget {
+            collection_id,
+            name,
+            tenant_id,
+            database_name,
+            database_name_raw,
+        } = target;
+
+        let pending_ops_before = match frontend
+            .indexing_status(database_name.clone(), collection_id)
+            .await
+        {
+            Ok(status) => Some(status.num_unindexed_ops),
+            Err(e) => {
+                eprintln!(
+                    "warning: indexing_status failed before compaction for {} ({}): {e}",
+                    collection_id, name
+                );
+                None
+            }
+        };
+        if let Some(value) = pending_ops_before {
+            pending_ops_before_total = pending_ops_before_total.saturating_add(value);
+        }
+
+        let compaction_error = {
+            let compaction_result: Result<(), String> = async {
+                compactor_handle
+                    .request(BackfillMessage { collection_id }, None)
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "failed to send backfill message for collection {}: {e}",
+                            collection_id
+                        )
+                    })?
+                    .map_err(|e| {
+                        format!("backfill failed for collection {}: {e}", collection_id)
+                    })?;
+
+                compactor_handle
+                    .request(PurgeLogsMessage { collection_id }, None)
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "failed to send purge message for collection {}: {e}",
+                            collection_id
+                        )
+                    })?
+                    .map_err(|e| format!("purge failed for collection {}: {e}", collection_id))?;
+                Ok(())
+            }
+            .await;
+
+            compaction_result.err()
+        };
+
+        if let Some(error) = compaction_error {
+            match failure_mode {
+                CompactionFailureMode::FailFast => return Err(error),
+                CompactionFailureMode::ContinueOnError => {
+                    collection_results.push(EmbeddedCompactionCollectionResult {
+                        collection_id: collection_id.to_string(),
+                        name,
+                        tenant_id,
+                        database_name: database_name_raw,
+                        pending_ops_before,
+                        pending_ops_after: None,
+                        error: Some(error),
+                    });
+                    continue;
+                }
+            }
+        }
+
+        let pending_ops_after = match frontend
+            .indexing_status(database_name.clone(), collection_id)
+            .await
+        {
+            Ok(status) => Some(status.num_unindexed_ops),
+            Err(e) => {
+                eprintln!(
+                    "warning: indexing_status failed after compaction for {} ({}): {e}",
+                    collection_id, name
+                );
+                None
+            }
+        };
+        if let Some(value) = pending_ops_after {
+            pending_ops_after_total = pending_ops_after_total.saturating_add(value);
+        }
+
+        collection_results.push(EmbeddedCompactionCollectionResult {
+            collection_id: collection_id.to_string(),
+            name,
+            tenant_id,
+            database_name: database_name_raw,
+            pending_ops_before,
+            pending_ops_after,
+            error: None,
+        });
+    }
+
+    let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let collection_count = u32::try_from(collection_results.len()).unwrap_or(u32::MAX);
+    Ok(EmbeddedCompactionResponse {
+        collection_count,
+        duration_ms,
+        pending_ops_before_total,
+        pending_ops_after_total,
+        collections: collection_results,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1147,7 +1367,7 @@ fn start_embedded_with_config(config: FrontendServerConfig) -> *mut c_void {
         runtime,
         frontend: Mutex::new(frontend),
         _system: system,
-        _registry: registry,
+        registry,
         persist_path,
     });
 
@@ -2557,6 +2777,203 @@ pub unsafe extern "C" fn chroma_embedded_healthcheck(handle: *mut c_void) -> *mu
         let response = embedded
             .runtime
             .block_on(async { frontend.healthcheck().await });
+        json_to_c_string_ptr(&response)
+    })
+}
+
+/// Run explicit compaction for a single collection in embedded mode.
+/// Returns a JSON-serialized compaction response on success, NULL on failure.
+///
+/// # Safety
+/// `handle` must be a valid embedded handle.
+/// `request_json` must be a valid null-terminated JSON string.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_compact_collection(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
+
+        let payload: EmbeddedCompactCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+
+        let request = match payload.into_request() {
+            Ok(request) => request,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
+
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
+
+        let response = match embedded.runtime.block_on(async {
+            let collection = frontend
+                .get_collection(request)
+                .await
+                .map_err(|e| format!("get collection failed: {e}"))?;
+            let target = compaction_target_from_parts(
+                collection.collection_id,
+                collection.name,
+                collection.tenant,
+                collection.database,
+            )?;
+            run_explicit_compaction(
+                &mut frontend,
+                &embedded.registry,
+                vec![target],
+                CompactionFailureMode::FailFast,
+            )
+            .await
+        }) {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("compact collection failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr(&response)
+    })
+}
+
+/// Run explicit compaction for all collections in embedded mode.
+/// Returns a JSON-serialized compaction response on success, NULL on failure.
+///
+/// # Safety
+/// `handle` must be a valid embedded handle.
+/// `request_json` must be a valid null-terminated JSON string.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_compact_all(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
+
+        let payload: EmbeddedCompactAllPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+        let tenant_id = payload
+            .tenant_id
+            .unwrap_or_else(|| DEFAULT_TENANT.to_string());
+
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(_) => {
+                set_last_error("embedded frontend lock poisoned");
+                return ptr::null_mut();
+            }
+        };
+
+        let response = match embedded.runtime.block_on(async {
+            let mut database_names: Vec<String> = Vec::new();
+            if let Some(database_name) = payload.database_name {
+                database_names.push(database_name);
+            } else {
+                let page_size: u32 = 100;
+                let mut offset: u32 = 0;
+                loop {
+                    let request =
+                        ListDatabasesRequest::try_new(tenant_id.clone(), Some(page_size), offset)
+                            .map_err(|e| e.to_string())?;
+                    let databases = frontend
+                        .list_databases(request)
+                        .await
+                        .map_err(|e| format!("list databases failed: {e}"))?;
+                    if databases.is_empty() {
+                        break;
+                    }
+
+                    let count = databases.len() as u32;
+                    database_names.extend(databases.into_iter().map(|database| database.name));
+                    if count < page_size {
+                        break;
+                    }
+                    offset = offset.saturating_add(count);
+                }
+            }
+
+            let mut targets = Vec::new();
+            for database_name in database_names {
+                let parsed_database_name = parse_database_name(database_name.clone())?;
+                let page_size: u32 = 100;
+                let mut offset: u32 = 0;
+                loop {
+                    let request = ListCollectionsRequest::try_new(
+                        tenant_id.clone(),
+                        parsed_database_name.clone(),
+                        Some(page_size),
+                        offset,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let collections = frontend.list_collections(request).await.map_err(|e| {
+                        format!(
+                            "list collections failed for database {}: {e}",
+                            database_name
+                        )
+                    })?;
+                    if collections.is_empty() {
+                        break;
+                    }
+
+                    let count = collections.len() as u32;
+                    for collection in collections {
+                        targets.push(compaction_target_from_parts(
+                            collection.collection_id,
+                            collection.name,
+                            collection.tenant,
+                            collection.database,
+                        )?);
+                    }
+                    if count < page_size {
+                        break;
+                    }
+                    offset = offset.saturating_add(count);
+                }
+            }
+
+            run_explicit_compaction(
+                &mut frontend,
+                &embedded.registry,
+                targets,
+                CompactionFailureMode::ContinueOnError,
+            )
+            .await
+        }) {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("compact all failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
         json_to_c_string_ptr(&response)
     })
 }

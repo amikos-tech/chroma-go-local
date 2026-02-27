@@ -1778,6 +1778,7 @@ version = "0.1.0"
 dependencies = [
  "chroma-config",
  "chroma-frontend",
+ "chroma-log",
  "chroma-system",
  "chroma-types",
  "criterion 0.5.1",
