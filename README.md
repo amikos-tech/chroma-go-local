@@ -377,6 +377,7 @@ Operational notes:
 - In server mode, the server is unavailable during compaction because it is stopped, compacted via embedded mode, then restarted.
 - `CompactAll` continues across collections and records per-collection failures in `result.Collections[i].Error`.
 - `result.CollectionCount` is the number of attempted collections (including entries with `Error`).
+- `pending_ops_before`/`pending_ops_after` are advisory metrics; when unavailable they are omitted and `pending_ops_before_error`/`pending_ops_after_error` explain why.
 
 ### Backup API
 

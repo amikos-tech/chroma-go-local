@@ -82,6 +82,7 @@ Compaction semantics:
 - In server mode, the server is unavailable while compaction runs (stop -> compact in embedded mode -> restart).
 - `CompactAll` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
 - `result.CollectionCount` is attempted collections, not only successful collections.
+- `pending_ops_before`/`pending_ops_after` are advisory; if unavailable they are omitted and surfaced via `pending_ops_before_error`/`pending_ops_after_error`.
 
 Backup constraints (applies to server and embedded backup):
 

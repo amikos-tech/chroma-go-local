@@ -57,6 +57,16 @@ func TestEmbeddedCompactionAPIs(t *testing.T) {
 	require.Len(t, compactedOne.Collections, 1)
 	require.Equal(t, collectionA.ID, compactedOne.Collections[0].CollectionID)
 	require.Empty(t, compactedOne.Collections[0].Error)
+	if compactedOne.Collections[0].PendingOpsBefore == nil {
+		require.NotEmpty(t, compactedOne.Collections[0].PendingOpsBeforeError)
+	} else {
+		require.Empty(t, compactedOne.Collections[0].PendingOpsBeforeError)
+	}
+	if compactedOne.Collections[0].PendingOpsAfter == nil {
+		require.NotEmpty(t, compactedOne.Collections[0].PendingOpsAfterError)
+	} else {
+		require.Empty(t, compactedOne.Collections[0].PendingOpsAfterError)
+	}
 
 	countA, err := embedded.CountRecords(EmbeddedCountRecordsRequest{
 		CollectionID: collectionA.ID,
@@ -76,6 +86,16 @@ func TestEmbeddedCompactionAPIs(t *testing.T) {
 	for _, entry := range compactedAll.Collections {
 		found[entry.Name] = true
 		require.Empty(t, entry.Error)
+		if entry.PendingOpsBefore == nil {
+			require.NotEmpty(t, entry.PendingOpsBeforeError)
+		} else {
+			require.Empty(t, entry.PendingOpsBeforeError)
+		}
+		if entry.PendingOpsAfter == nil {
+			require.NotEmpty(t, entry.PendingOpsAfterError)
+		} else {
+			require.Empty(t, entry.PendingOpsAfterError)
+		}
 	}
 	require.True(t, found[collectionAName])
 	require.True(t, found[collectionBName])
@@ -83,6 +103,7 @@ func TestEmbeddedCompactionAPIs(t *testing.T) {
 	unscopedResult, err := embedded.CompactAll(CompactAllRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, unscopedResult)
+	// The fixture creates two collections in the default tenant/database scope.
 	require.GreaterOrEqual(t, unscopedResult.CollectionCount, uint32(2))
 }
 
@@ -99,6 +120,28 @@ func TestServerCompactCollectionRestartsServer(t *testing.T) {
 	require.Len(t, result.Collections, 1)
 	require.Equal(t, collectionName, result.Collections[0].Name)
 	requireServerHeartbeat(t, server.URL())
+
+	// Verify data survives the stop -> compact -> restart lifecycle.
+	require.NoError(t, server.Close())
+	embedded, err := NewEmbedded(
+		WithEmbeddedPersistPath(server.persistPath),
+		WithEmbeddedAllowReset(true),
+	)
+	require.NoError(t, err)
+	defer embedded.Close()
+
+	collection, err := embedded.GetCollection(EmbeddedGetCollectionRequest{
+		Name:         collectionName,
+		DatabaseName: databaseName,
+	})
+	require.NoError(t, err)
+
+	count, err := embedded.CountRecords(EmbeddedCountRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(1), count)
 }
 
 func TestServerCompactAllRestartsServer(t *testing.T) {

@@ -25,13 +25,15 @@ type CompactAllRequest struct {
 
 // CompactionCollectionResult captures per-collection compaction stats.
 type CompactionCollectionResult struct {
-	CollectionID     string  `json:"collection_id"`
-	Name             string  `json:"name"`
-	TenantID         string  `json:"tenant_id"`
-	DatabaseName     string  `json:"database_name"`
-	PendingOpsBefore *uint64 `json:"pending_ops_before,omitempty"`
-	PendingOpsAfter  *uint64 `json:"pending_ops_after,omitempty"`
-	Error            string  `json:"error,omitempty"`
+	CollectionID          string  `json:"collection_id"`
+	Name                  string  `json:"name"`
+	TenantID              string  `json:"tenant_id"`
+	DatabaseName          string  `json:"database_name"`
+	PendingOpsBefore      *uint64 `json:"pending_ops_before,omitempty"`
+	PendingOpsAfter       *uint64 `json:"pending_ops_after,omitempty"`
+	PendingOpsBeforeError string  `json:"pending_ops_before_error,omitempty"`
+	PendingOpsAfterError  string  `json:"pending_ops_after_error,omitempty"`
+	Error                 string  `json:"error,omitempty"`
 }
 
 // CompactionResult captures explicit compaction execution metadata.
@@ -135,10 +137,10 @@ func (e *Embedded) CompactAll(request CompactAllRequest) (*CompactionResult, err
 }
 
 // CompactCollection runs explicit compaction for one collection in managed server mode.
-// The server is restarted after compaction.
+// The server is restarted after the operation, even if compaction fails.
 // The server is unavailable while compaction is running.
 // Backups and server compaction are mutually exclusive and serialized.
-// If compaction succeeds but restart fails, this returns a non-nil CompactionResult and a non-nil error.
+// If compaction succeeds but cleanup or restart fails, this returns a non-nil CompactionResult and a non-nil error.
 func (s *Server) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error) {
 	if s == nil {
 		return nil, ErrServerNotStarted
@@ -152,11 +154,11 @@ func (s *Server) CompactCollection(request CompactCollectionRequest) (*Compactio
 }
 
 // CompactAll runs explicit compaction for all collections in managed server mode.
-// The server is restarted after compaction.
+// The server is restarted after the operation, even if compaction fails.
 // The server is unavailable while compaction is running.
 // Backups and server compaction are mutually exclusive and serialized.
 // Per-collection failures are reported in CompactionResult.Collections[i].Error.
-// If compaction succeeds but restart fails, this returns a non-nil CompactionResult and a non-nil error.
+// If compaction succeeds but cleanup or restart fails, this returns a non-nil CompactionResult and a non-nil error.
 func (s *Server) CompactAll(request CompactAllRequest) (*CompactionResult, error) {
 	if s == nil {
 		return nil, ErrServerNotStarted
@@ -182,7 +184,7 @@ func (s *Server) runCompaction(run func(*Embedded) (*CompactionResult, error)) (
 		return nil, errors.Wrap(err, "failed to stop server before compaction")
 	}
 
-	//nolint:staticcheck // Keep explicit field mapping so server and embedded config types can evolve independently.
+	//nolint:staticcheck // S1016: keep explicit field mapping so server and embedded config types can evolve independently.
 	embedded, startErr := StartEmbedded(StartEmbeddedConfig{
 		ConfigPath:   config.ConfigPath,
 		ConfigString: config.ConfigString,
@@ -190,26 +192,29 @@ func (s *Server) runCompaction(run func(*Embedded) (*CompactionResult, error)) (
 	if startErr != nil {
 		restartErr := s.restartFromConfig(config)
 		if restartErr != nil {
-			return nil, fmt.Errorf("failed to start temporary embedded runtime for compaction: %v; restart failed: %v; server remains stopped", startErr, restartErr)
+			return nil, fmt.Errorf("failed to start temporary embedded runtime for compaction: %w; restart failed: %w; server remains stopped", startErr, restartErr)
 		}
 		return nil, errors.Wrap(startErr, "failed to start temporary embedded runtime for compaction")
 	}
 
 	result, runErr := run(embedded)
-	if closeErr := embedded.Close(); closeErr != nil {
-		if runErr == nil {
-			runErr = errors.Wrap(closeErr, "failed to close temporary embedded runtime after compaction")
-		} else {
-			runErr = fmt.Errorf("%w; temporary embedded runtime close failed: %v", runErr, closeErr)
-		}
-	}
+	closeErr := embedded.Close()
 
 	restartErr := s.restartFromConfig(config)
 	switch {
-	case runErr != nil && restartErr != nil:
-		return nil, fmt.Errorf("%w; restart failed: %v; server remains stopped", runErr, restartErr)
 	case runErr != nil:
+		if closeErr != nil {
+			runErr = fmt.Errorf("%w; temporary embedded runtime close failed: %w", runErr, closeErr)
+		}
+		if restartErr != nil {
+			return nil, fmt.Errorf("%w; restart failed: %w; server remains stopped", runErr, restartErr)
+		}
 		return nil, runErr
+	case closeErr != nil:
+		if restartErr != nil {
+			return result, fmt.Errorf("compaction completed but temporary embedded runtime close failed: %w; restart failed: %w; server remains stopped", closeErr, restartErr)
+		}
+		return result, errors.Wrap(closeErr, "compaction completed but failed to close temporary embedded runtime")
 	case restartErr != nil:
 		return result, errors.Wrap(restartErr, "compaction completed but server restart failed; server remains stopped")
 	default:

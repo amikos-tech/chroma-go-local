@@ -84,6 +84,14 @@ fn last_error_cstring() -> Option<CString> {
     CString::new(msg.as_str()).ok()
 }
 
+fn last_error_message() -> Option<String> {
+    let slot = match LAST_ERROR.lock() {
+        Ok(slot) => slot,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    slot.clone()
+}
+
 fn panic_payload_message(payload: Box<dyn Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<String>() {
         return message.clone();
@@ -386,6 +394,10 @@ struct EmbeddedCompactionCollectionResult {
     pending_ops_before: Option<u64>,
     pending_ops_after: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pending_ops_before_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pending_ops_after_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -454,17 +466,18 @@ async fn run_explicit_compaction(
             database_name_raw,
         } = target;
 
-        let pending_ops_before = match frontend
+        let (pending_ops_before, pending_ops_before_error) = match frontend
             .indexing_status(database_name.clone(), collection_id)
             .await
         {
-            Ok(status) => Some(status.num_unindexed_ops),
+            Ok(status) => (Some(status.num_unindexed_ops), None),
             Err(e) => {
-                eprintln!(
-                    "warning: indexing_status failed before compaction for {} ({}): {e}",
+                let warning = format!(
+                    "indexing_status failed before compaction for {} ({}): {e}",
                     collection_id, name
                 );
-                None
+                eprintln!("warning: {warning}");
+                (None, Some(warning))
             }
         };
         if let Some(value) = pending_ops_before {
@@ -514,6 +527,8 @@ async fn run_explicit_compaction(
                         database_name: database_name_raw,
                         pending_ops_before,
                         pending_ops_after: None,
+                        pending_ops_before_error,
+                        pending_ops_after_error: None,
                         error: Some(error),
                     });
                     continue;
@@ -521,17 +536,18 @@ async fn run_explicit_compaction(
             }
         }
 
-        let pending_ops_after = match frontend
+        let (pending_ops_after, pending_ops_after_error) = match frontend
             .indexing_status(database_name.clone(), collection_id)
             .await
         {
-            Ok(status) => Some(status.num_unindexed_ops),
+            Ok(status) => (Some(status.num_unindexed_ops), None),
             Err(e) => {
-                eprintln!(
-                    "warning: indexing_status failed after compaction for {} ({}): {e}",
+                let warning = format!(
+                    "indexing_status failed after compaction for {} ({}): {e}",
                     collection_id, name
                 );
-                None
+                eprintln!("warning: {warning}");
+                (None, Some(warning))
             }
         };
         if let Some(value) = pending_ops_after {
@@ -545,6 +561,8 @@ async fn run_explicit_compaction(
             database_name: database_name_raw,
             pending_ops_before,
             pending_ops_after,
+            pending_ops_before_error,
+            pending_ops_after_error,
             error: None,
         });
     }
@@ -987,6 +1005,18 @@ fn json_to_c_string_ptr<T: serde::Serialize>(value: &T) -> *mut c_char {
             ptr::null_mut()
         }
     }
+}
+
+fn json_to_c_string_ptr_with_context<T: serde::Serialize>(value: &T, context: &str) -> *mut c_char {
+    let ptr = json_to_c_string_ptr(value);
+    if ptr.is_null() {
+        if let Some(last_error) = last_error_message() {
+            set_last_error(&format!("{context}: {last_error}"));
+        } else {
+            set_last_error(context);
+        }
+    }
+    ptr
 }
 
 fn parse_config_from_path(path: &str) -> Result<FrontendServerConfig, String> {
@@ -2787,6 +2817,7 @@ pub unsafe extern "C" fn chroma_embedded_healthcheck(handle: *mut c_void) -> *mu
 /// # Safety
 /// `handle` must be a valid embedded handle.
 /// `request_json` must be a valid null-terminated JSON string.
+/// Returned pointer must be freed with `chroma_string_free`.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_embedded_compact_collection(
     handle: *mut c_void,
@@ -2850,7 +2881,10 @@ pub unsafe extern "C" fn chroma_embedded_compact_collection(
             }
         };
 
-        json_to_c_string_ptr(&response)
+        json_to_c_string_ptr_with_context(
+            &response,
+            "compact collection completed but failed to serialize response",
+        )
     })
 }
 
@@ -2860,6 +2894,7 @@ pub unsafe extern "C" fn chroma_embedded_compact_collection(
 /// # Safety
 /// `handle` must be a valid embedded handle.
 /// `request_json` must be a valid null-terminated JSON string.
+/// Returned pointer must be freed with `chroma_string_free`.
 #[no_mangle]
 pub unsafe extern "C" fn chroma_embedded_compact_all(
     handle: *mut c_void,
@@ -2974,7 +3009,10 @@ pub unsafe extern "C" fn chroma_embedded_compact_all(
             }
         };
 
-        json_to_c_string_ptr(&response)
+        json_to_c_string_ptr_with_context(
+            &response,
+            "compact all completed but failed to serialize response",
+        )
     })
 }
 
