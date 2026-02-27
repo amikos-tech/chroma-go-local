@@ -10,14 +10,14 @@ import (
 	"github.com/pkg/errors"
 )
 
-// CompactCollectionRequest identifies one collection to compact.
+// CompactCollectionRequest identifies one collection to compact, optionally scoped by tenant and database.
 type CompactCollectionRequest struct {
 	Name         string `json:"name"`
 	TenantID     string `json:"tenant_id,omitempty"`
 	DatabaseName string `json:"database_name,omitempty"`
 }
 
-// CompactAllRequest scopes global compaction.
+// CompactAllRequest scopes global compaction, optionally by tenant and database.
 type CompactAllRequest struct {
 	TenantID     string `json:"tenant_id,omitempty"`
 	DatabaseName string `json:"database_name,omitempty"`

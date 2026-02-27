@@ -29,8 +29,8 @@ Implemented server lifecycle APIs:
 - `(*Server).Stop() error`
 - `(*Server).Close() error`
 - `(*Server).Backup(options ...BackupOption) (*BackupManifest, error)`
-- `(*Server).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)`
-- `(*Server).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (`result.Collections[i].Error` reports per-collection failures)
+- `(*Server).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together)
+- `(*Server).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together; `result.Collections[i].Error` reports per-collection failures)
 
 Example:
 
@@ -66,7 +66,8 @@ Server compaction example:
 ```go
 result, err := srv.CompactCollection(chroma.CompactCollectionRequest{
     Name:         "docs",
-    DatabaseName: "default_database",
+    TenantID:     "team_a",
+    DatabaseName: "prod_db",
 })
 if err != nil {
     panic(err)
@@ -77,6 +78,9 @@ fmt.Println("compacted collections:", result.CollectionCount)
 Compaction semantics:
 
 - `CompactCollection` and `CompactAll` run explicit compaction via Chroma's local compaction manager.
+- You can pass both `TenantID` and `DatabaseName` in the same request.
+- For `CompactCollection`, collection name lookup is performed inside that tenant+database scope.
+- When omitted, tenant/database scope defaults to `default_tenant` and `default_database`.
 - For each collection, compaction runs backfill then log purge (WAL cleanup).
 - This is not a full HNSW rebuild from scratch and does not change collection configuration/schema.
 - In server mode, the server is unavailable while compaction runs (stop -> compact in embedded mode -> restart).
@@ -157,6 +161,7 @@ if err != nil {
 
 ```go
 compacted, err := embedded.CompactAll(chroma.CompactAllRequest{
+    TenantID:     "team_a",
     DatabaseName: "my_db",
 })
 if err != nil {
