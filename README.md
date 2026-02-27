@@ -328,6 +328,8 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Server) Stop() error` | Gracefully stop the server. |
 | `(*Server) Close() error` | Stop and free resources. |
 | `(*Server) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional restart. |
+| `(*Server) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` | Run explicit compaction for one collection (server restarts after operation). Scope can include both `TenantID` and `DatabaseName` together. |
+| `(*Server) CompactAll(request CompactAllRequest) (*CompactionResult, error)` | Run explicit compaction for all collections (server restarts after operation). Scope can include both `TenantID` and `DatabaseName` together. Per-collection failures are reported in `result.Collections[i].Error`. |
 | `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
 | `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)` | Start embedded mode from YAML config. |
 | `(*Embedded) Heartbeat() (uint64, error)` | Read in-process heartbeat nanoseconds. |
@@ -355,9 +357,44 @@ For a detailed, example-heavy reference of the currently implemented Go APIs, se
 | `(*Embedded) Add(request EmbeddedAddRequest) error` | Add records without HTTP. |
 | `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
+| `(*Embedded) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` | Run explicit compaction for one collection. Scope can include both `TenantID` and `DatabaseName` together. |
+| `(*Embedded) CompactAll(request CompactAllRequest) (*CompactionResult, error)` | Run explicit compaction for all collections. Scope can include both `TenantID` and `DatabaseName` together. Per-collection failures are reported in `result.Collections[i].Error`. |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
 | `(*Embedded) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional reopen. |
 | `(*Embedded) Close() error` | Free embedded resources. |
+
+### Compaction Semantics
+
+`CompactCollection` and `CompactAll` run Chroma explicit compaction through the local compaction manager.
+
+Per compacted collection, the operation performs:
+- backfill (apply pending log operations into collection/index state)
+- log purge (remove compacted WAL log records)
+
+This compaction is not a full index rebuild. In particular, it does not rebuild HNSW from scratch or change collection configuration/schema.
+
+Operational notes:
+- You can scope compaction with both `TenantID` and `DatabaseName` in the same request.
+- For `CompactCollection`, collection name resolution happens inside that tenant+database scope.
+- If omitted, scope defaults to `default_tenant` and `default_database`.
+- In server mode, the server is unavailable during compaction because it is stopped, compacted via embedded mode, then restarted.
+- `CompactAll` continues across collections and records per-collection failures in `result.Collections[i].Error`.
+- `result.CollectionCount` is the number of attempted collections (including entries with `Error`).
+- `pending_ops_before`/`pending_ops_after` are advisory metrics; when unavailable they are omitted and `pending_ops_before_error`/`pending_ops_after_error` explain why.
+
+Example with explicit tenant+database scope:
+
+```go
+result, err := server.CompactCollection(chroma.CompactCollectionRequest{
+    Name:         "docs",
+    TenantID:     "team_a",
+    DatabaseName: "prod_db",
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println(result.CollectionCount)
+```
 
 ### Backup API
 

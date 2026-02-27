@@ -29,6 +29,8 @@ Implemented server lifecycle APIs:
 - `(*Server).Stop() error`
 - `(*Server).Close() error`
 - `(*Server).Backup(options ...BackupOption) (*BackupManifest, error)`
+- `(*Server).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together)
+- `(*Server).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together; `result.Collections[i].Error` reports per-collection failures)
 
 Example:
 
@@ -58,6 +60,33 @@ if err != nil {
 }
 fmt.Println("backup manifest:", manifest.ManifestPath)
 ```
+
+Server compaction example:
+
+```go
+result, err := srv.CompactCollection(chroma.CompactCollectionRequest{
+    Name:         "docs",
+    TenantID:     "team_a",
+    DatabaseName: "prod_db",
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println("compacted collections:", result.CollectionCount)
+```
+
+Compaction semantics:
+
+- `CompactCollection` and `CompactAll` run explicit compaction via Chroma's local compaction manager.
+- You can pass both `TenantID` and `DatabaseName` in the same request.
+- For `CompactCollection`, collection name lookup is performed inside that tenant+database scope.
+- When omitted, tenant/database scope defaults to `default_tenant` and `default_database`.
+- For each collection, compaction runs backfill then log purge (WAL cleanup).
+- This is not a full HNSW rebuild from scratch and does not change collection configuration/schema.
+- In server mode, the server is unavailable while compaction runs (stop -> compact in embedded mode -> restart).
+- `CompactAll` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
+- `result.CollectionCount` is attempted collections, not only successful collections.
+- `pending_ops_before`/`pending_ops_after` are advisory; if unavailable they are omitted and surfaced via `pending_ops_before_error`/`pending_ops_after_error`.
 
 Backup constraints (applies to server and embedded backup):
 
@@ -106,6 +135,8 @@ fmt.Println("snapshot dir:", manifest.SnapshotPath)
 - `(*Embedded).MaxBatchSize() (uint32, error)`
 - `(*Embedded).Healthcheck() (*EmbeddedHealthCheckResponse, error)`
 - `(*Embedded).IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)`
+- `(*Embedded).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)`
+- `(*Embedded).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (`result.Collections[i].Error` reports per-collection failures)
 - `(*Embedded).Reset() error`
 
 ```go
@@ -126,6 +157,17 @@ if err != nil {
 } else {
     fmt.Println(status.OpIndexingProgress, status.TotalOps)
 }
+```
+
+```go
+compacted, err := embedded.CompactAll(chroma.CompactAllRequest{
+    TenantID:     "team_a",
+    DatabaseName: "my_db",
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println(compacted.CollectionCount, compacted.DurationMS)
 ```
 
 ### 3.3 Tenant APIs
