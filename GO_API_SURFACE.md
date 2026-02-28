@@ -233,7 +233,7 @@ fmt.Println("database:", db.Name)
 `EmbeddedUpdateCollectionRequest` fields:
 - `CollectionID`
 - `NewName` (optional)
-- `NewMetadata map[string]any` (optional; nil values delete keys)
+- `NewMetadata map[string]any` (optional; replaces existing collection metadata; nil values are rejected)
 - `DatabaseName` (optional)
 
 At least one of `NewName` or `NewMetadata` is required.
@@ -271,7 +271,6 @@ _ = embedded.UpdateCollection(chroma.EmbeddedUpdateCollectionRequest{
     CollectionID: col.ID,
     NewMetadata: map[string]any{
         "owner": "platform",
-        "deprecated_field": nil, // delete key
     },
     DatabaseName: "my_db",
 })

@@ -267,7 +267,7 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		gen.Float64Range(-1e6, 1e6),
 	))
 
-	properties.Property("Metadata normalization allows nil values for updates", prop.ForAll(
+	properties.Property("Record metadata normalization allows nil values for update/upsert payloads", prop.ForAll(
 		func(key string) bool {
 			if strings.TrimSpace(key) == "" {
 				key = "k"
@@ -276,6 +276,19 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 				{key: nil},
 			}, true)
 			return err == nil
+		},
+		gen.AnyString(),
+	))
+
+	properties.Property("Collection metadata normalization rejects nil values", prop.ForAll(
+		func(key string) bool {
+			if strings.TrimSpace(key) == "" {
+				key = "k"
+			}
+			_, err := validateAndNormalizeMetadata(map[string]any{
+				key: nil,
+			}, false)
+			return err != nil && strings.Contains(err.Error(), "cannot be null")
 		},
 		gen.AnyString(),
 	))

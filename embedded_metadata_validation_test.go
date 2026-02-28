@@ -241,6 +241,21 @@ func TestUpdateCollectionRejectsInvalidNewMetadata(t *testing.T) {
 	require.Contains(t, err.Error(), "nested objects are not supported")
 }
 
+func TestUpdateCollectionRejectsNilNewMetadataValues(t *testing.T) {
+	fakeEmbedded := &Embedded{handle: 1}
+
+	err := fakeEmbedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: "collection-id",
+		NewMetadata: map[string]any{
+			"deprecated": nil,
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid new_metadata")
+	require.Contains(t, err.Error(), "cannot be null")
+}
+
 func TestUpdateCollectionValidNewMetadataIsSerialized(t *testing.T) {
 	originalUpdate := chromaEmbeddedUpdateCollection
 	defer func() { chromaEmbeddedUpdateCollection = originalUpdate }()
@@ -255,10 +270,9 @@ func TestUpdateCollectionValidNewMetadataIsSerialized(t *testing.T) {
 	err := embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
 		CollectionID: "00000000-0000-0000-0000-000000000001",
 		NewMetadata: map[string]any{
-			"owner":      "qa",
-			"score":      1.0,
-			"levels":     []int{1, 2},
-			"deprecated": nil,
+			"owner":  "qa",
+			"score":  1.0,
+			"levels": []int{1, 2},
 		},
 	})
 	require.NoError(t, err)
@@ -279,10 +293,6 @@ func TestUpdateCollectionValidNewMetadataIsSerialized(t *testing.T) {
 	levels, ok := levelsRaw.([]any)
 	require.True(t, ok)
 	require.Equal(t, []any{1.0, 2.0}, levels)
-
-	deprecated, ok := payload.NewMetadata["deprecated"]
-	require.True(t, ok)
-	require.Nil(t, deprecated)
 }
 
 func TestCreateCollectionValidMetadataIsSerialized(t *testing.T) {

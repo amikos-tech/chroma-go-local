@@ -721,6 +721,8 @@ impl EmbeddedUpdateCollectionPayload {
         if self.new_name.is_none() && self.new_metadata.is_none() {
             return Err("at least one of new_name or new_metadata is required".to_string());
         }
+        // TODO: Reject null-valued metadata entries at the shim boundary for defense in depth
+        // across non-Go bindings. The Go API validates and rejects these before FFI.
         let new_metadata = self
             .new_metadata
             .map(CollectionMetadataUpdate::UpdateMetadata);
@@ -3245,6 +3247,8 @@ allow_reset: true
 
     #[test]
     fn test_update_collection_payload_accepts_new_metadata_without_name() {
+        // This validates raw shim payload parsing only.
+        // The Go API rejects null-valued entries in new_metadata before reaching FFI.
         let payload: EmbeddedUpdateCollectionPayload = serde_json::from_value(json!({
             "collection_id": "00000000-0000-0000-0000-000000000001",
             "new_metadata": {
