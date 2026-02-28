@@ -159,7 +159,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum -- *.tar.gz > SHA256SUMS
           ls -lah
 
       - name: Install cosign
@@ -236,7 +236,7 @@ jobs:
             --cache-control "public, max-age=60"
 
       - name: Purge latest.json from CDN cache
-        if: vars.CF_ZONE_ID != '' && secrets.CLOUDFLARE_API_TOKEN != ''
+        if: vars.CF_ZONE_ID != ''
         shell: bash
         env:
           CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
@@ -245,6 +245,10 @@ jobs:
           RELEASES_DOMAIN: ${{ vars.RELEASES_DOMAIN || 'releases.amikos.tech' }}
         run: |
           set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "CLOUDFLARE_API_TOKEN is not set; skipping cache purge."
+            exit 0
+          fi
           curl -sf -X POST \
             "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
