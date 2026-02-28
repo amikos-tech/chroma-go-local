@@ -4,13 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A minimal Go wrapper for running Chroma (vector database) as an embedded server using a Rust FFI shim and purego (no cgo required).
+A local Chroma runtime package with:
+- Go wrapper API (purego, no cgo)
+- Rust FFI shim
+- Java scaffold bindings (`core`, `jna`, `panama`)
 
 ## Requirements
 
 - Go 1.21+
 - Rust 1.70+
-- golangci-lint (for linting)
+- Java 17+ (JNA path), Java 22+ (Panama path)
+- Gradle 9+
+- golangci-lint (Go linting)
 
 ## Build Commands
 
@@ -19,6 +24,9 @@ make build          # Build Rust shim (debug)
 make build-release  # Build Rust shim (release)
 make test           # Build debug + run Go tests
 make test-release   # Build release + run Go tests
+make build-java     # Build Java modules (no tests)
+make test-java      # Run Java smoke tests (JNA + Panama)
+make test-all       # Go + Rust tests, then non-blocking Java smoke tests
 make lint           # Run all linters (Go + Rust)
 make fmt            # Format all code (Go + Rust)
 make clean          # Clean build artifacts
@@ -26,31 +34,29 @@ make clean          # Clean build artifacts
 
 ## Testing
 
-Tests require the Rust shim to be built first. The Makefile handles this automatically:
-- `make test` builds debug and runs tests
-- `make test-release` builds release and runs tests
-- `CHROMA_LIB_PATH` is set automatically by Makefile
+Go tests require the Rust shim and are wired by Makefile:
+- `make test` builds debug shim and runs Go tests
+- `make test-release` builds release shim and runs Go tests
+- `CHROMA_LIB_PATH` is auto-set by Makefile
 
-Tests are integration tests that start actual servers and make HTTP requests.
+Java smoke tests are available via:
+- `make test-java` (runs `:jna:test` and `:panama:test`)
+- `make test-all` keeps Java smoke non-blocking and prints a warning on failure
 
 ## Architecture
 
 ```
-Go Package (chroma/)          Rust Shim (shim/)
-├── chroma.go    ─────────►   src/lib.rs (FFI exports)
-│   (Server lifecycle)            ├── chroma_server_start
-├── config.go                     ├── chroma_server_stop
-│   (Builder pattern)             ├── chroma_server_port
-├── library.go                    ├── chroma_server_address
-│   (purego FFI loading)          └── ...
+Go Package (root)              Rust Shim (shim/)               Java scaffold (java/)
+├── chroma.go      ─────────►  src/lib.rs (FFI exports)   ◄───┬── core (shared API models)
+├── config.go                  (chroma_* symbols)             ├── jna (Java 17 fallback)
+├── library.go                                                    └── panama (Java 22 primary)
 └── errors.go
-    (Error codes)
 ```
 
 - **No cgo**: Uses purego for pure Go FFI
-- **Tokio runtime**: Managed per Server instance in Rust
-- **Configuration**: YAML-based with environment overrides (CHROMA_ prefix)
-- **Resource cleanup**: Go runtime finalizers for server instances
+- **Runtime artifact name**: `chroma_shim` (`libchroma_shim.so`, `libchroma_shim.dylib`, `chroma_shim.dll`)
+- **Configuration**: YAML-based embedded startup config
+- **Resource cleanup**: explicit close semantics in Go and Java runtime/session wrappers
 
 ## Key Patterns
 
@@ -73,3 +79,4 @@ server, err := chroma.StartServer(chroma.StartServerConfig{
 
 - Go: `golangci-lint run ./...` (config in `.golangci.yml`)
 - Rust: `cargo clippy -- -D warnings` (warnings as errors)
+- Java: `gradle --no-daemon :core:check :jna:check :panama:check`

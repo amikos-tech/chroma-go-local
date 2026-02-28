@@ -6,7 +6,5 @@ public interface ChromaRuntime extends AutoCloseable {
     EmbeddedSession startEmbedded(String configYaml);
 
     @Override
-    default void close() {
-        // no-op by default
-    }
+    void close();
 }

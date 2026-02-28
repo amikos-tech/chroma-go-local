@@ -32,12 +32,18 @@ public final class JnaChromaRuntime implements ChromaRuntime {
             throw new IllegalArgumentException("libraryPath must be set");
         }
         Path normalized = Path.of(libraryPath).toAbsolutePath().normalize();
-        JnaBindings bindings = Native.load(normalized.toString(), JnaBindings.class);
-        return new JnaChromaRuntime(bindings);
+        try {
+            JnaBindings bindings = Native.load(normalized.toString(), JnaBindings.class);
+            return new JnaChromaRuntime(bindings);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            throw new ChromaException("failed to initialize JNA runtime from " + normalized, e);
+        }
     }
 
     @Override
     public String version() {
+        // chroma_version returns a static C string owned by the runtime.
+        // Do not call chroma_string_free on this pointer.
         Pointer ptr = bindings.chroma_version();
         if (ptr == null || Pointer.nativeValue(ptr) == 0L) {
             throw new ChromaException("chroma_version returned NULL");
@@ -75,5 +81,10 @@ public final class JnaChromaRuntime implements ChromaRuntime {
             return fallback;
         }
         return message;
+    }
+
+    @Override
+    public void close() {
+        // JNA runtime doesn't own shared native resources beyond embedded sessions.
     }
 }

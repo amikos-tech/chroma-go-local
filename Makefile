@@ -148,7 +148,7 @@ test-java: build-debug
 	fi
 
 test-all: test-go test-rust
-	-$(MAKE) test-java
+	@$(MAKE) test-java || echo "WARNING: Java smoke tests failed (non-blocking)"
 
 test-release: build-release
 	$(RUN_GO_TEST_RELEASE)

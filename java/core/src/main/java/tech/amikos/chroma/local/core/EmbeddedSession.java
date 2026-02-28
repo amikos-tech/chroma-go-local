@@ -12,19 +12,30 @@ public final class EmbeddedSession implements AutoCloseable {
         if (handle == 0L) {
             throw new IllegalArgumentException("embedded handle must be non-zero");
         }
+        if (closeAction == null) {
+            throw new IllegalArgumentException("closeAction must be set");
+        }
         this.handle = handle;
         this.closeAction = closeAction;
         this.closed = new AtomicBoolean(false);
     }
 
     public long handle() {
+        if (closed.get()) {
+            throw new IllegalStateException("session is closed");
+        }
         return handle;
     }
 
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            closeAction.accept(handle);
+            try {
+                closeAction.accept(handle);
+            } catch (RuntimeException | Error e) {
+                closed.set(false);
+                throw e;
+            }
         }
     }
 }

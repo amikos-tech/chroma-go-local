@@ -42,9 +42,10 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
             throw new IllegalArgumentException("libraryPath must be set");
         }
 
+        Path normalized = Path.of(libraryPath).toAbsolutePath().normalize();
+        Arena arena = Arena.ofShared();
+        boolean initialized = false;
         try {
-            Path normalized = Path.of(libraryPath).toAbsolutePath().normalize();
-            Arena arena = Arena.ofShared();
             Linker linker = Linker.nativeLinker();
             SymbolLookup library = SymbolLookup.libraryLookup(normalized, arena);
 
@@ -64,21 +65,31 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
                     requireSymbol(library, "chroma_embedded_free"),
                     FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
-            return new PanamaChromaRuntime(
+            PanamaChromaRuntime runtime = new PanamaChromaRuntime(
                     arena,
                     chromaVersion,
                     chromaGetLastError,
                     chromaStringFree,
                     chromaEmbeddedStartFromString,
                     chromaEmbeddedFree);
-        } catch (Throwable t) {
-            throw new ChromaException("failed to initialize Panama runtime", t);
+            initialized = true;
+            return runtime;
+        } catch (UnsatisfiedLinkError e) {
+            throw new ChromaException("failed to initialize Panama runtime from " + normalized, e);
+        } catch (RuntimeException e) {
+            throw new ChromaException("failed to initialize Panama runtime from " + normalized, e);
+        } finally {
+            if (!initialized) {
+                arena.close();
+            }
         }
     }
 
     @Override
     public String version() {
         try {
+            // chroma_version returns a static C string owned by the runtime.
+            // Do not call chroma_string_free on this pointer.
             MemorySegment ptr = (MemorySegment) chromaVersion.invokeExact();
             if (ptr.equals(MemorySegment.NULL)) {
                 throw new ChromaException("chroma_version returned NULL");
@@ -87,6 +98,9 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         } catch (ChromaException e) {
             throw e;
         } catch (Throwable t) {
+            if (t instanceof Error error) {
+                throw error;
+            }
             throw new ChromaException("failed to read chroma_version", t);
         }
     }
@@ -107,6 +121,9 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         } catch (ChromaException e) {
             throw e;
         } catch (Throwable t) {
+            if (t instanceof Error error) {
+                throw error;
+            }
             throw new ChromaException("failed to start embedded runtime", t);
         }
     }
@@ -118,6 +135,9 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         try {
             chromaEmbeddedFree.invokeExact(MemorySegment.ofAddress(handleAddress));
         } catch (Throwable t) {
+            if (t instanceof Error error) {
+                throw error;
+            }
             throw new ChromaException("failed to free embedded handle", t);
         }
     }
@@ -128,14 +148,25 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
             if (ptr.equals(MemorySegment.NULL)) {
                 return fallback;
             }
-            String message = ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
-            chromaStringFree.invokeExact(ptr);
+            String message;
+            try {
+                message = ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
+            } finally {
+                chromaStringFree.invokeExact(ptr);
+            }
             if (message == null || message.isBlank()) {
                 return fallback;
             }
             return message;
         } catch (Throwable t) {
-            return fallback;
+            if (t instanceof Error error) {
+                throw error;
+            }
+            String detail = t.getMessage();
+            if (detail == null || detail.isBlank()) {
+                return fallback + " (failed to retrieve native error details)";
+            }
+            return fallback + " (failed to retrieve native error details: " + detail + ")";
         }
     }
 
