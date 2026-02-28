@@ -9,6 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	collectionEventuallyTimeout      = 5 * time.Second
+	collectionEventuallyPollInterval = 100 * time.Millisecond
+)
+
 func newEmbeddedForIntegrationTest(t *testing.T) *Embedded {
 	t.Helper()
 
@@ -29,6 +34,52 @@ func newEmbeddedForIntegrationTest(t *testing.T) *Embedded {
 		}
 	})
 	return embedded
+}
+
+func isRetriableGetCollectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+func waitForCollectionConvergence(
+	t *testing.T,
+	embedded *Embedded,
+	request EmbeddedGetCollectionRequest,
+	description string,
+	predicate func(*EmbeddedCollection) (bool, error),
+) {
+	t.Helper()
+
+	var lastMetadata map[string]any
+	var lastErr error
+	var hardErr error
+
+	require.Eventually(t, func() bool {
+		updated, getErr := embedded.GetCollection(request)
+		if getErr != nil {
+			if isRetriableGetCollectionError(getErr) {
+				lastErr = getErr
+				return false
+			}
+			hardErr = getErr
+			return true
+		}
+		lastErr = nil
+		lastMetadata = updated.Metadata
+
+		done, predicateErr := predicate(updated)
+		if predicateErr != nil {
+			hardErr = predicateErr
+			return true
+		}
+		return done
+	}, collectionEventuallyTimeout, collectionEventuallyPollInterval, "%s did not converge (last metadata=%#v, last err=%v)", description, lastMetadata, lastErr)
+
+	if hardErr != nil {
+		t.Fatalf("%s failed with non-retriable error: %v (last metadata=%#v, last err=%v)", description, hardErr, lastMetadata, lastErr)
+	}
 }
 
 func TestEmbeddedWhereValidationEdgeCases(t *testing.T) {
@@ -158,15 +209,15 @@ func TestEmbeddedCreateCollectionRejectsInvalidConfigurationIntegration(t *testi
 	require.Contains(t, strings.ToLower(err.Error()), "invalid configuration")
 }
 
-func TestEmbeddedUpdateCollectionMetadataKeyDeletionRoundTrip(t *testing.T) {
+func TestEmbeddedUpdateCollectionMetadataUsesReplacementSemantics(t *testing.T) {
 	embedded := newEmbeddedForIntegrationTest(t)
 
-	databaseName := fmt.Sprintf("update_meta_delete_db_%d", time.Now().UnixNano())
+	databaseName := fmt.Sprintf("update_meta_replace_db_%d", time.Now().UnixNano())
 	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
 		t.Fatalf("CreateDatabase failed: %v", err)
 	}
 
-	collectionName := fmt.Sprintf("update_meta_delete_collection_%d", time.Now().UnixNano())
+	collectionName := fmt.Sprintf("update_meta_replace_collection_%d", time.Now().UnixNano())
 	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
 		Name:         collectionName,
 		DatabaseName: databaseName,
@@ -185,30 +236,205 @@ func TestEmbeddedUpdateCollectionMetadataKeyDeletionRoundTrip(t *testing.T) {
 		CollectionID: collection.ID,
 		DatabaseName: databaseName,
 		NewMetadata: map[string]any{
-			"drop": nil,
+			"replacement": "yes",
 		},
 	})
 	if err != nil {
-		t.Fatalf("UpdateCollection metadata deletion failed: %v", err)
+		t.Fatalf("UpdateCollection metadata replacement failed: %v", err)
 	}
 
-	var lastMetadata map[string]any
-	var lastErr error
-	require.Eventually(t, func() bool {
-		updated, getErr := embedded.GetCollection(EmbeddedGetCollectionRequest{
+	waitForCollectionConvergence(
+		t,
+		embedded,
+		EmbeddedGetCollectionRequest{
 			Name:         collectionName,
 			DatabaseName: databaseName,
-		})
-		if getErr != nil {
-			lastErr = getErr
-			return false
-		}
-		lastErr = nil
-		lastMetadata = updated.Metadata
-		if updated.Metadata == nil {
-			return true
-		}
-		_, exists := updated.Metadata["drop"]
-		return !exists
-	}, 5*time.Second, 100*time.Millisecond, "collection metadata key deletion did not converge (last metadata=%#v, last err=%v)", lastMetadata, lastErr)
+		},
+		"collection metadata replacement",
+		func(updated *EmbeddedCollection) (bool, error) {
+			if updated.Metadata == nil {
+				return false, nil
+			}
+
+			replacement, replacementExists := updated.Metadata["replacement"]
+			if !replacementExists {
+				return false, nil
+			}
+			replacementValue, replacementIsString := replacement.(string)
+			if !replacementIsString {
+				return false, fmt.Errorf("expected metadata[replacement] to be string, got %T", replacement)
+			}
+
+			_, keepExists := updated.Metadata["keep"]
+			_, dropExists := updated.Metadata["drop"]
+			return replacementValue == "yes" && !keepExists && !dropExists, nil
+		},
+	)
+}
+
+func TestEmbeddedUpdateCollectionMetadataReplacementWithOverlappingKey(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("update_meta_overlap_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collectionName := fmt.Sprintf("update_meta_overlap_collection_%d", time.Now().UnixNano())
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         collectionName,
+		DatabaseName: databaseName,
+		Metadata: map[string]any{
+			"owner":   "qa",
+			"version": "v1",
+			"drop":    "remove-me",
+		},
+		GetOrCreate: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+	require.Contains(t, collection.Metadata, "owner")
+	require.Contains(t, collection.Metadata, "version")
+	require.Contains(t, collection.Metadata, "drop")
+
+	err = embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		NewMetadata: map[string]any{
+			"owner": "platform",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateCollection metadata replacement failed: %v", err)
+	}
+
+	waitForCollectionConvergence(
+		t,
+		embedded,
+		EmbeddedGetCollectionRequest{
+			Name:         collectionName,
+			DatabaseName: databaseName,
+		},
+		"collection metadata overlapping replacement",
+		func(updated *EmbeddedCollection) (bool, error) {
+			if updated.Metadata == nil {
+				return false, nil
+			}
+
+			owner, ownerExists := updated.Metadata["owner"]
+			if !ownerExists {
+				return false, nil
+			}
+			ownerValue, ownerIsString := owner.(string)
+			if !ownerIsString {
+				return false, fmt.Errorf("expected metadata[owner] to be string, got %T", owner)
+			}
+
+			_, versionExists := updated.Metadata["version"]
+			_, dropExists := updated.Metadata["drop"]
+			return ownerValue == "platform" && !versionExists && !dropExists, nil
+		},
+	)
+}
+
+func TestEmbeddedUpdateCollectionNameAndMetadataTogether(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("update_name_meta_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collectionName := fmt.Sprintf("update_name_meta_collection_%d", time.Now().UnixNano())
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         collectionName,
+		DatabaseName: databaseName,
+		Metadata: map[string]any{
+			"owner":   "qa",
+			"drop":    "remove-me",
+			"version": "v1",
+		},
+		GetOrCreate: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+
+	renamedCollectionName := fmt.Sprintf("%s_renamed", collectionName)
+	err = embedded.UpdateCollection(EmbeddedUpdateCollectionRequest{
+		CollectionID: collection.ID,
+		NewName:      renamedCollectionName,
+		DatabaseName: databaseName,
+		NewMetadata: map[string]any{
+			"owner":    "platform",
+			"active":   true,
+			"priority": 3,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateCollection name+metadata failed: %v", err)
+	}
+
+	waitForCollectionConvergence(
+		t,
+		embedded,
+		EmbeddedGetCollectionRequest{
+			Name:         renamedCollectionName,
+			DatabaseName: databaseName,
+		},
+		"collection name+metadata replacement",
+		func(updated *EmbeddedCollection) (bool, error) {
+			if updated.Metadata == nil {
+				return false, nil
+			}
+
+			owner, ownerExists := updated.Metadata["owner"]
+			if !ownerExists {
+				return false, nil
+			}
+			ownerValue, ownerIsString := owner.(string)
+			if !ownerIsString {
+				return false, fmt.Errorf("expected metadata[owner] to be string, got %T", owner)
+			}
+			if ownerValue != "platform" {
+				return false, nil
+			}
+
+			active, activeExists := updated.Metadata["active"]
+			if !activeExists {
+				return false, nil
+			}
+			activeValue, activeIsBool := active.(bool)
+			if !activeIsBool {
+				return false, fmt.Errorf("expected metadata[active] to be bool, got %T", active)
+			}
+			if !activeValue {
+				return false, nil
+			}
+
+			priority, priorityExists := updated.Metadata["priority"]
+			if !priorityExists {
+				return false, nil
+			}
+			priorityIsThree := false
+			switch v := priority.(type) {
+			case float64:
+				priorityIsThree = v == 3
+			case int64:
+				priorityIsThree = v == 3
+			case int:
+				priorityIsThree = v == 3
+			default:
+				return false, fmt.Errorf("expected metadata[priority] to be numeric, got %T", priority)
+			}
+			if !priorityIsThree {
+				return false, nil
+			}
+
+			_, dropExists := updated.Metadata["drop"]
+			_, versionExists := updated.Metadata["version"]
+			return !dropExists && !versionExists, nil
+		},
+	)
 }

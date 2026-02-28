@@ -196,6 +196,8 @@ type EmbeddedCountCollectionsRequest struct {
 }
 
 // EmbeddedUpdateCollectionRequest updates collection properties.
+// NewMetadata replaces the entire existing collection metadata
+// (keys not present in NewMetadata are removed; nil values are not permitted).
 type EmbeddedUpdateCollectionRequest struct {
 	CollectionID string         `json:"collection_id"`
 	NewName      string         `json:"new_name,omitempty"`
@@ -872,7 +874,7 @@ func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) err
 
 	requestPayload := request
 	if hasNewMetadata {
-		normalizedMetadata, err := validateAndNormalizeMetadata(request.NewMetadata, true)
+		normalizedMetadata, err := validateAndNormalizeMetadata(request.NewMetadata, false)
 		if err != nil {
 			return errors.Wrap(err, "invalid new_metadata")
 		}

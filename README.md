@@ -272,7 +272,7 @@ fmt.Println(result.IDs)
 `EmbeddedUpdateCollectionRequest` fields:
 - `CollectionID`
 - `NewName` (optional)
-- `NewMetadata` (optional; nil values delete metadata keys)
+- `NewMetadata` (optional; replaces existing collection metadata; nil values are rejected)
 - `DatabaseName` (optional)
 
 At least one of `NewName` or `NewMetadata` is required.
