@@ -11,7 +11,8 @@ public final class Main {
             throw new IllegalStateException("CHROMA_LIB_PATH must be set");
         }
 
-        JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
-        System.out.println("Chroma shim version: " + runtime.version());
+        try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath)) {
+            System.out.println("Chroma shim version: " + runtime.version());
+        }
     }
 }
