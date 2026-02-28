@@ -8,6 +8,7 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.ChromaRuntime;
@@ -15,6 +16,9 @@ import tech.amikos.chroma.local.core.EmbeddedSession;
 
 public final class PanamaChromaRuntime implements ChromaRuntime {
     private static final long MAX_C_STRING_LEN = 1L << 20;
+    private static final boolean WINDOWS_OS = System.getProperty("os.name", "")
+            .toLowerCase(Locale.ROOT)
+            .contains("win");
 
     private final Arena arena;
     private final MethodHandle chromaVersion;
@@ -182,6 +186,12 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
+            // Workaround for unstable JVM crashes seen when unloading the Panama-linked DLL on
+            // windows-latest CI runners (Temurin 22). The process exits shortly after tests, so
+            // keeping the library loaded for process lifetime is acceptable.
+            if (WINDOWS_OS) {
+                return;
+            }
             try {
                 arena.close();
             } catch (IllegalStateException e) {
