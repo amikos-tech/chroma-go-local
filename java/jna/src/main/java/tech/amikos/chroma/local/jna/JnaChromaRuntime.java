@@ -42,13 +42,25 @@ public final class JnaChromaRuntime implements ChromaRuntime {
 
     @Override
     public String version() {
-        // chroma_version returns a static C string owned by the runtime.
-        // Do not call chroma_string_free on this pointer.
-        Pointer ptr = bindings.chroma_version();
-        if (ptr == null || Pointer.nativeValue(ptr) == 0L) {
-            throw new ChromaException("chroma_version returned NULL");
+        try {
+            // chroma_version returns a static C string owned by the runtime.
+            // Do not call chroma_string_free on this pointer.
+            Pointer ptr = bindings.chroma_version();
+            if (ptr == null || Pointer.nativeValue(ptr) == 0L) {
+                throw new ChromaException("chroma_version returned NULL");
+            }
+            return ptr.getString(0);
+        } catch (ChromaException e) {
+            throw e;
+        } catch (Throwable t) {
+            if (t instanceof UnsatisfiedLinkError e) {
+                throw new ChromaException("failed to read chroma_version", e);
+            }
+            if (t instanceof Error error) {
+                throw error;
+            }
+            throw new ChromaException("failed to read chroma_version", t);
         }
-        return ptr.getString(0);
     }
 
     @Override
@@ -56,31 +68,68 @@ public final class JnaChromaRuntime implements ChromaRuntime {
         if (configYaml == null || configYaml.isBlank()) {
             throw new IllegalArgumentException("configYaml must be set");
         }
-        Pointer handle = bindings.chroma_embedded_start_from_string(configYaml);
-        if (handle == null || Pointer.nativeValue(handle) == 0L) {
-            throw new ChromaException(lastError("embedded startup failed"));
+        try {
+            Pointer handle = bindings.chroma_embedded_start_from_string(configYaml);
+            if (handle == null || Pointer.nativeValue(handle) == 0L) {
+                throw new ChromaException(lastError("embedded startup failed"));
+            }
+            return new EmbeddedSession(Pointer.nativeValue(handle), this::embeddedFree);
+        } catch (ChromaException e) {
+            throw e;
+        } catch (Throwable t) {
+            if (t instanceof UnsatisfiedLinkError e) {
+                throw new ChromaException("failed to start embedded runtime", e);
+            }
+            if (t instanceof Error error) {
+                throw error;
+            }
+            throw new ChromaException("failed to start embedded runtime", t);
         }
-        return new EmbeddedSession(Pointer.nativeValue(handle), this::embeddedFree);
     }
 
     private void embeddedFree(long handle) {
         if (handle == 0L) {
             return;
         }
-        bindings.chroma_embedded_free(new Pointer(handle));
+        try {
+            bindings.chroma_embedded_free(new Pointer(handle));
+        } catch (Throwable t) {
+            if (t instanceof UnsatisfiedLinkError e) {
+                throw new ChromaException("failed to free embedded handle", e);
+            }
+            if (t instanceof Error error) {
+                throw error;
+            }
+            throw new ChromaException("failed to free embedded handle", t);
+        }
     }
 
     private String lastError(String fallback) {
-        Pointer ptr = bindings.chroma_get_last_error();
-        if (ptr == null || Pointer.nativeValue(ptr) == 0L) {
-            return fallback;
+        try {
+            Pointer ptr = bindings.chroma_get_last_error();
+            if (ptr == null || Pointer.nativeValue(ptr) == 0L) {
+                return fallback;
+            }
+            String message;
+            try {
+                message = ptr.getString(0);
+            } finally {
+                bindings.chroma_string_free(ptr);
+            }
+            if (message == null || message.isBlank()) {
+                return fallback;
+            }
+            return message;
+        } catch (Throwable t) {
+            if (t instanceof Error error && !(error instanceof UnsatisfiedLinkError)) {
+                throw error;
+            }
+            String detail = t.getMessage();
+            if (detail == null || detail.isBlank()) {
+                return fallback + " (failed to retrieve native error details)";
+            }
+            return fallback + " (failed to retrieve native error details: " + detail + ")";
         }
-        String message = ptr.getString(0);
-        bindings.chroma_string_free(ptr);
-        if (message == null || message.isBlank()) {
-            return fallback;
-        }
-        return message;
     }
 
     @Override

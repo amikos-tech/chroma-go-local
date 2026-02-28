@@ -8,6 +8,7 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.ChromaRuntime;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -21,6 +22,7 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
     private final MethodHandle chromaStringFree;
     private final MethodHandle chromaEmbeddedStartFromString;
     private final MethodHandle chromaEmbeddedFree;
+    private final AtomicBoolean closed;
 
     private PanamaChromaRuntime(
             Arena arena,
@@ -35,6 +37,7 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         this.chromaStringFree = chromaStringFree;
         this.chromaEmbeddedStartFromString = chromaEmbeddedStartFromString;
         this.chromaEmbeddedFree = chromaEmbeddedFree;
+        this.closed = new AtomicBoolean(false);
     }
 
     public static PanamaChromaRuntime init(String libraryPath) {
@@ -74,9 +77,7 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
                     chromaEmbeddedFree);
             initialized = true;
             return runtime;
-        } catch (UnsatisfiedLinkError e) {
-            throw new ChromaException("failed to initialize Panama runtime from " + normalized, e);
-        } catch (RuntimeException e) {
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
             throw new ChromaException("failed to initialize Panama runtime from " + normalized, e);
         } finally {
             if (!initialized) {
@@ -178,6 +179,18 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
 
     @Override
     public void close() {
-        arena.close();
+        if (closed.compareAndSet(false, true)) {
+            try {
+                arena.close();
+            } catch (IllegalStateException e) {
+                closed.set(false);
+                throw new ChromaException(
+                        "failed to close Panama runtime; ensure all EmbeddedSession instances are closed first",
+                        e);
+            } catch (RuntimeException | Error e) {
+                closed.set(false);
+                throw e;
+            }
+        }
     }
 }

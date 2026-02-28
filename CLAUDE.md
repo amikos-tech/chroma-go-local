@@ -56,7 +56,7 @@ Go Package (root)              Rust Shim (shim/)               Java scaffold (ja
 - **No cgo**: Uses purego for pure Go FFI
 - **Runtime artifact name**: `chroma_shim` (`libchroma_shim.so`, `libchroma_shim.dylib`, `chroma_shim.dll`)
 - **Configuration**: YAML-based embedded startup config
-- **Resource cleanup**: explicit close semantics in Go and Java runtime/session wrappers
+- **Resource cleanup**: explicit close semantics in Go and Java runtime/session wrappers, with Go finalizers as a fallback safety net
 
 ## Key Patterns
 

@@ -81,7 +81,7 @@ help:
 	@echo "  test          - Run Go tests (requires debug build)"
 	@echo "  test-go       - Run Go tests (requires debug build)"
 	@echo "  test-rust     - Run Rust shim tests"
-	@echo "  test-all      - Run Go and Rust tests (+ non-blocking Java smoke tests)"
+	@echo "  test-all      - Run Go, Rust, and Java smoke tests (Java skipped if Gradle missing)"
 	@echo "  test-release  - Run Go tests with release build"
 	@echo "  bench         - Run Go and Rust benchmarks"
 	@echo "  bench-go      - Run Go benchmarks"
@@ -148,7 +148,7 @@ test-java: build-debug
 	fi
 
 test-all: test-go test-rust
-	@$(MAKE) test-java || echo "WARNING: Java smoke tests failed (non-blocking)"
+	$(MAKE) test-java
 
 test-release: build-release
 	$(RUN_GO_TEST_RELEASE)

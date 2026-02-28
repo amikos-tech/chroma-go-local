@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.EmbeddedSession;
 
 class PanamaChromaRuntimeTest {
@@ -16,6 +17,11 @@ class PanamaChromaRuntimeTest {
         assertThrows(IllegalArgumentException.class, () -> PanamaChromaRuntime.init(null));
         assertThrows(IllegalArgumentException.class, () -> PanamaChromaRuntime.init(""));
         assertThrows(IllegalArgumentException.class, () -> PanamaChromaRuntime.init("   "));
+    }
+
+    @Test
+    void initWrapsNativeLoadFailures() {
+        assertThrows(ChromaException.class, () -> PanamaChromaRuntime.init("/nonexistent/libchroma_shim.so"));
     }
 
     @Test

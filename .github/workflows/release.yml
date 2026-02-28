@@ -217,18 +217,21 @@ jobs:
           set -euo pipefail
           aws --version
 
+          if [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ] || [ -z "${R2_ENDPOINT}" ]; then
+            echo "R2 credentials are incomplete (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT are required)."
+            exit 1
+          fi
+
           PREFIX="${PROJECT}/${VERSION}"
           aws s3 cp dist/ "s3://${BUCKET}/${PREFIX}/" \
             --recursive \
             --endpoint-url "${R2_ENDPOINT}"
 
-          cat > /tmp/latest.json <<EOF
-          {
-            "version": "${VERSION}",
-            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "checksums_url": "${PROJECT}/${VERSION}/SHA256SUMS"
-          }
-          EOF
+          jq -n \
+            --arg version "${VERSION}" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg checksums_url "${PROJECT}/${VERSION}/SHA256SUMS" \
+            '{version: $version, date: $date, checksums_url: $checksums_url}' > /tmp/latest.json
 
           aws s3 cp /tmp/latest.json "s3://${BUCKET}/${PROJECT}/latest.json" \
             --endpoint-url "${R2_ENDPOINT}" \
