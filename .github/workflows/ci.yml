@@ -246,3 +246,48 @@ jobs:
           } finally {
             Pop-Location
           }
+
+      - name: Dump Panama crash diagnostics (Windows)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $panamaDir = Join-Path $env:GITHUB_WORKSPACE "java/panama"
+          $hsErrLogs = Get-ChildItem -Path $panamaDir -Filter "hs_err_pid*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+          $hsErrDumps = Get-ChildItem -Path $panamaDir -Filter "hs_err_pid*.mdmp" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+
+          if ($hsErrLogs.Count -eq 0) {
+            Write-Host "No hs_err logs found in $panamaDir"
+          } else {
+            foreach ($log in $hsErrLogs) {
+              Write-Host "==== hs_err log: $($log.FullName) ===="
+              Get-Content $log.FullName -TotalCount 400
+            }
+          }
+
+          if ($hsErrDumps.Count -eq 0) {
+            Write-Host "No mdmp files found in $panamaDir"
+          } else {
+            foreach ($dump in $hsErrDumps) {
+              Write-Host "Found mdmp: $($dump.FullName)"
+            }
+          }
+
+          $testResultsDir = Join-Path $panamaDir "build/test-results/test"
+          if (Test-Path $testResultsDir) {
+            Write-Host "==== test result files in $testResultsDir ===="
+            Get-ChildItem -Path $testResultsDir -Recurse | Select-Object FullName, Length
+          } else {
+            Write-Host "No test results directory found at $testResultsDir"
+          }
+
+      - name: Upload Panama crash artifacts (Windows)
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: panama-windows-crash-artifacts
+          path: |
+            java/panama/hs_err_pid*.log
+            java/panama/hs_err_pid*.mdmp
+            java/panama/build/test-results/test/**
+            java/panama/build/reports/tests/test/**
+          if-no-files-found: warn
