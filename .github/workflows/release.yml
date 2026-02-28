@@ -113,8 +113,8 @@ jobs:
   publish-release:
     name: Publish release assets and signed R2 artifacts
     needs: build-artifacts
-    # publish only on tag pushes; workflow_dispatch is for matrix build verification
-    if: startsWith(github.ref, 'refs/tags/')
+    # publish on tag pushes and tag-targeted workflow_dispatch backfills
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref_type == 'tag')
     runs-on: ubuntu-latest
     permissions:
       contents: write
