@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing tag to release/backfill (for example v0.3.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
 
       - name: Normalize line endings on Windows
         if: runner.os == 'Windows'
@@ -113,14 +120,17 @@ jobs:
   publish-release:
     name: Publish release assets and signed R2 artifacts
     needs: build-artifacts
-    # publish on tag pushes and tag-targeted workflow_dispatch backfills
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref_type == 'tag')
+    # publish on tag pushes and manual tag backfills
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
 
     steps:
+      - name: Checkout repository scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Download artifact bundles
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -131,7 +141,7 @@ jobs:
       - name: Normalize artifact names
         shell: bash
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
           PROJECT: chroma-go-local
         run: |
           set -euo pipefail
@@ -168,12 +178,11 @@ jobs:
       - name: Sign and verify artifacts
         shell: bash
         env:
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
           cd dist
-          IDENTITY="https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${TAG}"
+          IDENTITY="https://github.com/${WORKFLOW_REF}"
           ISSUER="https://token.actions.githubusercontent.com"
 
           for f in *.tar.gz; do
@@ -211,8 +220,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           PROJECT: chroma-go-local
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
           BUCKET: releases
+          RELEASES_DOMAIN: ${{ vars.RELEASES_DOMAIN || 'releases.amikos.tech' }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
           aws --version
@@ -227,18 +238,59 @@ jobs:
             --recursive \
             --endpoint-url "${R2_ENDPOINT}"
 
+          RELEASE_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
           jq -n \
             --arg version "${VERSION}" \
-            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg date "${RELEASE_DATE}" \
             --arg checksums_url "${PROJECT}/${VERSION}/SHA256SUMS" \
-            '{version: $version, date: $date, checksums_url: $checksums_url}' > /tmp/latest.json
+            --arg checksums_full_url "https://${RELEASES_DOMAIN}/${PROJECT}/${VERSION}/SHA256SUMS" \
+            '{version: $version, date: $date, checksums_url: $checksums_url, checksums_full_url: $checksums_full_url}' > /tmp/latest.json
 
           aws s3 cp /tmp/latest.json "s3://${BUCKET}/${PROJECT}/latest.json" \
             --endpoint-url "${R2_ENDPOINT}" \
             --content-type "application/json" \
             --cache-control "public, max-age=60"
 
-      - name: Purge latest.json from CDN cache
+          EXISTING_RELEASES_JSON="$(mktemp)"
+          if ! aws s3 cp "s3://${BUCKET}/${PROJECT}/releases.json" "${EXISTING_RELEASES_JSON}" \
+            --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
+            rm -f "${EXISTING_RELEASES_JSON}"
+          fi
+
+          ./scripts/build_releases_index.sh \
+            --existing "${EXISTING_RELEASES_JSON}" \
+            --output /tmp/releases.json \
+            --project "${PROJECT}" \
+            --version "${VERSION}" \
+            --date "${RELEASE_DATE}" \
+            --max 100
+
+          IDENTITY="https://github.com/${WORKFLOW_REF}"
+          ISSUER="https://token.actions.githubusercontent.com"
+          cosign sign-blob --yes \
+            --oidc-issuer "${ISSUER}" \
+            --output-signature /tmp/releases.json.sig \
+            --output-certificate /tmp/releases.json.pem \
+            /tmp/releases.json
+
+          cosign verify-blob \
+            --signature /tmp/releases.json.sig \
+            --certificate /tmp/releases.json.pem \
+            --certificate-identity "${IDENTITY}" \
+            --certificate-oidc-issuer "${ISSUER}" \
+            /tmp/releases.json
+
+          aws s3 cp /tmp/releases.json "s3://${BUCKET}/${PROJECT}/releases.json" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=60"
+          aws s3 cp /tmp/releases.json.sig "s3://${BUCKET}/${PROJECT}/releases.json.sig" \
+            --endpoint-url "${R2_ENDPOINT}"
+          aws s3 cp /tmp/releases.json.pem "s3://${BUCKET}/${PROJECT}/releases.json.pem" \
+            --endpoint-url "${R2_ENDPOINT}"
+
+      - name: Purge release metadata from CDN cache
         if: vars.CF_ZONE_ID != ''
         shell: bash
         env:
@@ -256,11 +308,13 @@ jobs:
             "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\"]}"
+            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+          overwrite_files: true
           generate_release_notes: true
           files: |
             dist/*.tar.gz

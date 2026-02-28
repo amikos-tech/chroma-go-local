@@ -122,6 +122,7 @@ Tag pushes matching `v*` trigger `.github/workflows/release.yml`, which performs
 - GitHub release upload (for compatibility)
 - signed artifact upload to `https://releases.amikos.tech/chroma-go-local/<version>/`
 - `latest.json` update at `https://releases.amikos.tech/chroma-go-local/latest.json`
+- signed `releases.json` index update at `https://releases.amikos.tech/chroma-go-local/releases.json`
 
 Canonical archive naming:
 
@@ -188,11 +189,13 @@ cosign verify-blob \
 
 Breaking change in `v0.3.1`: shared library filenames changed from `chroma_go_shim` to `chroma_shim`.
 
-Backfill older tags to R2 (replays release workflow for existing tags):
+Backfill older tags to R2 using the latest workflow definition (`main`) while targeting historical tags:
 
 ```bash
-./scripts/backfill-r2.sh v0.1.0 v0.2.0 v0.3.0
+./scripts/backfill-r2.sh --workflow-ref main v0.1.0 v0.2.0 v0.3.0
 ```
+
+`latest.json` includes `checksums_url` (project-relative path) and `checksums_full_url` (absolute URL).
 
 ## Usage
 
@@ -516,7 +519,7 @@ For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, an
 make test-go       # Run Go tests (unit + integration + property tests)
 make test-rust     # Run Rust shim tests (unit + proptests + FFI integration)
 make test-java     # Run Java smoke tests (JNA + Panama)
-make test-all      # Run Go/Rust tests plus non-blocking Java smoke tests
+make test-all      # Run Go/Rust tests plus Java smoke tests (when Gradle is installed)
 make test-release  # Run Go tests with release build
 ```
 
@@ -539,7 +542,7 @@ GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `w
 5. Java JNA smoke tests on Java 17
 6. Java Panama smoke tests on Java 22
 
-Release tags (`v*`) run a separate workflow that builds canonical archives, signs artifacts with cosign keyless, publishes to both GitHub Releases and `releases.amikos.tech`, and updates `latest.json`.
+Release tags (`v*`) run a separate workflow that builds canonical archives, signs artifacts with cosign keyless, publishes to both GitHub Releases and `releases.amikos.tech`, and updates `latest.json` plus signed `releases.json`.
 
 ## Troubleshooting
 

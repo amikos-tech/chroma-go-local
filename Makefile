@@ -143,8 +143,9 @@ test-java: build-debug
 	elif ! command -v $(JAVA_GRADLE) >/dev/null 2>&1; then \
 		echo "Gradle not found; skipping Java tests"; \
 	else \
-		cd $(JAVA_DIR) && CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) $(JAVA_GRADLE) --no-daemon :jna:test; \
-		cd $(JAVA_DIR) && CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) $(JAVA_GRADLE) --no-daemon :panama:test; \
+		cd $(abspath $(JAVA_DIR)) && \
+		CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) $(JAVA_GRADLE) --no-daemon :jna:test && \
+		CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) $(JAVA_GRADLE) --no-daemon :panama:test; \
 	fi
 
 test-all: test-go test-rust
