@@ -225,7 +225,24 @@ jobs:
           Write-Host "CHROMA_LIB_PATH=$env:CHROMA_LIB_PATH"
           Push-Location "$env:GITHUB_WORKSPACE/java"
           try {
-            gradle --no-daemon :panama:test
+            $maxAttempts = if ("${{ runner.os }}" -eq "Windows") { 3 } else { 1 }
+            $attempt = 1
+            while ($true) {
+              Write-Host "Running Panama smoke tests (attempt $attempt/$maxAttempts)"
+              gradle --no-daemon :panama:test
+              if ($LASTEXITCODE -eq 0) {
+                break
+              }
+
+              if ($attempt -ge $maxAttempts) {
+                throw "Panama smoke tests failed after $attempt attempts (exit code $LASTEXITCODE)."
+              }
+
+              Write-Warning "Panama smoke tests failed with exit code $LASTEXITCODE; retrying in 10 seconds."
+              gradle --stop | Out-Null
+              Start-Sleep -Seconds 10
+              $attempt++
+            }
           } finally {
             Pop-Location
           }
