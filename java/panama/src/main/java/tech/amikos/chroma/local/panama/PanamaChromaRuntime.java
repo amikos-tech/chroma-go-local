@@ -88,8 +88,9 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
 
     @Override
     public String version() {
+        ensureOpen();
         try {
-            // chroma_version returns a static C string owned by the runtime.
+            // chroma_version returns a pointer to static read-only data in the shared library.
             // Do not call chroma_string_free on this pointer.
             MemorySegment ptr = (MemorySegment) chromaVersion.invokeExact();
             if (ptr.equals(MemorySegment.NULL)) {
@@ -108,6 +109,7 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
 
     @Override
     public EmbeddedSession startEmbedded(String configYaml) {
+        ensureOpen();
         if (configYaml == null || configYaml.isBlank()) {
             throw new IllegalArgumentException("configYaml must be set");
         }
@@ -191,6 +193,12 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
                 closed.set(false);
                 throw e;
             }
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("runtime is closed");
         }
     }
 }

@@ -4,12 +4,14 @@ import com.sun.jna.Library;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.ChromaRuntime;
 import tech.amikos.chroma.local.core.EmbeddedSession;
 
 public final class JnaChromaRuntime implements ChromaRuntime {
     private final JnaBindings bindings;
+    private final AtomicBoolean closed;
 
     private interface JnaBindings extends Library {
         Pointer chroma_version();
@@ -25,6 +27,7 @@ public final class JnaChromaRuntime implements ChromaRuntime {
 
     private JnaChromaRuntime(JnaBindings bindings) {
         this.bindings = bindings;
+        this.closed = new AtomicBoolean(false);
     }
 
     public static JnaChromaRuntime init(String libraryPath) {
@@ -42,8 +45,9 @@ public final class JnaChromaRuntime implements ChromaRuntime {
 
     @Override
     public String version() {
+        ensureOpen();
         try {
-            // chroma_version returns a static C string owned by the runtime.
+            // chroma_version returns a pointer to static read-only data in the shared library.
             // Do not call chroma_string_free on this pointer.
             Pointer ptr = bindings.chroma_version();
             if (ptr == null || Pointer.nativeValue(ptr) == 0L) {
@@ -65,6 +69,7 @@ public final class JnaChromaRuntime implements ChromaRuntime {
 
     @Override
     public EmbeddedSession startEmbedded(String configYaml) {
+        ensureOpen();
         if (configYaml == null || configYaml.isBlank()) {
             throw new IllegalArgumentException("configYaml must be set");
         }
@@ -134,6 +139,12 @@ public final class JnaChromaRuntime implements ChromaRuntime {
 
     @Override
     public void close() {
-        // JNA runtime doesn't own shared native resources beyond embedded sessions.
+        closed.compareAndSet(false, true);
+    }
+
+    private void ensureOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("runtime is closed");
+        }
     }
 }

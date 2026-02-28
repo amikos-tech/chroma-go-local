@@ -1,5 +1,6 @@
 package tech.amikos.chroma.local.panama;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,6 +41,32 @@ class PanamaChromaRuntimeTest {
                 // Smoke test ensures startup and close work via Panama bindings.
             }
         }
+    }
+
+    @Test
+    void startEmbeddedRejectsMissingYaml() {
+        String libPath = System.getenv("CHROMA_LIB_PATH");
+        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+
+        try (PanamaChromaRuntime runtime = PanamaChromaRuntime.init(libPath)) {
+            assertThrows(IllegalArgumentException.class, () -> runtime.startEmbedded(null));
+            assertThrows(IllegalArgumentException.class, () -> runtime.startEmbedded(""));
+            assertThrows(IllegalArgumentException.class, () -> runtime.startEmbedded("   "));
+        }
+    }
+
+    @Test
+    void rejectsOperationsAfterClose(@TempDir Path persistDir) {
+        String libPath = System.getenv("CHROMA_LIB_PATH");
+        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+
+        String yaml = embeddedYaml(persistDir);
+        PanamaChromaRuntime runtime = PanamaChromaRuntime.init(libPath);
+        runtime.close();
+
+        assertThrows(IllegalStateException.class, runtime::version);
+        assertThrows(IllegalStateException.class, () -> runtime.startEmbedded(yaml));
+        assertDoesNotThrow(runtime::close);
     }
 
     private static String embeddedYaml(Path persistDir) {

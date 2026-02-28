@@ -26,7 +26,7 @@ make test           # Build debug + run Go tests
 make test-release   # Build release + run Go tests
 make build-java     # Build Java modules (no tests)
 make test-java      # Run Java smoke tests (JNA + Panama)
-make test-all       # Go + Rust tests, then non-blocking Java smoke tests
+make test-all       # Go + Rust + Java smoke tests (Java skipped only if Gradle missing)
 make lint           # Run all linters (Go + Rust)
 make fmt            # Format all code (Go + Rust)
 make clean          # Clean build artifacts
@@ -41,7 +41,7 @@ Go tests require the Rust shim and are wired by Makefile:
 
 Java smoke tests are available via:
 - `make test-java` (runs `:jna:test` and `:panama:test`)
-- `make test-all` keeps Java smoke non-blocking and prints a warning on failure
+- `make test-all` fails on Java test failures when Gradle is present
 
 ## Architecture
 
