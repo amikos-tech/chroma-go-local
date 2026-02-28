@@ -213,11 +213,11 @@ func formatLibraryLoadError(plan libraryLoadPlan, attempts []string) error {
 func defaultLibraryFilename(goos string) string {
 	switch goos {
 	case "windows":
-		return "chroma_go_shim.dll"
+		return "chroma_shim.dll"
 	case "darwin":
-		return "libchroma_go_shim.dylib"
+		return "libchroma_shim.dylib"
 	default:
-		return "libchroma_go_shim.so"
+		return "libchroma_shim.so"
 	}
 }
 

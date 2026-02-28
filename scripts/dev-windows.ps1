@@ -51,7 +51,7 @@ function Get-ShimLibraryPath {
 
     $targetDir = Get-TargetDirectory
     $profileDir = Join-Path $targetDir $Profile
-    return Join-Path $profileDir "chroma_go_shim.dll"
+    return Join-Path $profileDir "chroma_shim.dll"
 }
 
 function Test-CommandAvailable {

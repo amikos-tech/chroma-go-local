@@ -6,20 +6,23 @@ Guidance for coding agents working in this repository.
 
 - `local-go-chroma` is a Go wrapper for running Chroma as an embedded server.
 - It uses a Rust FFI shim plus `purego` (no `cgo`).
-- Primary languages: Go and Rust.
+- Primary languages: Go, Rust, and Java.
 
 ## Requirements
 
 - Go 1.21+
 - Rust 1.70+
+- Java 17+ (JNA) and Java 22+ (Panama)
 - `golangci-lint` for Go linting
 
 ## Common Commands
 
 - Build debug shim: `make build`
 - Build release shim: `make build-release`
+- Build Java modules: `make build-java`
 - Run tests (debug): `make test`
 - Run tests (release): `make test-release`
+- Run Java smoke tests: `make test-java`
 - Run linters: `make lint`
 - Format code: `make fmt`
 
@@ -35,6 +38,9 @@ Notes:
 - `errors.go`: error handling types and codes
 - `shim/src/lib.rs`: Rust FFI exports and runtime-backed server operations
 - `chroma_test.go`: integration-style tests against real server instances
+- `java/core`: shared Java runtime API surface
+- `java/jna`: Java 17 JNA bindings
+- `java/panama`: Java 22 Panama bindings
 
 ## Implementation Rules
 

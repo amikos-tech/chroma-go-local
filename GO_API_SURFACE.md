@@ -17,6 +17,11 @@ fmt.Println(v, err)
 
 `Init("")` uses `CHROMA_LIB_PATH` when no explicit path is provided.
 
+Runtime artifact naming as of `v0.3.1`:
+- Linux: `libchroma_shim.so`
+- macOS: `libchroma_shim.dylib`
+- Windows: `chroma_shim.dll`
+
 ## 2. Server Mode API
 
 Implemented server lifecycle APIs:

@@ -1,13 +1,13 @@
 use std::ffi::{CStr, CString};
 
-use chroma_go_shim::{
+use chroma_shim::{
     chroma_embedded_create_tenant, chroma_embedded_free, chroma_embedded_get_tenant,
     chroma_embedded_heartbeat, chroma_embedded_start_from_string, chroma_string_free, SUCCESS,
 };
 use tempfile::TempDir;
 
 fn last_error() -> String {
-    let err_ptr = unsafe { chroma_go_shim::chroma_get_last_error() };
+    let err_ptr = unsafe { chroma_shim::chroma_get_last_error() };
     if err_ptr.is_null() {
         return String::new();
     }

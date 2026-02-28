@@ -15,6 +15,11 @@ coverage.out
 target/
 shim/target/
 
+# Java/Gradle build artifacts
+.gradle/
+java/.gradle/
+java/**/build/
+
 # Generated local Chroma runtime data
 chroma_test_data/
 chroma_test_data_builder/

@@ -10,6 +10,7 @@ It supports both:
 
 - Go 1.21+
 - Rust 1.70+
+- Java 17+ (JNA module) and Java 22+ (Panama module)
 - `golangci-lint` (for `lint` checks)
 
 ## Supported Platform Matrix
@@ -45,6 +46,22 @@ make build
 
 # Build release version
 make build-release
+```
+
+## Java Scaffold
+
+Java bindings are scaffolded under `java/`:
+
+- `java/core` (Java 17): shared runtime interface and error/session types
+- `java/jna` (Java 17): JNA backend
+- `java/panama` (Java 22): Foreign Function & Memory API backend
+
+```bash
+# Build Java modules
+make build-java
+
+# Run Java smoke tests (expects CHROMA_LIB_PATH, auto-set by make target)
+make test-java
 ```
 
 ## Windows Developer Workflow (PowerShell)
@@ -100,14 +117,19 @@ pwsh -File .\scripts\dev-windows.ps1 -Task lint
 
 ## Prebuilt Shim Artifacts
 
-Tag pushes matching `v*` trigger the release workflow in `.github/workflows/release.yml`, which publishes downloadable shim archives in the GitHub [Releases](https://github.com/amikos-tech/chroma-go-local/releases).
+Tag pushes matching `v*` trigger `.github/workflows/release.yml`, which performs:
 
-Archive naming is stable:
+- GitHub release upload (for compatibility)
+- signed artifact upload to `https://releases.amikos.tech/chroma-go-local/<version>/`
+- `latest.json` update at `https://releases.amikos.tech/chroma-go-local/latest.json`
 
-- `chroma-go-shim-linux-<arch>.tar.gz`
-- `chroma-go-shim-macos-<arch>.tar.gz`
-- `chroma-go-shim-windows-<arch>.tar.gz`
-- `chroma-go-shim_SHA256SUMS.txt` (combined checksums for all archives)
+Canonical archive naming:
+
+- `chroma-go-local-<version>-linux-<arch>.tar.gz`
+- `chroma-go-local-<version>-darwin-<arch>.tar.gz`
+- `chroma-go-local-<version>-windows-<arch>.tar.gz`
+- `SHA256SUMS`
+- `*.sig` + `*.pem` for each archive and `SHA256SUMS`
 
 Architecture note: archive `<arch>` is derived from the GitHub runner architecture. In the current hosted matrix for this repository, Linux/Windows builds are `amd64` and macOS builds are `arm64`. Runner mappings can change over time.
 
@@ -115,42 +137,61 @@ Library filename mapping inside each archive:
 
 | OS | Library filename |
 |---|---|
-| Linux | `libchroma_go_shim.so` |
-| macOS | `libchroma_go_shim.dylib` |
-| Windows | `chroma_go_shim.dll` |
+| Linux | `libchroma_shim.so` |
+| macOS | `libchroma_shim.dylib` |
+| Windows | `chroma_shim.dll` |
 
 Example usage:
 
 ```bash
 # Linux/macOS
-tar -xzf chroma-go-shim-linux-amd64.tar.gz
-export CHROMA_LIB_PATH="$(pwd)/libchroma_go_shim.so"
+tar -xzf chroma-go-local-v0.3.1-linux-amd64.tar.gz
+export CHROMA_LIB_PATH="$(pwd)/libchroma_shim.so"
 ```
 
 ```powershell
 # Windows PowerShell
-tar -xzf chroma-go-shim-windows-amd64.tar.gz
-$env:CHROMA_LIB_PATH = (Resolve-Path .\chroma_go_shim.dll).Path
+tar -xzf chroma-go-local-v0.3.1-windows-amd64.tar.gz
+$env:CHROMA_LIB_PATH = (Resolve-Path .\chroma_shim.dll).Path
 ```
 
 Verify release checksums:
 
 ```bash
 # Linux
-sha256sum -c chroma-go-shim_SHA256SUMS.txt
+sha256sum -c SHA256SUMS
 
 # macOS
-shasum -a 256 -c chroma-go-shim_SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS
 ```
 
 ```powershell
 # Windows PowerShell
-Get-Content chroma-go-shim_SHA256SUMS.txt | ForEach-Object {
+Get-Content SHA256SUMS | ForEach-Object {
     if (-not $_) { return }
     $expected, $file = $_ -split '  ', 2
     $actual = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
     if ($actual -eq $expected) { "OK: $file" } else { throw "MISMATCH: $file" }
 }
+```
+
+Verify signatures (cosign keyless):
+
+```bash
+cosign verify-blob \
+  --signature SHA256SUMS.sig \
+  --certificate SHA256SUMS.pem \
+  --certificate-identity "https://github.com/amikos-tech/chroma-go-local/.github/workflows/release.yml@refs/tags/v0.3.1" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  SHA256SUMS
+```
+
+Breaking change in `v0.3.1`: shared library filenames changed from `chroma_go_shim` to `chroma_shim`.
+
+Backfill older tags to R2 (replays release workflow for existing tags):
+
+```bash
+./scripts/backfill-r2.sh v0.1.0 v0.2.0 v0.3.0
 ```
 
 ## Usage
@@ -314,6 +355,7 @@ allow_reset: true
 ## API
 
 For a detailed, example-heavy reference of the currently implemented Go APIs, see [`GO_API_SURFACE.md`](GO_API_SURFACE.md).
+For the Java scaffold surface, see [`JAVA_API_SURFACE.md`](JAVA_API_SURFACE.md).
 
 | Function | Description |
 |----------|-------------|
@@ -473,7 +515,8 @@ For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, an
 ```bash
 make test-go       # Run Go tests (unit + integration + property tests)
 make test-rust     # Run Rust shim tests (unit + proptests + FFI integration)
-make test-all      # Run both Go and Rust tests
+make test-java     # Run Java smoke tests (JNA + Panama)
+make test-all      # Run Go/Rust tests plus non-blocking Java smoke tests
 make test-release  # Run Go tests with release build
 ```
 
@@ -493,8 +536,10 @@ GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `w
 2. `go test -v ./...` with platform-specific `CHROMA_LIB_PATH`
 3. `golangci-lint run ./...`
 4. `cargo clippy --locked -- -D warnings` in `shim/`
+5. Java JNA smoke tests on Java 17
+6. Java Panama smoke tests on Java 22
 
-Release tags (`v*`) run a separate workflow that builds release shim archives and publishes them together with `chroma-go-shim_SHA256SUMS.txt`.
+Release tags (`v*`) run a separate workflow that builds canonical archives, signs artifacts with cosign keyless, publishes to both GitHub Releases and `releases.amikos.tech`, and updates `latest.json`.
 
 ## Troubleshooting
 
@@ -527,7 +572,7 @@ Test-Path $env:CHROMA_LIB_PATH
 - On macOS, if the downloaded file is quarantined by Gatekeeper, remove quarantine metadata:
 
 ```bash
-xattr -dr com.apple.quarantine /path/to/libchroma_go_shim.dylib
+xattr -dr com.apple.quarantine /path/to/libchroma_shim.dylib
 ```
 
 ### Windows
@@ -566,10 +611,14 @@ make bench         # Run both benchmark suites
 ├── chroma_test.go  # Tests
 ├── embedded_test.go # Embedded integration test
 ├── Makefile        # Build orchestration
+├── java/           # Java scaffold modules (core, jna, panama)
+├── JAVA_API_SURFACE.md # Java scaffold surface and status
 ├── scripts/
-│   └── dev-windows.ps1 # Windows build/test/lint helper
+│   ├── dev-windows.ps1 # Windows build/test/lint helper
+│   └── backfill-r2.sh  # Trigger R2 backfill for existing tags
 ├── examples/
-│   └── basic/      # Example usage
+│   ├── go/basic/   # Go example usage
+│   └── java/basic/ # Java scaffold usage
 └── shim/
     ├── Cargo.toml  # Rust dependencies
     └── src/

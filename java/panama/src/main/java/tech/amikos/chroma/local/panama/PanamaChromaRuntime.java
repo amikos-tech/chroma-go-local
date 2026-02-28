@@ -1,0 +1,152 @@
+package tech.amikos.chroma.local.panama;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+import java.nio.file.Path;
+import tech.amikos.chroma.local.core.ChromaException;
+import tech.amikos.chroma.local.core.ChromaRuntime;
+import tech.amikos.chroma.local.core.EmbeddedSession;
+
+public final class PanamaChromaRuntime implements ChromaRuntime {
+    private static final long MAX_C_STRING_LEN = 1L << 20;
+
+    private final Arena arena;
+    private final MethodHandle chromaVersion;
+    private final MethodHandle chromaGetLastError;
+    private final MethodHandle chromaStringFree;
+    private final MethodHandle chromaEmbeddedStartFromString;
+    private final MethodHandle chromaEmbeddedFree;
+
+    private PanamaChromaRuntime(
+            Arena arena,
+            MethodHandle chromaVersion,
+            MethodHandle chromaGetLastError,
+            MethodHandle chromaStringFree,
+            MethodHandle chromaEmbeddedStartFromString,
+            MethodHandle chromaEmbeddedFree) {
+        this.arena = arena;
+        this.chromaVersion = chromaVersion;
+        this.chromaGetLastError = chromaGetLastError;
+        this.chromaStringFree = chromaStringFree;
+        this.chromaEmbeddedStartFromString = chromaEmbeddedStartFromString;
+        this.chromaEmbeddedFree = chromaEmbeddedFree;
+    }
+
+    public static PanamaChromaRuntime init(String libraryPath) {
+        if (libraryPath == null || libraryPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("libraryPath must be set");
+        }
+
+        try {
+            Path normalized = Path.of(libraryPath).toAbsolutePath().normalize();
+            Arena arena = Arena.ofShared();
+            Linker linker = Linker.nativeLinker();
+            SymbolLookup library = SymbolLookup.libraryLookup(normalized, arena);
+
+            MethodHandle chromaVersion = linker.downcallHandle(
+                    requireSymbol(library, "chroma_version"),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS));
+            MethodHandle chromaGetLastError = linker.downcallHandle(
+                    requireSymbol(library, "chroma_get_last_error"),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS));
+            MethodHandle chromaStringFree = linker.downcallHandle(
+                    requireSymbol(library, "chroma_string_free"),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+            MethodHandle chromaEmbeddedStartFromString = linker.downcallHandle(
+                    requireSymbol(library, "chroma_embedded_start_from_string"),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+            MethodHandle chromaEmbeddedFree = linker.downcallHandle(
+                    requireSymbol(library, "chroma_embedded_free"),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+
+            return new PanamaChromaRuntime(
+                    arena,
+                    chromaVersion,
+                    chromaGetLastError,
+                    chromaStringFree,
+                    chromaEmbeddedStartFromString,
+                    chromaEmbeddedFree);
+        } catch (Throwable t) {
+            throw new ChromaException("failed to initialize Panama runtime", t);
+        }
+    }
+
+    @Override
+    public String version() {
+        try {
+            MemorySegment ptr = (MemorySegment) chromaVersion.invokeExact();
+            if (ptr.equals(MemorySegment.NULL)) {
+                throw new ChromaException("chroma_version returned NULL");
+            }
+            return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
+        } catch (ChromaException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new ChromaException("failed to read chroma_version", t);
+        }
+    }
+
+    @Override
+    public EmbeddedSession startEmbedded(String configYaml) {
+        if (configYaml == null || configYaml.isBlank()) {
+            throw new IllegalArgumentException("configYaml must be set");
+        }
+
+        try (Arena callArena = Arena.ofConfined()) {
+            MemorySegment yaml = callArena.allocateFrom(configYaml);
+            MemorySegment handle = (MemorySegment) chromaEmbeddedStartFromString.invokeExact(yaml);
+            if (handle.equals(MemorySegment.NULL)) {
+                throw new ChromaException(lastError("embedded startup failed"));
+            }
+            return new EmbeddedSession(handle.address(), this::embeddedFree);
+        } catch (ChromaException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new ChromaException("failed to start embedded runtime", t);
+        }
+    }
+
+    private void embeddedFree(long handleAddress) {
+        if (handleAddress == 0L) {
+            return;
+        }
+        try {
+            chromaEmbeddedFree.invokeExact(MemorySegment.ofAddress(handleAddress));
+        } catch (Throwable t) {
+            throw new ChromaException("failed to free embedded handle", t);
+        }
+    }
+
+    private String lastError(String fallback) {
+        try {
+            MemorySegment ptr = (MemorySegment) chromaGetLastError.invokeExact();
+            if (ptr.equals(MemorySegment.NULL)) {
+                return fallback;
+            }
+            String message = ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
+            chromaStringFree.invokeExact(ptr);
+            if (message == null || message.isBlank()) {
+                return fallback;
+            }
+            return message;
+        } catch (Throwable t) {
+            return fallback;
+        }
+    }
+
+    private static MemorySegment requireSymbol(SymbolLookup library, String name) {
+        return library
+                .find(name)
+                .orElseThrow(() -> new ChromaException("missing symbol: " + name));
+    }
+
+    @Override
+    public void close() {
+        arena.close();
+    }
+}
