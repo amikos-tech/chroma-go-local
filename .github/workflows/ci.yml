@@ -66,9 +66,9 @@ jobs:
         shell: pwsh
         run: |
           $libName = switch ("${{ runner.os }}") {
-            "Linux" { "libchroma_go_shim.so" }
-            "macOS" { "libchroma_go_shim.dylib" }
-            "Windows" { "chroma_go_shim.dll" }
+            "Linux" { "libchroma_shim.so" }
+            "macOS" { "libchroma_shim.dylib" }
+            "Windows" { "chroma_shim.dll" }
             default { throw "Unsupported OS: ${{ runner.os }}" }
           }
 
@@ -85,3 +85,209 @@ jobs:
       - name: Run Rust lint
         working-directory: shim
         run: cargo clippy --locked -- -D warnings
+
+  java-jna:
+    name: Java JNA Smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Normalize line endings on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --local core.autocrlf false
+          git config --local core.eol lf
+          git reset --hard HEAD
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (pinned snapshot)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: "shim -> target"
+
+      - name: Set up protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify protoc
+        run: protoc --version
+
+      - name: Set up Java 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3
+
+      - name: Build Rust shim (debug)
+        working-directory: shim
+        run: cargo build --locked
+
+      - name: Run Java JNA smoke tests
+        shell: pwsh
+        run: |
+          $libName = switch ("${{ runner.os }}") {
+            "Linux" { "libchroma_shim.so" }
+            "macOS" { "libchroma_shim.dylib" }
+            "Windows" { "chroma_shim.dll" }
+            default { throw "Unsupported OS: ${{ runner.os }}" }
+          }
+
+          $env:CHROMA_LIB_PATH = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE "shim/target/debug/$libName"))
+          Write-Host "CHROMA_LIB_PATH=$env:CHROMA_LIB_PATH"
+          Push-Location "$env:GITHUB_WORKSPACE/java"
+          try {
+            gradle --no-daemon :jna:test
+          } finally {
+            Pop-Location
+          }
+
+  java-panama:
+    name: Java Panama Smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Normalize line endings on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --local core.autocrlf false
+          git config --local core.eol lf
+          git reset --hard HEAD
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (pinned snapshot)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: "shim -> target"
+
+      - name: Set up protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify protoc
+        run: protoc --version
+
+      - name: Set up Java 22
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3
+
+      - name: Build Rust shim (debug)
+        working-directory: shim
+        run: cargo build --locked
+
+      - name: Run Java Panama smoke tests
+        shell: pwsh
+        run: |
+          $libName = switch ("${{ runner.os }}") {
+            "Linux" { "libchroma_shim.so" }
+            "macOS" { "libchroma_shim.dylib" }
+            "Windows" { "chroma_shim.dll" }
+            default { throw "Unsupported OS: ${{ runner.os }}" }
+          }
+
+          $env:CHROMA_LIB_PATH = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE "shim/target/debug/$libName"))
+          Write-Host "CHROMA_LIB_PATH=$env:CHROMA_LIB_PATH"
+          Push-Location "$env:GITHUB_WORKSPACE/java"
+          try {
+            $maxAttempts = if ("${{ runner.os }}" -eq "Windows") { 3 } else { 1 }
+            $attempt = 1
+            while ($true) {
+              Write-Host "Running Panama smoke tests (attempt $attempt/$maxAttempts)"
+              gradle --no-daemon :panama:test
+              if ($LASTEXITCODE -eq 0) {
+                break
+              }
+
+              if ($attempt -ge $maxAttempts) {
+                throw "Panama smoke tests failed after $attempt attempts (exit code $LASTEXITCODE)."
+              }
+
+              Write-Warning "Panama smoke tests failed with exit code $LASTEXITCODE; retrying in 10 seconds."
+              gradle --stop | Out-Null
+              Start-Sleep -Seconds 10
+              $attempt++
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Dump Panama crash diagnostics (Windows)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $panamaDir = Join-Path $env:GITHUB_WORKSPACE "java/panama"
+          $hsErrLogs = Get-ChildItem -Path $panamaDir -Filter "hs_err_pid*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+          $hsErrDumps = Get-ChildItem -Path $panamaDir -Filter "hs_err_pid*.mdmp" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+
+          if ($hsErrLogs.Count -eq 0) {
+            Write-Host "No hs_err logs found in $panamaDir"
+          } else {
+            foreach ($log in $hsErrLogs) {
+              Write-Host "==== hs_err log: $($log.FullName) ===="
+              Get-Content $log.FullName -TotalCount 400
+            }
+          }
+
+          if ($hsErrDumps.Count -eq 0) {
+            Write-Host "No mdmp files found in $panamaDir"
+          } else {
+            foreach ($dump in $hsErrDumps) {
+              Write-Host "Found mdmp: $($dump.FullName)"
+            }
+          }
+
+          $testResultsDir = Join-Path $panamaDir "build/test-results/test"
+          if (Test-Path $testResultsDir) {
+            Write-Host "==== test result files in $testResultsDir ===="
+            Get-ChildItem -Path $testResultsDir -Recurse | Select-Object FullName, Length
+          } else {
+            Write-Host "No test results directory found at $testResultsDir"
+          }
+
+      - name: Upload Panama crash artifacts (Windows)
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: panama-windows-crash-artifacts
+          path: |
+            java/panama/hs_err_pid*.log
+            java/panama/hs_err_pid*.mdmp
+            java/panama/build/test-results/test/**
+            java/panama/build/reports/tests/test/**
+          if-no-files-found: warn

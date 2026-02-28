@@ -1,4 +1,4 @@
-.PHONY: build build-debug build-release clean test test-go test-rust test-all bench bench-go bench-rust lint lint-go lint-rust fmt fmt-go fmt-rust help
+.PHONY: build build-debug build-release build-java clean test test-go test-rust test-java test-all bench bench-go bench-rust lint lint-go lint-rust lint-java fmt fmt-go fmt-rust help
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo UNKNOWN)
 OS_ENV := $(OS)
@@ -28,13 +28,13 @@ endif
 
 ifeq ($(HOST_OS),darwin)
     LIB_EXT := dylib
-    LIB_NAME := libchroma_go_shim.dylib
+    LIB_NAME := libchroma_shim.dylib
 else ifeq ($(HOST_OS),windows)
     LIB_EXT := dll
-    LIB_NAME := chroma_go_shim.dll
+    LIB_NAME := chroma_shim.dll
 else
     LIB_EXT := so
-    LIB_NAME := libchroma_go_shim.so
+    LIB_NAME := libchroma_shim.so
 endif
 
 SHIM_DIR := shim
@@ -54,6 +54,8 @@ endif
 
 SHIM_TARGET_DEBUG := $(SHIM_TARGET_DIR)/debug/$(LIB_NAME)
 SHIM_TARGET_RELEASE := $(SHIM_TARGET_DIR)/release/$(LIB_NAME)
+JAVA_DIR := java
+JAVA_GRADLE ?= gradle
 
 ifeq ($(HOST_OS),windows)
 VERIFY_DEBUG_ARTIFACT := @echo "Skipping POSIX artifact check on Windows Make host; use scripts/dev-windows.ps1 for artifact verification."
@@ -79,11 +81,14 @@ help:
 	@echo "  test          - Run Go tests (requires debug build)"
 	@echo "  test-go       - Run Go tests (requires debug build)"
 	@echo "  test-rust     - Run Rust shim tests"
-	@echo "  test-all      - Run Go and Rust tests"
+	@echo "  test-all      - Run Go, Rust, and Java smoke tests (Java skipped if Gradle missing)"
 	@echo "  test-release  - Run Go tests with release build"
 	@echo "  bench         - Run Go and Rust benchmarks"
 	@echo "  bench-go      - Run Go benchmarks"
 	@echo "  bench-rust    - Run Rust criterion benchmarks"
+	@echo "  build-java    - Build Java modules (core, jna, panama)"
+	@echo "  test-java     - Run Java smoke tests (JNA + Panama)"
+	@echo "  lint-java     - Run Java checks"
 	@echo "  lint          - Run linters for Go and Rust"
 	@echo "  lint-go       - Run golangci-lint"
 	@echo "  lint-rust     - Run cargo clippy"
@@ -111,6 +116,17 @@ build-release:
 	$(VERIFY_RELEASE_ARTIFACT)
 	@echo "Built release library at $(SHIM_TARGET_RELEASE)"
 
+build-java:
+	@set -e; \
+	if [ ! -d "$(JAVA_DIR)" ]; then \
+		echo "Missing $(JAVA_DIR) directory"; \
+		exit 1; \
+	elif ! command -v $(JAVA_GRADLE) >/dev/null 2>&1; then \
+		echo "Gradle not found; skipping Java build"; \
+	else \
+		cd $(JAVA_DIR) && $(JAVA_GRADLE) --no-daemon :core:build :jna:build :panama:build -x test; \
+	fi
+
 test: test-go
 
 test-go: build-debug
@@ -119,7 +135,21 @@ test-go: build-debug
 test-rust:
 	cd $(SHIM_DIR) && cargo test --locked
 
+test-java: build-debug
+	@set -e; \
+	if [ ! -d "$(JAVA_DIR)" ]; then \
+		echo "Missing $(JAVA_DIR) directory"; \
+		exit 1; \
+	elif ! command -v $(JAVA_GRADLE) >/dev/null 2>&1; then \
+		echo "Gradle not found; skipping Java tests"; \
+	else \
+		cd $(abspath $(JAVA_DIR)) && \
+		CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) $(JAVA_GRADLE) --no-daemon :jna:test && \
+		CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) $(JAVA_GRADLE) --no-daemon :panama:test; \
+	fi
+
 test-all: test-go test-rust
+	$(MAKE) test-java
 
 test-release: build-release
 	$(RUN_GO_TEST_RELEASE)
@@ -143,6 +173,17 @@ lint-go:
 
 lint-rust:
 	cd $(SHIM_DIR) && cargo clippy --locked -- -D warnings
+
+lint-java:
+	@set -e; \
+	if [ ! -d "$(JAVA_DIR)" ]; then \
+		echo "Missing $(JAVA_DIR) directory"; \
+		exit 1; \
+	elif ! command -v $(JAVA_GRADLE) >/dev/null 2>&1; then \
+		echo "Gradle not found; skipping Java lint"; \
+	else \
+		cd $(JAVA_DIR) && $(JAVA_GRADLE) --no-daemon :core:check :jna:check :panama:check; \
+	fi
 
 fmt: fmt-go fmt-rust
 

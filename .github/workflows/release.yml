@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing tag to release/backfill (for example v0.3.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
 
       - name: Normalize line endings on Windows
         if: runner.os == 'Windows'
@@ -53,7 +60,7 @@ jobs:
         working-directory: shim
         run: cargo build --locked --release
 
-      - name: Package release artifact and checksum
+      - name: Package release artifact
         shell: pwsh
         run: |
           $platform = switch ("${{ runner.os }}") {
@@ -63,11 +70,23 @@ jobs:
             default { throw "Unsupported OS: ${{ runner.os }}" }
           }
 
-          $libName = switch ("${{ runner.os }}") {
-            "Linux" { "libchroma_go_shim.so" }
-            "macOS" { "libchroma_go_shim.dylib" }
-            "Windows" { "chroma_go_shim.dll" }
+          $libCandidates = switch ("${{ runner.os }}") {
+            "Linux" { @("libchroma_shim.so", "libchroma_go_shim.so") }
+            "macOS" { @("libchroma_shim.dylib", "libchroma_go_shim.dylib") }
+            "Windows" { @("chroma_shim.dll", "chroma_go_shim.dll") }
             default { throw "Unsupported OS: ${{ runner.os }}" }
+          }
+
+          $libName = $null
+          foreach ($candidate in $libCandidates) {
+            $candidatePath = Join-Path $env:GITHUB_WORKSPACE "shim/target/release/$candidate"
+            if (Test-Path $candidatePath) {
+              $libName = $candidate
+              break
+            }
+          }
+          if ($null -eq $libName) {
+            throw "No expected shim library found. Checked: $($libCandidates -join ', ')"
           }
 
           $arch = switch ("${{ runner.arch }}") {
@@ -76,7 +95,7 @@ jobs:
             default { "${{ runner.arch }}".ToLowerInvariant() }
           }
 
-          $artifactBase = "chroma-go-shim-$platform-$arch"
+          $artifactBase = "chroma-shim-$platform-$arch"
           $stagingDir = Join-Path $env:RUNNER_TEMP $artifactBase
           $distDir = Join-Path $env:GITHUB_WORKSPACE "dist"
           New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
@@ -88,9 +107,6 @@ jobs:
           $archivePath = Join-Path $distDir $archiveName
           tar -C $stagingDir -czf $archivePath .
 
-          $hash = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
-          Set-Content -Path (Join-Path $distDir "$artifactBase.sha256") -Value "$hash  $archiveName" -Encoding ascii
-
           Write-Host "Created $archiveName"
 
       - name: Upload artifact bundle
@@ -99,19 +115,22 @@ jobs:
           name: shim-${{ runner.os }}
           path: |
             dist/*.tar.gz
-            dist/*.sha256
           if-no-files-found: error
 
   publish-release:
-    name: Publish release assets
+    name: Publish release assets and signed R2 artifacts
     needs: build-artifacts
-    # publish only on tag pushes; workflow_dispatch is for matrix build verification
-    if: startsWith(github.ref, 'refs/tags/')
+    # publish on tag pushes and manual tag backfills
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
 
     steps:
+      - name: Checkout repository scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Download artifact bundles
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -119,17 +138,186 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Normalize artifact names
+        shell: bash
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+          PROJECT: chroma-go-local
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s nullglob
+          files=(chroma-shim-*.tar.gz)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No build artifacts were downloaded"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            base="${f%.tar.gz}"
+            suffix="${base#chroma-shim-}"
+            os="${suffix%-*}"
+            arch="${suffix##*-}"
+            if [ "${os}" = "macos" ]; then
+              os="darwin"
+            fi
+            mv "${f}" "${PROJECT}-${TAG}-${os}-${arch}.tar.gz"
+          done
+          ls -lah
+
       - name: Build checksum manifest
         shell: bash
         run: |
           set -euo pipefail
-          cat dist/*.sha256 > dist/chroma-go-shim_SHA256SUMS.txt
-          ls -lah dist
+          cd dist
+          sha256sum -- *.tar.gz > SHA256SUMS
+          ls -lah
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+
+      - name: Sign and verify artifacts
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          cd dist
+          IDENTITY="https://github.com/${WORKFLOW_REF}"
+          ISSUER="https://token.actions.githubusercontent.com"
+
+          for f in *.tar.gz; do
+            cosign sign-blob --yes \
+              --oidc-issuer "${ISSUER}" \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "${f}"
+
+            cosign verify-blob \
+              --signature "${f}.sig" \
+              --certificate "${f}.pem" \
+              --certificate-identity "${IDENTITY}" \
+              --certificate-oidc-issuer "${ISSUER}" \
+              "${f}"
+          done
+
+          cosign sign-blob --yes \
+            --oidc-issuer "${ISSUER}" \
+            --output-signature SHA256SUMS.sig \
+            --output-certificate SHA256SUMS.pem \
+            SHA256SUMS
+
+          cosign verify-blob \
+            --signature SHA256SUMS.sig \
+            --certificate SHA256SUMS.pem \
+            --certificate-identity "${IDENTITY}" \
+            --certificate-oidc-issuer "${ISSUER}" \
+            SHA256SUMS
+
+      - name: Upload artifacts to R2
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          PROJECT: chroma-go-local
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+          BUCKET: releases
+          RELEASES_DOMAIN: ${{ vars.RELEASES_DOMAIN || 'releases.amikos.tech' }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          aws --version
+
+          if [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ] || [ -z "${R2_ENDPOINT}" ]; then
+            echo "R2 credentials are incomplete (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT are required)."
+            exit 1
+          fi
+
+          PREFIX="${PROJECT}/${VERSION}"
+          aws s3 cp dist/ "s3://${BUCKET}/${PREFIX}/" \
+            --recursive \
+            --endpoint-url "${R2_ENDPOINT}"
+
+          RELEASE_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          jq -n \
+            --arg version "${VERSION}" \
+            --arg date "${RELEASE_DATE}" \
+            --arg checksums_url "${PROJECT}/${VERSION}/SHA256SUMS" \
+            --arg checksums_full_url "https://${RELEASES_DOMAIN}/${PROJECT}/${VERSION}/SHA256SUMS" \
+            '{version: $version, date: $date, checksums_url: $checksums_url, checksums_full_url: $checksums_full_url}' > /tmp/latest.json
+
+          aws s3 cp /tmp/latest.json "s3://${BUCKET}/${PROJECT}/latest.json" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=60"
+
+          EXISTING_RELEASES_JSON="$(mktemp)"
+          if ! aws s3 cp "s3://${BUCKET}/${PROJECT}/releases.json" "${EXISTING_RELEASES_JSON}" \
+            --endpoint-url "${R2_ENDPOINT}" >/dev/null 2>&1; then
+            rm -f "${EXISTING_RELEASES_JSON}"
+          fi
+
+          ./scripts/build_releases_index.sh \
+            --existing "${EXISTING_RELEASES_JSON}" \
+            --output /tmp/releases.json \
+            --project "${PROJECT}" \
+            --version "${VERSION}" \
+            --date "${RELEASE_DATE}" \
+            --max 100
+
+          IDENTITY="https://github.com/${WORKFLOW_REF}"
+          ISSUER="https://token.actions.githubusercontent.com"
+          cosign sign-blob --yes \
+            --oidc-issuer "${ISSUER}" \
+            --output-signature /tmp/releases.json.sig \
+            --output-certificate /tmp/releases.json.pem \
+            /tmp/releases.json
+
+          cosign verify-blob \
+            --signature /tmp/releases.json.sig \
+            --certificate /tmp/releases.json.pem \
+            --certificate-identity "${IDENTITY}" \
+            --certificate-oidc-issuer "${ISSUER}" \
+            /tmp/releases.json
+
+          aws s3 cp /tmp/releases.json "s3://${BUCKET}/${PROJECT}/releases.json" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=60"
+          aws s3 cp /tmp/releases.json.sig "s3://${BUCKET}/${PROJECT}/releases.json.sig" \
+            --endpoint-url "${R2_ENDPOINT}"
+          aws s3 cp /tmp/releases.json.pem "s3://${BUCKET}/${PROJECT}/releases.json.pem" \
+            --endpoint-url "${R2_ENDPOINT}"
+
+      - name: Purge release metadata from CDN cache
+        if: vars.CF_ZONE_ID != ''
+        shell: bash
+        env:
+          CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PROJECT: chroma-go-local
+          RELEASES_DOMAIN: ${{ vars.RELEASES_DOMAIN || 'releases.amikos.tech' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "CLOUDFLARE_API_TOKEN is not set; skipping cache purge."
+            exit 0
+          fi
+          curl -sf -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+          overwrite_files: true
           generate_release_notes: true
           files: |
             dist/*.tar.gz
-            dist/chroma-go-shim_SHA256SUMS.txt
+            dist/SHA256SUMS
+            dist/*.sig
+            dist/*.pem

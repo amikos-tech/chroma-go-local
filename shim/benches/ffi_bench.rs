@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use chroma_go_shim::{
+use chroma_shim::{
     chroma_embedded_free, chroma_embedded_get_max_batch_size, chroma_embedded_heartbeat,
     chroma_embedded_start_from_string, SUCCESS,
 };

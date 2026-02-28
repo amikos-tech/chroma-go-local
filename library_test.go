@@ -55,7 +55,7 @@ func TestResolveLibraryLoadPlanRequiresPath(t *testing.T) {
 
 func TestResolveLibraryLoadPlanUsesInitPathBeforeEnv(t *testing.T) {
 	plan, err := resolveLibraryLoadPlan(
-		"./shim/target/debug/chroma_go_shim",
+		"./shim/target/debug/chroma_shim",
 		runtime.GOOS,
 		func(string) string { return "/ignored/from/env" },
 		notFoundStat,
@@ -68,7 +68,7 @@ func TestResolveLibraryLoadPlanUsesInitPathBeforeEnv(t *testing.T) {
 		t.Fatalf("expected Init path source, got: %s", plan.configSource)
 	}
 
-	expectedBase := normalizePathSeparators("./shim/target/debug/chroma_go_shim", runtime.GOOS)
+	expectedBase := normalizePathSeparators("./shim/target/debug/chroma_shim", runtime.GOOS)
 	if !containsCandidateWithSource(plan.candidates, expectedBase, "configured") {
 		t.Fatalf("expected candidates to include configured path %q, got: %#v", expectedBase, plan.candidates)
 	}
@@ -80,7 +80,7 @@ func TestResolveLibraryLoadPlanUsesEnvWhenInitPathEmpty(t *testing.T) {
 		runtime.GOOS,
 		func(key string) string {
 			if key == envLibPath {
-				return "./shim/target/debug/chroma_go_shim"
+				return "./shim/target/debug/chroma_shim"
 			}
 			return ""
 		},
@@ -105,20 +105,20 @@ func TestBuildLibraryPathCandidatesMissingExtension(t *testing.T) {
 		{
 			name:  "linux missing extension adds .so variants",
 			goos:  "linux",
-			input: "/tmp/chroma_go_shim",
-			want:  []string{"/tmp/chroma_go_shim.so", "/tmp/libchroma_go_shim.so"},
+			input: "/tmp/chroma_shim",
+			want:  []string{"/tmp/chroma_shim.so", "/tmp/libchroma_shim.so"},
 		},
 		{
 			name:  "darwin missing extension adds .dylib variants",
 			goos:  "darwin",
-			input: "/tmp/chroma_go_shim",
-			want:  []string{"/tmp/chroma_go_shim.dylib", "/tmp/libchroma_go_shim.dylib"},
+			input: "/tmp/chroma_shim",
+			want:  []string{"/tmp/chroma_shim.dylib", "/tmp/libchroma_shim.dylib"},
 		},
 		{
 			name:  "windows missing extension adds .dll only",
 			goos:  "windows",
-			input: `C:/tmp/chroma_go_shim`,
-			want:  []string{`C:\tmp\chroma_go_shim`, `C:\tmp\chroma_go_shim.dll`},
+			input: `C:/tmp/chroma_shim`,
+			want:  []string{`C:\tmp\chroma_shim`, `C:\tmp\chroma_shim.dll`},
 		},
 	}
 
@@ -134,7 +134,7 @@ func TestBuildLibraryPathCandidatesMissingExtension(t *testing.T) {
 				}
 			}
 
-			if tt.goos == "windows" && containsCandidatePath(got, `C:\tmp\libchroma_go_shim.dll`) {
+			if tt.goos == "windows" && containsCandidatePath(got, `C:\tmp\libchroma_shim.dll`) {
 				t.Fatalf("did not expect lib-prefixed Windows candidate, got: %#v", got)
 			}
 		})
@@ -142,7 +142,7 @@ func TestBuildLibraryPathCandidatesMissingExtension(t *testing.T) {
 }
 
 func TestBuildLibraryPathCandidatesWithExistingExtension(t *testing.T) {
-	got, warnings := buildLibraryPathCandidates("/tmp/libchroma_go_shim.so", "linux", notFoundStat)
+	got, warnings := buildLibraryPathCandidates("/tmp/libchroma_shim.so", "linux", notFoundStat)
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings for existing-extension path, got: %#v", warnings)
 	}
@@ -236,7 +236,7 @@ func TestResolveLibraryLoadPlanAddsAbsoluteFallbackForRelativePaths(t *testing.T
 }
 
 func TestResolveLibraryLoadPlanSkipsAbsoluteFallbackForBareFilename(t *testing.T) {
-	plan, err := resolveLibraryLoadPlan("libchroma_go_shim.so", "linux", nil, notFoundStat)
+	plan, err := resolveLibraryLoadPlan("libchroma_shim.so", "linux", nil, notFoundStat)
 	if err != nil {
 		t.Fatalf("resolveLibraryLoadPlan returned error: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestResolveLibraryLoadPlanSkipsAbsoluteFallbackForBareFilename(t *testing.T
 
 func TestResolveLibraryLoadPlanIncludesAbsoluteFallbackWarnings(t *testing.T) {
 	plan, err := resolveLibraryLoadPlanWithAbs(
-		"./shim/target/debug/libchroma_go_shim",
+		"./shim/target/debug/libchroma_shim",
 		"linux",
 		nil,
 		notFoundStat,
@@ -272,7 +272,7 @@ func TestResolveLibraryLoadPlanIncludesAbsoluteFallbackWarnings(t *testing.T) {
 
 func TestAppendAbsolutePathCandidatesWarnsWhenAbsResolverNil(t *testing.T) {
 	base := []libraryCandidate{
-		{path: "./shim/target/debug/libchroma_go_shim", source: "configured"},
+		{path: "./shim/target/debug/libchroma_shim", source: "configured"},
 	}
 
 	got, warnings := appendAbsolutePathCandidates(base, "linux", nil)
@@ -289,7 +289,7 @@ func TestAppendAbsolutePathCandidatesWarnsWhenAbsResolverNil(t *testing.T) {
 
 func TestResolveLibraryLoadPlanIncludesDirectoryStatWarnings(t *testing.T) {
 	plan, err := resolveLibraryLoadPlan(
-		"./restricted/chroma_go_shim",
+		"./restricted/chroma_shim",
 		"linux",
 		nil,
 		func(string) (os.FileInfo, error) {
@@ -313,7 +313,7 @@ func TestPathExtForOSEdgeCases(t *testing.T) {
 		path string
 		want string
 	}{
-		{path: "libchroma_go_shim.so", want: ".so"},
+		{path: "libchroma_shim.so", want: ".so"},
 		{path: "/tmp/.so", want: ""},
 		{path: "/tmp/chroma.", want: ""},
 		{path: "/tmp/noext", want: ""},
@@ -336,8 +336,8 @@ func TestResolveConfiguredLibraryPathWithNilGetenv(t *testing.T) {
 		t.Fatalf("expected empty path/source when getenv is nil and no explicit path, got (%q, %q)", path, source)
 	}
 
-	path, source = resolveConfiguredLibraryPath(" ./shim/target/debug/libchroma_go_shim.so ", nil)
-	if path != "./shim/target/debug/libchroma_go_shim.so" {
+	path, source = resolveConfiguredLibraryPath(" ./shim/target/debug/libchroma_shim.so ", nil)
+	if path != "./shim/target/debug/libchroma_shim.so" {
 		t.Fatalf("expected trimmed explicit path, got %q", path)
 	}
 	if source != "Init(libPath)" {
@@ -371,7 +371,7 @@ func TestIsAbsolutePathForOSTable(t *testing.T) {
 }
 
 func TestFormatLoadAttempt(t *testing.T) {
-	candidate := libraryCandidate{path: "/tmp/libchroma_go_shim.so", source: "configured"}
+	candidate := libraryCandidate{path: "/tmp/libchroma_shim.so", source: "configured"}
 
 	msgWithErr := formatLoadAttempt(candidate, errors.New("open failed"))
 	if !strings.Contains(msgWithErr, "[configured]") || !strings.Contains(msgWithErr, "open failed") {
@@ -387,22 +387,22 @@ func TestFormatLoadAttempt(t *testing.T) {
 func TestFormatLibraryLoadErrorIncludesCandidateKindsAndWarnings(t *testing.T) {
 	plan := libraryLoadPlan{
 		goos:         "linux",
-		configured:   "./shim/target/debug/libchroma_go_shim",
+		configured:   "./shim/target/debug/libchroma_shim",
 		configSource: "Init(libPath)",
 		candidates: []libraryCandidate{
-			{path: "./shim/target/debug/libchroma_go_shim", source: "configured"},
-			{path: "./shim/target/debug/libchroma_go_shim.so", source: "derived:added-extension"},
+			{path: "./shim/target/debug/libchroma_shim", source: "configured"},
+			{path: "./shim/target/debug/libchroma_shim.so", source: "derived:added-extension"},
 		},
-		warnings: []string{"skipped absolute fallback for [configured] \"./shim/target/debug/libchroma_go_shim\": cwd unavailable"},
+		warnings: []string{"skipped absolute fallback for [configured] \"./shim/target/debug/libchroma_shim\": cwd unavailable"},
 	}
 
 	err := formatLibraryLoadError(plan, []string{
-		"[configured] ./shim/target/debug/libchroma_go_shim (not found)",
-		"[derived:added-extension] ./shim/target/debug/libchroma_go_shim.so (not found)",
+		"[configured] ./shim/target/debug/libchroma_shim (not found)",
+		"[derived:added-extension] ./shim/target/debug/libchroma_shim.so (not found)",
 	})
 	msg := err.Error()
 
-	if !strings.Contains(msg, "[configured] ./shim/target/debug/libchroma_go_shim") {
+	if !strings.Contains(msg, "[configured] ./shim/target/debug/libchroma_shim") {
 		t.Fatalf("expected error to include configured candidate marker, got: %q", msg)
 	}
 	if !strings.Contains(msg, "[derived:added-extension]") {
@@ -417,8 +417,8 @@ func TestCandidateSetDeduplicatesAndSkipsEmptyValues(t *testing.T) {
 	set := newCandidateSet(4)
 	set.add("", "configured")
 	set.add("   ", "configured")
-	set.add("/tmp/libchroma_go_shim.so", "configured")
-	set.add("/tmp/libchroma_go_shim.so", "derived:added-extension")
+	set.add("/tmp/libchroma_shim.so", "configured")
+	set.add("/tmp/libchroma_shim.so", "derived:added-extension")
 
 	got := set.candidates()
 	if len(got) != 1 {
@@ -430,17 +430,17 @@ func TestCandidateSetDeduplicatesAndSkipsEmptyValues(t *testing.T) {
 }
 
 func TestBuildLibraryPathCandidatesLibPrefixedInputDoesNotDoublePrefix(t *testing.T) {
-	got, warnings := buildLibraryPathCandidates("/tmp/libchroma_go_shim", "linux", notFoundStat)
+	got, warnings := buildLibraryPathCandidates("/tmp/libchroma_shim", "linux", notFoundStat)
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings for lib-prefixed input, got %#v", warnings)
 	}
-	if containsCandidatePath(got, "/tmp/liblibchroma_go_shim.so") {
+	if containsCandidatePath(got, "/tmp/liblibchroma_shim.so") {
 		t.Fatalf("did not expect double-lib candidate, got %#v", got)
 	}
 }
 
 func TestBuildLibraryPathCandidatesOrdering(t *testing.T) {
-	got, warnings := buildLibraryPathCandidates("/tmp/chroma_go_shim", "linux", notFoundStat)
+	got, warnings := buildLibraryPathCandidates("/tmp/chroma_shim", "linux", notFoundStat)
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %#v", warnings)
 	}
@@ -449,9 +449,9 @@ func TestBuildLibraryPathCandidatesOrdering(t *testing.T) {
 	}
 
 	wantOrder := []string{
-		"/tmp/chroma_go_shim",
-		"/tmp/chroma_go_shim.so",
-		"/tmp/libchroma_go_shim.so",
+		"/tmp/chroma_shim",
+		"/tmp/chroma_shim.so",
+		"/tmp/libchroma_shim.so",
 	}
 	for i, want := range wantOrder {
 		if got[i].path != want {
@@ -491,10 +491,10 @@ func TestAppendAbsolutePathCandidatesOrdering(t *testing.T) {
 }
 
 func TestJoinPathForOSHandlesRootDirectories(t *testing.T) {
-	if got := joinPathForOS("/", "libchroma_go_shim.so", "linux"); got != "/libchroma_go_shim.so" {
+	if got := joinPathForOS("/", "libchroma_shim.so", "linux"); got != "/libchroma_shim.so" {
 		t.Fatalf("expected unix root join to preserve root, got %q", got)
 	}
-	if got := joinPathForOS(`\`, "chroma_go_shim.dll", "windows"); got != `\chroma_go_shim.dll` {
+	if got := joinPathForOS(`\`, "chroma_shim.dll", "windows"); got != `\chroma_shim.dll` {
 		t.Fatalf("expected windows root join to preserve root, got %q", got)
 	}
 }
