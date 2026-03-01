@@ -91,7 +91,7 @@ rustup toolchain install stable-aarch64-pc-windows-msvc
 rustup default stable-aarch64-pc-windows-msvc
 ```
 
-3. Install `protoc` 31.x (matches Chroma `1.4.1` toolchain and this repo's CI).
+3. Install `protoc` 31.x (matches Chroma `1.5.2` toolchain and this repo's CI).
 4. Install `golangci-lint`.
 5. Install `goimports`:
 

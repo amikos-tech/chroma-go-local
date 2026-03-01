@@ -1287,8 +1287,8 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chroma"
-version = "0.13.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+version = "0.13.1"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "backon",
@@ -1309,8 +1309,8 @@ dependencies = [
 
 [[package]]
 name = "chroma-api-types"
-version = "0.13.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+version = "0.13.1"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "serde",
  "utoipa",
@@ -1319,7 +1319,7 @@ dependencies = [
 [[package]]
 name = "chroma-blockstore"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1352,7 +1352,7 @@ dependencies = [
 [[package]]
 name = "chroma-cache"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1373,7 +1373,7 @@ dependencies = [
 [[package]]
 name = "chroma-config"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-error",
@@ -1387,7 +1387,7 @@ dependencies = [
 [[package]]
 name = "chroma-distance"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "chroma-error",
  "chroma-types",
@@ -1396,8 +1396,8 @@ dependencies = [
 
 [[package]]
 name = "chroma-error"
-version = "0.13.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+version = "0.13.1"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "http 1.4.0",
  "sqlx",
@@ -1409,7 +1409,7 @@ dependencies = [
 [[package]]
 name = "chroma-frontend"
 version = "1.0.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "chroma-index"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1498,7 +1498,7 @@ dependencies = [
 [[package]]
 name = "chroma-log"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "bytemuck",
@@ -1528,7 +1528,7 @@ dependencies = [
 [[package]]
 name = "chroma-memberlist"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1553,7 +1553,7 @@ dependencies = [
 [[package]]
 name = "chroma-metering"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-metering-macros",
@@ -1567,7 +1567,7 @@ dependencies = [
 [[package]]
 name = "chroma-metering-macros"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-system",
@@ -1582,7 +1582,7 @@ dependencies = [
 [[package]]
 name = "chroma-segment"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1619,7 +1619,7 @@ dependencies = [
 [[package]]
 name = "chroma-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1641,7 +1641,7 @@ dependencies = [
 [[package]]
 name = "chroma-storage"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -1667,7 +1667,7 @@ dependencies = [
 [[package]]
 name = "chroma-sysdb"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1699,7 +1699,7 @@ dependencies = [
 [[package]]
 name = "chroma-system"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "chroma-tracing"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "axum 0.8.8",
  "chroma-system",
@@ -1745,8 +1745,8 @@ dependencies = [
 
 [[package]]
 name = "chroma-types"
-version = "0.13.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+version = "0.13.1"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4335,7 +4335,7 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 [[package]]
 name = "mdac"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.1#eb05d5c9059efc831eeea7c31adb8013ec13bd12"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.2#201b5b56a08d1bcc322c3d9b68ab4007a32c866c"
 dependencies = [
  "serde",
  "siphasher",
@@ -5317,7 +5317,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -5338,7 +5338,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -5351,7 +5351,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
