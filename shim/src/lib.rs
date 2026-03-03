@@ -800,6 +800,12 @@ fn swap_rebuilt_index_dir(
     )
 }
 
+fn rebuild_required_capacity(record_count: usize, resize_factor: f64) -> usize {
+    let live_records = record_count.max(1);
+    let scaled_capacity = ((live_records as f64) * resize_factor).ceil() as usize;
+    scaled_capacity.max(record_count.saturating_add(1)).max(100)
+}
+
 fn swap_rebuilt_index_dir_with_ops(
     source_dir: &Path,
     rebuilt_dir: &Path,
@@ -1024,9 +1030,8 @@ async fn run_rebuild_collection(
     })?;
     let mut rebuilt_dir_guard = TempRebuildDirGuard::new(rebuilt_dir.clone());
 
-    let required_capacity = (rebuild_records.len().saturating_add(1))
-        .max(rebuild_records.len().saturating_mul(2))
-        .max(100);
+    let required_capacity =
+        rebuild_required_capacity(rebuild_records.len(), hnsw_config.resize_factor);
 
     let mut target_config = HnswIndexConfig::new_persistent(
         hnsw_config.max_neighbors,
@@ -4361,6 +4366,21 @@ allow_reset: true
             !rebuilt_path.exists(),
             "temporary rebuilt directory should be removed by drop guard"
         );
+    }
+
+    #[test]
+    fn test_rebuild_required_capacity_uses_resize_factor_headroom() {
+        let target = rebuild_required_capacity(10_000, 1.2);
+        assert_eq!(target, 12_000);
+    }
+
+    #[test]
+    fn test_rebuild_required_capacity_enforces_minimums() {
+        let low_scale = rebuild_required_capacity(80, 0.5);
+        assert_eq!(low_scale, 100);
+
+        let needs_plus_one = rebuild_required_capacity(220, 1.0);
+        assert_eq!(needs_plus_one, 221);
     }
 
     #[test]

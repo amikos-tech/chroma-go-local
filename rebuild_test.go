@@ -350,6 +350,14 @@ func startTestServerWithRebuildReadyCollection(t *testing.T) (*Server, string, s
 		WithEmbeddedAllowReset(true),
 	)
 	require.NoError(t, err)
+	embeddedClosed := false
+	defer func() {
+		if embeddedClosed {
+			return
+		}
+		_ = embedded.Close()
+		waitForWindowsDirectoryUnlock(t, persistDir)
+	}()
 	require.NoError(t, embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}))
 	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
 		Name:         collectionName,
@@ -374,7 +382,10 @@ func startTestServerWithRebuildReadyCollection(t *testing.T) (*Server, string, s
 		DatabaseName: databaseName,
 	})
 	require.NoError(t, err)
-	require.NoError(t, embedded.Close())
+	closeErr := embedded.Close()
+	embeddedClosed = true
+	require.NoError(t, closeErr)
+	waitForWindowsDirectoryUnlock(t, persistDir)
 
 	serverPort := reserveFreeLoopbackPort(t)
 	server, err := NewServer(
