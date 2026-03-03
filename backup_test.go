@@ -882,7 +882,10 @@ func startTestServer(t *testing.T) (*Server, string) {
 		WithAllowReset(true),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() {
+		_ = server.Close()
+		waitForWindowsDirectoryUnlock(t, persistDir)
+	})
 	requireServerHeartbeat(t, server.URL())
 	return server, persistDir
 }
@@ -900,8 +903,37 @@ func startTestEmbedded(t *testing.T) (*Embedded, string) {
 		WithEmbeddedAllowReset(true),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = embedded.Close() })
+	t.Cleanup(func() {
+		_ = embedded.Close()
+		waitForWindowsDirectoryUnlock(t, persistDir)
+	})
 	return embedded, persistDir
+}
+
+func waitForWindowsDirectoryUnlock(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return
+	}
+
+	probePath := path + ".cleanup-probe"
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_ = os.RemoveAll(probePath)
+		err := os.Rename(path, probePath)
+		if err == nil {
+			require.NoError(t, os.Rename(probePath, path))
+			return
+		}
+		if os.IsNotExist(err) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Logf("windows cleanup probe timed out for %s: %v", path, err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func reserveFreeLoopbackPort(t *testing.T) int {
