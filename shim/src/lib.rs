@@ -720,13 +720,51 @@ trait SwapFsOps {
 
 struct StdSwapFsOps;
 
+const WINDOWS_FS_RETRY_DELAYS_MS: [u64; 6] = [10, 25, 50, 100, 200, 400];
+
+fn is_windows_retryable_fs_error(err: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        // ERROR_ACCESS_DENIED (5), ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33)
+        matches!(err.raw_os_error(), Some(5 | 32 | 33))
+            || err.kind() == std::io::ErrorKind::PermissionDenied
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = err;
+        false
+    }
+}
+
+fn run_with_windows_fs_retry<F>(mut op: F) -> std::io::Result<()>
+where
+    F: FnMut() -> std::io::Result<()>,
+{
+    let mut attempt = 0usize;
+    loop {
+        match op() {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                if !is_windows_retryable_fs_error(&err)
+                    || attempt >= WINDOWS_FS_RETRY_DELAYS_MS.len()
+                {
+                    return Err(err);
+                }
+                let delay_ms = WINDOWS_FS_RETRY_DELAYS_MS[attempt];
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+        }
+    }
+}
+
 impl SwapFsOps for StdSwapFsOps {
     fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
-        fs::rename(from, to)
+        run_with_windows_fs_retry(|| fs::rename(from, to))
     }
 
     fn remove_dir_all(&self, path: &Path) -> std::io::Result<()> {
-        fs::remove_dir_all(path)
+        run_with_windows_fs_retry(|| fs::remove_dir_all(path))
     }
 }
 
@@ -1044,6 +1082,10 @@ async fn run_rebuild_collection(
         .save()
         .map_err(|e| format!("failed to persist rebuilt hnsw index: {e}"))?;
     write_hnsw_id_map(&rebuilt_dir.join(HNSW_METADATA_FILENAME), &rebuilt_id_map)?;
+
+    // Ensure all HNSW file handles are closed before attempting directory swap on Windows.
+    drop(source_index);
+    drop(rebuilt_index);
 
     local_segment_manager
         .reset()
