@@ -511,6 +511,23 @@ impl HnswIdMap {
             }
         }
 
+        for id in self.id_to_seq_id.keys() {
+            if !self.id_to_label.contains_key(id) {
+                return Err(format!("seq-id mapping references unknown id {id}"));
+            }
+        }
+
+        if let Some(max_seq_id) = self.max_seq_id {
+            if let Some(observed_max_seq_id) = self.id_to_seq_id.values().copied().max() {
+                let observed_max_seq_id = u64::from(observed_max_seq_id);
+                if max_seq_id < observed_max_seq_id {
+                    return Err(format!(
+                        "max_seq_id {max_seq_id} is smaller than observed seq id {observed_max_seq_id}"
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -4272,6 +4289,60 @@ allow_reset: true
             load_hnsw_id_map(&metadata_path).expect_err("invalid metadata should be rejected");
         assert!(err.contains("invalid hnsw metadata"));
         assert!(err.contains("non-bijective") || err.contains("missing reverse mapping"));
+    }
+
+    #[test]
+    fn test_load_hnsw_id_map_rejects_seq_id_for_unknown_id() {
+        let temp = tempdir().expect("tempdir should be created");
+        let metadata_path = temp.path().join(HNSW_METADATA_FILENAME);
+
+        let mut id_to_label = HashMap::new();
+        id_to_label.insert("doc-1".to_string(), 1);
+        let mut label_to_id = HashMap::new();
+        label_to_id.insert(1, "doc-1".to_string());
+        let mut id_to_seq_id = HashMap::new();
+        id_to_seq_id.insert("doc-2".to_string(), 22);
+        let invalid = HnswIdMap {
+            dimensionality: Some(3),
+            total_elements_added: 1,
+            max_seq_id: Some(22),
+            id_to_label,
+            label_to_id,
+            id_to_seq_id,
+        };
+
+        write_hnsw_id_map(&metadata_path, &invalid).expect("metadata write should succeed");
+        let err =
+            load_hnsw_id_map(&metadata_path).expect_err("invalid metadata should be rejected");
+        assert!(err.contains("invalid hnsw metadata"));
+        assert!(err.contains("seq-id mapping references unknown id"));
+    }
+
+    #[test]
+    fn test_load_hnsw_id_map_rejects_max_seq_id_below_observed() {
+        let temp = tempdir().expect("tempdir should be created");
+        let metadata_path = temp.path().join(HNSW_METADATA_FILENAME);
+
+        let mut id_to_label = HashMap::new();
+        id_to_label.insert("doc-1".to_string(), 1);
+        let mut label_to_id = HashMap::new();
+        label_to_id.insert(1, "doc-1".to_string());
+        let mut id_to_seq_id = HashMap::new();
+        id_to_seq_id.insert("doc-1".to_string(), 22);
+        let invalid = HnswIdMap {
+            dimensionality: Some(3),
+            total_elements_added: 1,
+            max_seq_id: Some(21),
+            id_to_label,
+            label_to_id,
+            id_to_seq_id,
+        };
+
+        write_hnsw_id_map(&metadata_path, &invalid).expect("metadata write should succeed");
+        let err =
+            load_hnsw_id_map(&metadata_path).expect_err("invalid metadata should be rejected");
+        assert!(err.contains("invalid hnsw metadata"));
+        assert!(err.contains("max_seq_id"));
     }
 
     #[test]

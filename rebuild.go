@@ -102,10 +102,14 @@ func resolveRebuildCollectionRequest(name string, options []RebuildCollectionOpt
 	if databaseName := strings.TrimSpace(resolved.databaseName); databaseName != "" && len(databaseName) < 3 {
 		return rebuildCollectionRequest{}, errors.New("database_name must be at least 3 characters")
 	}
+	tenantID := strings.TrimSpace(resolved.tenantID)
+	if tenantID != "" && len(tenantID) < 3 {
+		return rebuildCollectionRequest{}, errors.New("tenant_id must be at least 3 characters")
+	}
 
 	return rebuildCollectionRequest{
 		Name:         strings.TrimSpace(name),
-		TenantID:     resolved.tenantID,
+		TenantID:     tenantID,
 		DatabaseName: resolved.databaseName,
 		Precheck:     resolved.precheck,
 		KeepBackup:   resolved.keepBackup,

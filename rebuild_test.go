@@ -166,6 +166,9 @@ func TestEmbeddedRebuildCollectionValidation(t *testing.T) {
 	_, err = embedded.RebuildCollection("docs", WithRebuildDatabaseName("ab"))
 	require.EqualError(t, err, "database_name must be at least 3 characters")
 
+	_, err = embedded.RebuildCollection("docs", WithRebuildTenantID("ab"))
+	require.EqualError(t, err, "tenant_id must be at least 3 characters")
+
 	var nilOption RebuildCollectionOption
 	_, err = embedded.RebuildCollection("docs", nilOption)
 	require.EqualError(t, err, "rebuild option at index 0 is nil")
@@ -175,6 +178,9 @@ func TestEmbeddedRebuildCollectionValidation(t *testing.T) {
 
 	_, err = server.RebuildCollection("docs", WithRebuildDatabaseName("ab"))
 	require.EqualError(t, err, "database_name must be at least 3 characters")
+
+	_, err = server.RebuildCollection("docs", WithRebuildTenantID("ab"))
+	require.EqualError(t, err, "tenant_id must be at least 3 characters")
 
 	_, err = server.RebuildCollection("docs", nilOption)
 	require.EqualError(t, err, "rebuild option at index 0 is nil")
@@ -332,7 +338,8 @@ func startTestServerWithRebuildReadyCollection(t *testing.T) (*Server, string, s
 	t.Helper()
 	require.NoError(t, Init(""))
 
-	persistDir := filepath.Join(t.TempDir(), "server-rebuild-persist")
+	rootDir := makeManagedTestTempDir(t, "chroma-server-rebuild-")
+	persistDir := filepath.Join(rootDir, "server-rebuild-persist")
 	require.NoError(t, os.MkdirAll(persistDir, 0o755))
 
 	databaseName := fmt.Sprintf("server_rebuild_db_%d", time.Now().UnixNano())
@@ -377,7 +384,10 @@ func startTestServerWithRebuildReadyCollection(t *testing.T) (*Server, string, s
 		WithAllowReset(true),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() {
+		_ = server.Close()
+		waitForWindowsDirectoryUnlock(t, persistDir)
+	})
 	requireServerHeartbeat(t, server.URL())
 	return server, databaseName, collectionName
 }
@@ -526,7 +536,8 @@ func runRebuildShrinkPropertyCase(t *testing.T, addCount int, keepPercent int, s
 		return false
 	}
 
-	persistPath := filepath.Join(t.TempDir(), fmt.Sprintf("rebuild-gopter-persist-%d", time.Now().UnixNano()))
+	rootDir := makeManagedTestTempDir(t, "chroma-rebuild-gopter-")
+	persistPath := filepath.Join(rootDir, fmt.Sprintf("rebuild-gopter-persist-%d", time.Now().UnixNano()))
 	if err := os.MkdirAll(persistPath, 0o755); err != nil {
 		t.Logf("persist path create failed: %v", err)
 		return false
@@ -540,7 +551,10 @@ func runRebuildShrinkPropertyCase(t *testing.T, addCount int, keepPercent int, s
 		t.Logf("embedded start failed: %v", err)
 		return false
 	}
-	defer func() { _ = embedded.Close() }()
+	defer func() {
+		_ = embedded.Close()
+		waitForWindowsDirectoryUnlock(t, persistPath)
+	}()
 
 	databaseName := fmt.Sprintf("rebuild_shrink_gopter_db_%d", time.Now().UnixNano())
 	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
@@ -970,8 +984,8 @@ func requireNoBackupOrRollbackDirs(t *testing.T, persistPath string) {
 		}
 
 		name := d.Name()
-		if strings.Contains(name, "_backup_") || strings.Contains(name, "_rollback_") {
-			return fmt.Errorf("unexpected backup/rollback directory found: %s", path)
+		if strings.Contains(name, "_backup_") || strings.Contains(name, "_rollback_") || strings.Contains(name, ".rebuild.") {
+			return fmt.Errorf("unexpected backup/rollback/rebuild directory found: %s", path)
 		}
 		return nil
 	})
