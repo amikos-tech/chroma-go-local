@@ -373,6 +373,7 @@ For the Java scaffold surface, see [`JAVA_API_SURFACE.md`](JAVA_API_SURFACE.md).
 | `(*Server) Stop() error` | Gracefully stop the server. |
 | `(*Server) Close() error` | Stop and free resources. |
 | `(*Server) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional restart. |
+| `(*Server) RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)` | Rebuild persisted vector index artifacts for one collection (server restarts after operation). |
 | `(*Server) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` | Run explicit compaction for one collection (server restarts after operation). Scope can include both `TenantID` and `DatabaseName` together. |
 | `(*Server) CompactAll(request CompactAllRequest) (*CompactionResult, error)` | Run explicit compaction for all collections (server restarts after operation). Scope can include both `TenantID` and `DatabaseName` together. Per-collection failures are reported in `result.Collections[i].Error`. |
 | `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
@@ -402,6 +403,7 @@ For the Java scaffold surface, see [`JAVA_API_SURFACE.md`](JAVA_API_SURFACE.md).
 | `(*Embedded) Add(request EmbeddedAddRequest) error` | Add records without HTTP. |
 | `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |
+| `(*Embedded) RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)` | Rebuild persisted vector index artifacts for one collection. |
 | `(*Embedded) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` | Run explicit compaction for one collection. Scope can include both `TenantID` and `DatabaseName` together. |
 | `(*Embedded) CompactAll(request CompactAllRequest) (*CompactionResult, error)` | Run explicit compaction for all collections. Scope can include both `TenantID` and `DatabaseName` together. Per-collection failures are reported in `result.Collections[i].Error`. |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
@@ -440,6 +442,24 @@ if err != nil {
 }
 fmt.Println(result.CollectionCount)
 ```
+
+### Rebuild vs Compaction vs Vacuum
+
+`RebuildCollection` is a low-level maintenance primitive for rebuilding one collection's persisted vector index artifacts.
+
+- Use `RebuildCollection` when index artifacts are inconsistent/corrupted or you need a full index rewrite for a specific collection.
+- Use `CompactCollection`/`CompactAll` for WAL backfill + purge maintenance; compaction is not a full HNSW rebuild.
+- Vacuum is a SQLite storage concern and is not currently exposed as a first-class Go API in this wrapper.
+
+Rebuild options:
+
+- `WithRebuildTenantID(string)` (optional scope)
+- `WithRebuildDatabaseName(string)` (optional scope; must be at least 3 chars when set)
+- `WithRebuildPrecheck()` (prerequisites-only, no mutation)
+- `WithRebuildKeepBackup(bool)` (default `true`; keep timestamped backup path after swap)
+
+In server mode, rebuild runs with stop -> temporary embedded rebuild -> restart lifecycle, so the server is unavailable during the operation.
+If rebuild itself succeeds but temporary close/restart fails, the API returns both a non-nil `RebuildCollectionResult` and a non-nil error.
 
 ### Backup API
 

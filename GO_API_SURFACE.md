@@ -34,6 +34,7 @@ Implemented server lifecycle APIs:
 - `(*Server).Stop() error`
 - `(*Server).Close() error`
 - `(*Server).Backup(options ...BackupOption) (*BackupManifest, error)`
+- `(*Server).RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)`
 - `(*Server).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together)
 - `(*Server).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together; `result.Collections[i].Error` reports per-collection failures)
 
@@ -80,6 +81,20 @@ if err != nil {
 fmt.Println("compacted collections:", result.CollectionCount)
 ```
 
+Server rebuild example:
+
+```go
+rebuilt, err := srv.RebuildCollection(
+    "docs",
+    chroma.WithRebuildTenantID("team_a"),
+    chroma.WithRebuildDatabaseName("prod_db"),
+)
+if err != nil {
+    panic(err)
+}
+fmt.Println(rebuilt.Rebuilt, rebuilt.BackupPath)
+```
+
 Compaction semantics:
 
 - `CompactCollection` and `CompactAll` run explicit compaction via Chroma's local compaction manager.
@@ -92,6 +107,17 @@ Compaction semantics:
 - `CompactAll` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
 - `result.CollectionCount` is attempted collections, not only successful collections.
 - `pending_ops_before`/`pending_ops_after` are advisory; if unavailable they are omitted and surfaced via `pending_ops_before_error`/`pending_ops_after_error`.
+
+Rebuild semantics:
+
+- `RebuildCollection` is a low-level maintenance primitive that rebuilds one collection's persisted vector index artifacts.
+- Scope is resolved by `name` plus optional `WithRebuildTenantID(...)` and `WithRebuildDatabaseName(...)`.
+- If omitted, scope defaults to `default_tenant` and `default_database`.
+- `WithRebuildPrecheck()` validates prerequisites and reports `WouldRebuild` without mutating files.
+- `WithRebuildKeepBackup(bool)` controls swap behavior; default is `true` (timestamped backup path is retained).
+- Empty/uninitialized index artifacts return success with warnings and `WouldRebuild=false`, `Rebuilt=false`.
+- In server mode, the server is unavailable while rebuild runs (stop -> rebuild in embedded mode -> restart).
+- If rebuild succeeds but close/restart fails, Go returns a non-nil `RebuildCollectionResult` and a non-nil error.
 
 Backup constraints (applies to server and embedded backup):
 
@@ -140,6 +166,7 @@ fmt.Println("snapshot dir:", manifest.SnapshotPath)
 - `(*Embedded).MaxBatchSize() (uint32, error)`
 - `(*Embedded).Healthcheck() (*EmbeddedHealthCheckResponse, error)`
 - `(*Embedded).IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)`
+- `(*Embedded).RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)`
 - `(*Embedded).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)`
 - `(*Embedded).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (`result.Collections[i].Error` reports per-collection failures)
 - `(*Embedded).Reset() error`
@@ -173,6 +200,18 @@ if err != nil {
     panic(err)
 }
 fmt.Println(compacted.CollectionCount, compacted.DurationMS)
+```
+
+```go
+rebuild, err := embedded.RebuildCollection(
+    "docs",
+    chroma.WithRebuildDatabaseName("my_db"),
+    chroma.WithRebuildPrecheck(),
+)
+if err != nil {
+    panic(err)
+}
+fmt.Println(rebuild.Precheck, rebuild.WouldRebuild)
 ```
 
 ### 3.3 Tenant APIs
