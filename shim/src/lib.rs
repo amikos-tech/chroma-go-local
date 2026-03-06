@@ -1862,7 +1862,8 @@ async fn run_explicit_wal_prune(
                             name: name.clone(),
                             tenant_id: tenant_id.clone(),
                             database_name: database_name_raw.clone(),
-                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
+                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")
+                                .unwrap_or(None),
                             candidate_seq_min: None,
                             candidate_seq_max: None,
                             pruned_seq_min: None,
@@ -1892,7 +1893,8 @@ async fn run_explicit_wal_prune(
                         name: name.clone(),
                         tenant_id: tenant_id.clone(),
                         database_name: database_name_raw.clone(),
-                        safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
+                        safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")
+                            .unwrap_or(None),
                         candidate_seq_min: None,
                         candidate_seq_max: None,
                         pruned_seq_min: None,
@@ -1935,23 +1937,28 @@ async fn run_explicit_wal_prune(
                             name,
                             tenant_id,
                             database_name: database_name_raw,
-                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
+                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")
+                                .unwrap_or(None),
                             candidate_seq_min: seq_opt_u64(
                                 candidate_rows.first().map(|r| r.seq_id),
                                 "candidate_seq_min",
-                            )?,
+                            )
+                            .unwrap_or(None),
                             candidate_seq_max: seq_opt_u64(
                                 candidate_rows.last().map(|r| r.seq_id),
                                 "candidate_seq_max",
-                            )?,
+                            )
+                            .unwrap_or(None),
                             pruned_seq_min: seq_opt_u64(
                                 selected_rows.first().map(|r| r.seq_id),
                                 "pruned_seq_min",
-                            )?,
+                            )
+                            .unwrap_or(None),
                             pruned_seq_max: seq_opt_u64(
                                 selected_rows.last().map(|r| r.seq_id),
                                 "pruned_seq_max",
-                            )?,
+                            )
+                            .unwrap_or(None),
                             candidate_count,
                             candidate_bytes,
                             pruned_count: 0,
@@ -2019,6 +2026,11 @@ async fn run_explicit_wal_prune(
                 ));
             }
         }
+    } else if !options.dry_run && options.vacuum && pruned_count_total == 0 {
+        warning = Some(
+            "wal prune completed, but sqlite VACUUM was skipped because no rows were pruned"
+                .to_string(),
+        );
     }
 
     let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;

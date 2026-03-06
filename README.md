@@ -462,6 +462,7 @@ Operational notes:
 - `PruneAllWAL` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
 - Optional `WithWALPruneVacuum()` runs SQLite `VACUUM` once after prune execution (skipped in dry-run mode).
 - `result.Warning` is set when prune succeeds but a follow-up vacuum step fails.
+- For max-age policy, rows with NULL/invalid `created_at` are treated as UNIX epoch (`0`) and therefore considered oldest.
 - In dry-run mode, `pruned_*` fields are projected counts/bytes rather than applied mutations.
 - The shim logic adapts core flow from Chroma's Rust CLI vacuum command (migration + purge + optional vacuum), but does not depend on the CLI crate.
 
