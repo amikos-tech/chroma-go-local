@@ -85,6 +85,65 @@ func TestEmbeddedPruneCollectionWALExecutionPreservesQueries(t *testing.T) {
 	require.Len(t, query.IDs[0], 1)
 }
 
+func TestEmbeddedPruneCollectionWALExecutionPrunesAndVacuums(t *testing.T) {
+	embedded, _ := startTestEmbedded(t)
+	databaseName, collectionName, collectionID := seedWALPruneCollection(t, embedded)
+
+	dryRun, err := embedded.PruneCollectionWAL(
+		collectionName,
+		WithWALPruneDatabaseName(databaseName),
+		WithWALPruneDryRun(),
+		WithWALPruneMaxBytes(0),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, dryRun)
+	if dryRun.CandidateCountTotal == 0 {
+		t.Skip("no WAL prune candidates available in this runtime state")
+	}
+
+	result, err := embedded.PruneCollectionWAL(
+		collectionName,
+		WithWALPruneDatabaseName(databaseName),
+		WithWALPruneMaxBytes(0),
+		WithWALPruneVacuum(),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.DryRun)
+	require.True(t, result.VacuumRequested)
+	if !result.VacuumExecuted {
+		require.NotEmpty(t, result.Warning, "vacuum failure should be surfaced as warning when prune succeeds")
+	}
+	require.Greater(t, result.PrunedCountTotal, uint64(0), "expected prune execution to delete WAL rows")
+	require.Greater(t, result.Collections[0].PrunedCount, uint64(0))
+
+	count, err := embedded.CountRecords(EmbeddedCountRecordsRequest{
+		CollectionID: collectionID,
+		DatabaseName: databaseName,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(2), count)
+}
+
+func TestEmbeddedPruneCollectionWALMaxAgePolicy(t *testing.T) {
+	embedded, _ := startTestEmbedded(t)
+	databaseName, collectionName, _ := seedWALPruneCollection(t, embedded)
+
+	time.Sleep(2100 * time.Millisecond)
+
+	result, err := embedded.PruneCollectionWAL(
+		collectionName,
+		WithWALPruneDatabaseName(databaseName),
+		WithWALPruneMaxAge(time.Second),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	if result.CandidateCountTotal == 0 {
+		t.Skip("no WAL prune candidates available in this runtime state")
+	}
+	require.Greater(t, result.PrunedCountTotal, uint64(0))
+}
+
 func TestEmbeddedPruneAllWAL(t *testing.T) {
 	embedded, _ := startTestEmbedded(t)
 	_, _, _ = seedWALPruneCollection(t, embedded)
@@ -150,7 +209,7 @@ func TestWALPruneInputValidation(t *testing.T) {
 	require.EqualError(t, err, "tenant_id must be at least 3 characters")
 
 	_, err = embedded.PruneCollectionWAL("docs", WithWALPruneWatermark(100, 200), WithWALPruneDryRun())
-	require.EqualError(t, err, "wal prune watermark low bytes must be less than or equal to high bytes")
+	require.EqualError(t, err, "invalid wal prune option at index 0: wal prune watermark low bytes must be less than or equal to high bytes")
 
 	_, err = embedded.PruneCollectionWAL("docs", WithWALPruneMaxAge(0), WithWALPruneDryRun())
 	require.EqualError(t, err, "invalid wal prune option at index 0: max_age must be greater than 0")
@@ -177,6 +236,17 @@ func TestWALPruneInputValidation(t *testing.T) {
 	require.ErrorIs(t, err, ErrServerNotStarted)
 	_, err = nilServer.PruneCollectionWAL("docs", WithWALPruneDryRun())
 	require.ErrorIs(t, err, ErrServerNotStarted)
+}
+
+func TestEmbeddedPruneCollectionWALNonexistentCollection(t *testing.T) {
+	embedded, _ := startTestEmbedded(t)
+
+	_, err := embedded.PruneCollectionWAL(
+		"does-not-exist",
+		WithWALPruneDatabaseName("default_database"),
+		WithWALPruneDryRun(),
+	)
+	require.Error(t, err)
 }
 
 func seedWALPruneCollection(t *testing.T, embedded *Embedded) (string, string, string) {

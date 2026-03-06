@@ -527,7 +527,7 @@ impl EmbeddedPruneWalCollectionPayload {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 struct EmbeddedPruneWalAllPayload {
     #[serde(default)]
     tenant_id: Option<String>,
@@ -543,10 +543,10 @@ struct EmbeddedPruneWalAllPayload {
 
 impl EmbeddedPruneWalAllPayload {
     fn into_options(self) -> Result<WalPruneExecutionOptions, String> {
-        if let Some(database_name) = self.database_name.clone() {
-            parse_database_name(database_name)?;
+        if let Some(database_name) = self.database_name.as_ref() {
+            parse_database_name(database_name.clone())?;
         }
-        if let Some(tenant_id) = self.tenant_id.clone() {
+        if let Some(tenant_id) = self.tenant_id.as_ref() {
             if tenant_id.trim().len() < 3 {
                 return Err("tenant_id must be at least 3 characters".to_string());
             }
@@ -607,6 +607,8 @@ struct EmbeddedWalPruneResponse {
     dry_run: bool,
     vacuum_requested: bool,
     vacuum_executed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
     candidate_count_total: u64,
     candidate_bytes_total: u64,
     pruned_count_total: u64,
@@ -1619,7 +1621,7 @@ async fn query_wal_candidate_rows(
         r#"
         SELECT
             seq_id,
-            CAST(strftime('%s', created_at) AS INTEGER) AS created_at_secs,
+            COALESCE(CAST(strftime('%s', created_at) AS INTEGER), 0) AS created_at_secs,
             (
                 LENGTH(COALESCE(id, '')) +
                 LENGTH(COALESCE(metadata, '')) +
@@ -1673,7 +1675,7 @@ fn wal_prune_prefix_for_max_age(
     let cutoff = now_secs.saturating_sub(max_age_i64);
     let mut prefix = 0usize;
     for row in rows {
-        if row.created_at_secs <= cutoff {
+        if row.created_at_secs < cutoff {
             prefix += 1;
             continue;
         }
@@ -1750,8 +1752,13 @@ fn wal_prune_prefix_count(
     prefix
 }
 
-fn seq_opt_u64(value: Option<i64>) -> Option<u64> {
-    value.and_then(|v| u64::try_from(v).ok())
+fn seq_opt_u64(value: Option<i64>, field: &str) -> Result<Option<u64>, String> {
+    match value {
+        Some(v) => u64::try_from(v)
+            .map(Some)
+            .map_err(|_| format!("negative sequence id for {field}: {v}")),
+        None => Ok(None),
+    }
 }
 
 async fn run_explicit_wal_prune(
@@ -1768,6 +1775,7 @@ async fn run_explicit_wal_prune(
             dry_run: options.dry_run,
             vacuum_requested: options.vacuum,
             vacuum_executed: false,
+            warning: None,
             candidate_count_total: 0,
             candidate_bytes_total: 0,
             pruned_count_total: 0,
@@ -1797,7 +1805,7 @@ async fn run_explicit_wal_prune(
     let started_at = Instant::now();
     let now_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
+        .map_err(|e| format!("system clock is before UNIX epoch: {e}"))?
         .as_secs();
     let now_secs_i64 = i64::try_from(now_secs).unwrap_or(i64::MAX);
 
@@ -1805,6 +1813,7 @@ async fn run_explicit_wal_prune(
     let mut candidate_bytes_total = 0u64;
     let mut pruned_count_total = 0u64;
     let mut pruned_bytes_total = 0u64;
+    let mut warning: Option<String> = None;
     let mut collection_results: Vec<EmbeddedWalPruneCollectionResult> =
         Vec::with_capacity(targets.len());
 
@@ -1853,7 +1862,7 @@ async fn run_explicit_wal_prune(
                             name: name.clone(),
                             tenant_id: tenant_id.clone(),
                             database_name: database_name_raw.clone(),
-                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff),
+                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
                             candidate_seq_min: None,
                             candidate_seq_max: None,
                             pruned_seq_min: None,
@@ -1870,6 +1879,34 @@ async fn run_explicit_wal_prune(
             },
             None => Vec::new(),
         };
+        if let Some(negative_row) = candidate_rows.iter().find(|row| row.seq_id < 0) {
+            let error = format!(
+                "negative wal seq_id encountered for collection {}: {}",
+                collection_id, negative_row.seq_id
+            );
+            match failure_mode {
+                WalPruneFailureMode::FailFast => return Err(error),
+                WalPruneFailureMode::ContinueOnError => {
+                    collection_results.push(EmbeddedWalPruneCollectionResult {
+                        collection_id: collection_id.to_string(),
+                        name: name.clone(),
+                        tenant_id: tenant_id.clone(),
+                        database_name: database_name_raw.clone(),
+                        safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
+                        candidate_seq_min: None,
+                        candidate_seq_max: None,
+                        pruned_seq_min: None,
+                        pruned_seq_max: None,
+                        candidate_count: 0,
+                        candidate_bytes: 0,
+                        pruned_count: 0,
+                        pruned_bytes: 0,
+                        error: Some(error),
+                    });
+                    continue;
+                }
+            }
+        }
 
         let candidate_count = u64::try_from(candidate_rows.len()).unwrap_or(u64::MAX);
         let candidate_bytes = wal_candidate_total_bytes(&candidate_rows);
@@ -1898,13 +1935,23 @@ async fn run_explicit_wal_prune(
                             name,
                             tenant_id,
                             database_name: database_name_raw,
-                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff),
+                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
                             candidate_seq_min: seq_opt_u64(
                                 candidate_rows.first().map(|r| r.seq_id),
-                            ),
-                            candidate_seq_max: seq_opt_u64(candidate_rows.last().map(|r| r.seq_id)),
-                            pruned_seq_min: seq_opt_u64(selected_rows.first().map(|r| r.seq_id)),
-                            pruned_seq_max: seq_opt_u64(selected_rows.last().map(|r| r.seq_id)),
+                                "candidate_seq_min",
+                            )?,
+                            candidate_seq_max: seq_opt_u64(
+                                candidate_rows.last().map(|r| r.seq_id),
+                                "candidate_seq_max",
+                            )?,
+                            pruned_seq_min: seq_opt_u64(
+                                selected_rows.first().map(|r| r.seq_id),
+                                "pruned_seq_min",
+                            )?,
+                            pruned_seq_max: seq_opt_u64(
+                                selected_rows.last().map(|r| r.seq_id),
+                                "pruned_seq_max",
+                            )?,
                             candidate_count,
                             candidate_bytes,
                             pruned_count: 0,
@@ -1931,11 +1978,17 @@ async fn run_explicit_wal_prune(
             name,
             tenant_id,
             database_name: database_name_raw,
-            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff),
-            candidate_seq_min: seq_opt_u64(candidate_rows.first().map(|r| r.seq_id)),
-            candidate_seq_max: seq_opt_u64(candidate_rows.last().map(|r| r.seq_id)),
-            pruned_seq_min: seq_opt_u64(selected_rows.first().map(|r| r.seq_id)),
-            pruned_seq_max: seq_opt_u64(selected_rows.last().map(|r| r.seq_id)),
+            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
+            candidate_seq_min: seq_opt_u64(
+                candidate_rows.first().map(|r| r.seq_id),
+                "candidate_seq_min",
+            )?,
+            candidate_seq_max: seq_opt_u64(
+                candidate_rows.last().map(|r| r.seq_id),
+                "candidate_seq_max",
+            )?,
+            pruned_seq_min: seq_opt_u64(selected_rows.first().map(|r| r.seq_id), "pruned_seq_min")?,
+            pruned_seq_max: seq_opt_u64(selected_rows.last().map(|r| r.seq_id), "pruned_seq_max")?,
             candidate_count,
             candidate_bytes,
             pruned_count,
@@ -1946,21 +1999,26 @@ async fn run_explicit_wal_prune(
 
     let mut vacuum_executed = false;
     if !options.dry_run && options.vacuum && pruned_count_total > 0 {
-        sqlx::query("PRAGMA busy_timeout = 5000")
+        match sqlx::query("PRAGMA busy_timeout = 5000")
             .execute(sqlite.get_conn())
             .await
-            .map_err(|e| format!("failed to set sqlite busy timeout before vacuum: {e}"))?;
-        sqlx::query("VACUUM")
-            .execute(sqlite.get_conn())
-            .await
-            .map_err(|e| format!("failed to vacuum sqlite after wal prune: {e}"))?;
-        sqlx::query(
-            "INSERT INTO maintenance_log (operation, timestamp) VALUES ('vacuum', CURRENT_TIMESTAMP)",
-        )
-        .execute(sqlite.get_conn())
-        .await
-        .map_err(|e| format!("failed to write maintenance log entry after vacuum: {e}"))?;
-        vacuum_executed = true;
+        {
+            Ok(_) => match sqlx::query("VACUUM").execute(sqlite.get_conn()).await {
+                Ok(_) => {
+                    vacuum_executed = true;
+                }
+                Err(e) => {
+                    warning = Some(format!(
+                        "wal prune completed, but sqlite VACUUM failed: {e}"
+                    ));
+                }
+            },
+            Err(e) => {
+                warning = Some(format!(
+                    "wal prune completed, but sqlite VACUUM was skipped because busy_timeout configuration failed: {e}"
+                ));
+            }
+        }
     }
 
     let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
@@ -1971,6 +2029,7 @@ async fn run_explicit_wal_prune(
         dry_run: options.dry_run,
         vacuum_requested: options.vacuum,
         vacuum_executed,
+        warning,
         candidate_count_total,
         candidate_bytes_total,
         pruned_count_total,
@@ -4669,16 +4728,18 @@ pub unsafe extern "C" fn chroma_embedded_prune_wal_all(
                     return ptr::null_mut();
                 }
             };
-        let options = match payload.clone().into_options() {
+        let tenant_id = payload
+            .tenant_id
+            .clone()
+            .unwrap_or_else(|| DEFAULT_TENANT.to_string());
+        let database_name = payload.database_name.clone();
+        let options = match payload.into_options() {
             Ok(options) => options,
             Err(e) => {
                 set_last_error(&e);
                 return ptr::null_mut();
             }
         };
-        let tenant_id = payload
-            .tenant_id
-            .unwrap_or_else(|| DEFAULT_TENANT.to_string());
 
         let embedded = &*(handle as *const EmbeddedHandle);
         let mut frontend = match embedded.frontend.lock() {
@@ -4690,8 +4751,7 @@ pub unsafe extern "C" fn chroma_embedded_prune_wal_all(
         };
 
         let response = match embedded.runtime.block_on(async {
-            let targets =
-                list_wal_prune_targets(&mut frontend, tenant_id, payload.database_name).await?;
+            let targets = list_wal_prune_targets(&mut frontend, tenant_id, database_name).await?;
             run_explicit_wal_prune(
                 &mut frontend,
                 &embedded.registry,

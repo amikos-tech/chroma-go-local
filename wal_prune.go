@@ -36,6 +36,7 @@ type WALPruneResult struct {
 	DryRun              bool                       `json:"dry_run"`
 	VacuumRequested     bool                       `json:"vacuum_requested"`
 	VacuumExecuted      bool                       `json:"vacuum_executed"`
+	Warning             string                     `json:"warning,omitempty"`
 	CandidateCountTotal uint64                     `json:"candidate_count_total"`
 	CandidateBytesTotal uint64                     `json:"candidate_bytes_total"`
 	PrunedCountTotal    uint64                     `json:"pruned_count_total"`
@@ -172,6 +173,7 @@ func WithWALPruneMaxAge(maxAge time.Duration) WALPruneOption {
 }
 
 // WithWALPruneMaxBytes prunes oldest rows until candidate bytes are within maxBytes.
+// A value of 0 means "prune all safety-eligible candidate rows" for this policy.
 func WithWALPruneMaxBytes(maxBytes uint64) WALPruneOption {
 	return walPruneOptionFunc(func(options *walPruneCallOptions) error {
 		value := maxBytes
@@ -184,6 +186,9 @@ func WithWALPruneMaxBytes(maxBytes uint64) WALPruneOption {
 // When candidate bytes exceed highBytes, oldest rows are pruned until candidate bytes are at or below lowBytes.
 func WithWALPruneWatermark(highBytes, lowBytes uint64) WALPruneOption {
 	return walPruneOptionFunc(func(options *walPruneCallOptions) error {
+		if lowBytes > highBytes {
+			return errors.New("wal prune watermark low bytes must be less than or equal to high bytes")
+		}
 		high := highBytes
 		low := lowBytes
 		options.watermarkHighBytes = &high

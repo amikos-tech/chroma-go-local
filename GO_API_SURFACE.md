@@ -144,11 +144,13 @@ WAL prune semantics:
 - Dry-run mode (`WithWALPruneDryRun()`) reports candidate/projection metadata without mutating WAL rows.
 - Mutating calls require at least one retention policy:
   - `WithWALPruneMaxAge(duration)`
-  - `WithWALPruneMaxBytes(bytes)`
+  - `WithWALPruneMaxBytes(bytes)` (`0` means "prune all safety-eligible candidates" for this policy)
   - `WithWALPruneWatermark(highBytes, lowBytes)`
 - Multiple retention policies combine with AND semantics.
 - `PruneAllWAL` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
 - Optional `WithWALPruneVacuum()` runs SQLite `VACUUM` once after prune execution; it is skipped in dry-run mode.
+- `result.Warning` is set when prune succeeds but a follow-up vacuum step fails.
+- In dry-run mode, `pruned_*` fields are projected counts/bytes rather than applied mutations.
 - Implementation adapts core logic from Chroma Rust CLI vacuum internals (migration + purge + optional vacuum), without linking against the CLI crate.
 
 Backup constraints (applies to server and embedded backup):
