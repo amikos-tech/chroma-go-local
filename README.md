@@ -453,7 +453,7 @@ fmt.Println(result.CollectionCount)
 
 Rebuild options:
 
-- `WithRebuildTenantID(string)` (optional scope)
+- `WithRebuildTenantID(string)` (optional scope; must be at least 3 chars when set)
 - `WithRebuildDatabaseName(string)` (optional scope; must be at least 3 chars when set)
 - `WithRebuildPrecheck()` (prerequisites-only, no mutation)
 - `WithRebuildKeepBackup(bool)` (default `true`; keep timestamped backup path after swap)

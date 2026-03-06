@@ -460,8 +460,8 @@ impl EmbeddedRebuildCollectionPayload {
     }
 }
 
-// Mirrors upstream pickle metadata layout for persistent HNSW artifacts.
-// Keep this shape/backward compatibility in sync with Chroma's on-disk format.
+// Mirrors Chroma 1.5.2 PersistentData pickle layout used for index_metadata.pickle
+// (chromadb/segment/impl/vector/local_persistent_hnsw.py). Keep this in sync.
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct HnswIdMap {
     dimensionality: Option<usize>,
@@ -725,6 +725,9 @@ impl TempRebuildDirGuard {
 impl Drop for TempRebuildDirGuard {
     fn drop(&mut self) {
         if self.active {
+            // Drop is a best-effort safety net for panic/early-return paths. We intentionally
+            // ignore cleanup errors here because Drop cannot return a Result; explicit error
+            // paths call remove_now() to surface failures.
             let _ = fs::remove_dir_all(&self.path);
         }
     }

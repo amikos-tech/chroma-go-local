@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// RebuildCollectionResult captures collection rebuild execution metadata.
+// RebuildCollectionResult reports rebuild outcome, counts, timing, and backup details.
 type RebuildCollectionResult struct {
 	CollectionID     string   `json:"collection_id"`
 	Name             string   `json:"name"`
@@ -34,7 +34,7 @@ type rebuildCollectionRequest struct {
 	KeepBackup   bool   `json:"keep_backup"`
 }
 
-// RebuildCollectionOption configures rebuild behavior.
+// RebuildCollectionOption applies optional rebuild scope and behavior.
 type RebuildCollectionOption interface {
 	apply(*rebuildCollectionCallOptions) error
 }
@@ -85,7 +85,8 @@ func WithRebuildKeepBackup(keepBackup bool) RebuildCollectionOption {
 }
 
 func resolveRebuildCollectionRequest(name string, options []RebuildCollectionOption) (rebuildCollectionRequest, error) {
-	if strings.TrimSpace(name) == "" {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
 		return rebuildCollectionRequest{}, errors.New("name is required")
 	}
 
@@ -99,7 +100,8 @@ func resolveRebuildCollectionRequest(name string, options []RebuildCollectionOpt
 		}
 	}
 
-	if databaseName := strings.TrimSpace(resolved.databaseName); databaseName != "" && len(databaseName) < 3 {
+	databaseName := strings.TrimSpace(resolved.databaseName)
+	if databaseName != "" && len(databaseName) < 3 {
 		return rebuildCollectionRequest{}, errors.New("database_name must be at least 3 characters")
 	}
 	tenantID := strings.TrimSpace(resolved.tenantID)
@@ -108,15 +110,15 @@ func resolveRebuildCollectionRequest(name string, options []RebuildCollectionOpt
 	}
 
 	return rebuildCollectionRequest{
-		Name:         strings.TrimSpace(name),
+		Name:         trimmedName,
 		TenantID:     tenantID,
-		DatabaseName: resolved.databaseName,
+		DatabaseName: databaseName,
 		Precheck:     resolved.precheck,
 		KeepBackup:   resolved.keepBackup,
 	}, nil
 }
 
-// RebuildCollection rebuilds index artifacts for one collection in embedded mode.
+// RebuildCollection runs rebuild in embedded mode for a single collection.
 func (e *Embedded) RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error) {
 	if e == nil {
 		return nil, ErrEmbeddedNotStarted

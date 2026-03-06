@@ -111,7 +111,7 @@ Compaction semantics:
 Rebuild semantics:
 
 - `RebuildCollection` is a low-level maintenance primitive that rebuilds one collection's persisted vector index artifacts.
-- Scope is resolved by `name` plus optional `WithRebuildTenantID(...)` and `WithRebuildDatabaseName(...)`.
+- Scope is resolved by `name` plus optional `WithRebuildTenantID(...)` and `WithRebuildDatabaseName(...)`; when set, each must be at least 3 characters.
 - If omitted, scope defaults to `default_tenant` and `default_database`.
 - `WithRebuildPrecheck()` validates prerequisites and reports `WouldRebuild` without mutating files.
 - `WithRebuildKeepBackup(bool)` controls swap behavior; default is `true` (timestamped backup path is retained).

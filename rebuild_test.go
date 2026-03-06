@@ -162,6 +162,8 @@ func TestEmbeddedRebuildCollectionValidation(t *testing.T) {
 
 	_, err := embedded.RebuildCollection("")
 	require.EqualError(t, err, "name is required")
+	_, err = embedded.RebuildCollection("   ")
+	require.EqualError(t, err, "name is required")
 
 	_, err = embedded.RebuildCollection("docs", WithRebuildDatabaseName("ab"))
 	require.EqualError(t, err, "database_name must be at least 3 characters")
@@ -174,6 +176,8 @@ func TestEmbeddedRebuildCollectionValidation(t *testing.T) {
 	require.EqualError(t, err, "rebuild option at index 0 is nil")
 
 	_, err = server.RebuildCollection("")
+	require.EqualError(t, err, "name is required")
+	_, err = server.RebuildCollection("   ")
 	require.EqualError(t, err, "name is required")
 
 	_, err = server.RebuildCollection("docs", WithRebuildDatabaseName("ab"))
@@ -195,6 +199,44 @@ func TestEmbeddedRebuildCollectionValidation(t *testing.T) {
 	require.ErrorIs(t, err, ErrServerNotStarted)
 }
 
+func TestEmbeddedRebuildCollectionNonexistent(t *testing.T) {
+	embedded, _ := startTestEmbedded(t)
+
+	_, err := embedded.RebuildCollection("missing")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "get collection failed")
+}
+
+func TestEmbeddedRebuildCollectionEmptyCollectionSkips(t *testing.T) {
+	embedded, _ := startTestEmbedded(t)
+
+	databaseName := fmt.Sprintf("rebuild_empty_db_%d", time.Now().UnixNano())
+	require.NoError(t, embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}))
+
+	collectionName := fmt.Sprintf("rebuild_empty_col_%d", time.Now().UnixNano())
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         collectionName,
+		DatabaseName: databaseName,
+		GetOrCreate:  true,
+	})
+	require.NoError(t, err)
+
+	result, err := embedded.RebuildCollection(collectionName, WithRebuildDatabaseName(databaseName))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.WouldRebuild)
+	require.False(t, result.Rebuilt)
+	require.Empty(t, result.BackupPath)
+	require.NotEmpty(t, result.Warnings)
+
+	count, err := embedded.CountRecords(EmbeddedCountRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(0), count)
+}
+
 func TestServerRebuildCollectionRestartsServer(t *testing.T) {
 	server, databaseName, collectionName := startTestServerWithRebuildReadyCollection(t)
 
@@ -207,6 +249,45 @@ func TestServerRebuildCollectionRestartsServer(t *testing.T) {
 	requireServerHeartbeat(t, server.URL())
 
 	// Verify data survives the stop -> rebuild -> restart lifecycle.
+	require.NoError(t, server.Close())
+	embedded, err := NewEmbedded(
+		WithEmbeddedPersistPath(server.persistPath),
+		WithEmbeddedAllowReset(true),
+	)
+	require.NoError(t, err)
+	defer embedded.Close()
+
+	collection, err := embedded.GetCollection(EmbeddedGetCollectionRequest{
+		Name:         collectionName,
+		DatabaseName: databaseName,
+	})
+	require.NoError(t, err)
+
+	count, err := embedded.CountRecords(EmbeddedCountRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(2), count)
+}
+
+func TestServerRebuildCollectionPrecheckRestartsServer(t *testing.T) {
+	server, databaseName, collectionName := startTestServerWithRebuildReadyCollection(t)
+
+	result, err := server.RebuildCollection(
+		collectionName,
+		WithRebuildDatabaseName(databaseName),
+		WithRebuildPrecheck(),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Precheck)
+	require.True(t, result.WouldRebuild)
+	require.False(t, result.Rebuilt)
+	require.Empty(t, result.BackupPath)
+	requireServerHeartbeat(t, server.URL())
+
+	// Verify data survives the stop -> precheck -> restart lifecycle.
 	require.NoError(t, server.Close())
 	embedded, err := NewEmbedded(
 		WithEmbeddedPersistPath(server.persistPath),
