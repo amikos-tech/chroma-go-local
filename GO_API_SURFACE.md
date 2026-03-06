@@ -37,6 +37,8 @@ Implemented server lifecycle APIs:
 - `(*Server).RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)`
 - `(*Server).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together)
 - `(*Server).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (supports `TenantID` + `DatabaseName` scope together; `result.Collections[i].Error` reports per-collection failures)
+- `(*Server).PruneCollectionWAL(name string, options ...WALPruneOption) (*WALPruneResult, error)`
+- `(*Server).PruneAllWAL(options ...WALPruneOption) (*WALPruneResult, error)` (`result.Collections[i].Error` reports per-collection failures)
 
 Example:
 
@@ -95,6 +97,22 @@ if err != nil {
 fmt.Println(rebuilt.Rebuilt, rebuilt.BackupPath)
 ```
 
+Server WAL prune example:
+
+```go
+pruned, err := srv.PruneCollectionWAL(
+    "docs",
+    chroma.WithWALPruneTenantID("team_a"),
+    chroma.WithWALPruneDatabaseName("prod_db"),
+    chroma.WithWALPruneMaxBytes(64*1024*1024),
+    chroma.WithWALPruneVacuum(),
+)
+if err != nil {
+    panic(err)
+}
+fmt.Println(pruned.PrunedCountTotal, pruned.VacuumExecuted)
+```
+
 Compaction semantics:
 
 - `CompactCollection` and `CompactAll` run explicit compaction via Chroma's local compaction manager.
@@ -118,6 +136,20 @@ Rebuild semantics:
 - Empty/uninitialized index artifacts return success with warnings and `WouldRebuild=false`, `Rebuilt=false`.
 - In server mode, the server is unavailable while rebuild runs (stop -> rebuild in embedded mode -> restart).
 - If rebuild succeeds but close/restart fails, Go returns a non-nil `RebuildCollectionResult` and a non-nil error.
+
+WAL prune semantics:
+
+- `PruneCollectionWAL` and `PruneAllWAL` prune only safety-eligible WAL rows (`seq_id < min(max_seq_id across collection segments)`).
+- Scope is resolved from collection `name` + optional `WithWALPruneTenantID(...)` and `WithWALPruneDatabaseName(...)`; each scope value must be at least 3 characters when set.
+- Dry-run mode (`WithWALPruneDryRun()`) reports candidate/projection metadata without mutating WAL rows.
+- Mutating calls require at least one retention policy:
+  - `WithWALPruneMaxAge(duration)`
+  - `WithWALPruneMaxBytes(bytes)`
+  - `WithWALPruneWatermark(highBytes, lowBytes)`
+- Multiple retention policies combine with AND semantics.
+- `PruneAllWAL` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
+- Optional `WithWALPruneVacuum()` runs SQLite `VACUUM` once after prune execution; it is skipped in dry-run mode.
+- Implementation adapts core logic from Chroma Rust CLI vacuum internals (migration + purge + optional vacuum), without linking against the CLI crate.
 
 Backup constraints (applies to server and embedded backup):
 
@@ -169,6 +201,8 @@ fmt.Println("snapshot dir:", manifest.SnapshotPath)
 - `(*Embedded).RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)`
 - `(*Embedded).CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)`
 - `(*Embedded).CompactAll(request CompactAllRequest) (*CompactionResult, error)` (`result.Collections[i].Error` reports per-collection failures)
+- `(*Embedded).PruneCollectionWAL(name string, options ...WALPruneOption) (*WALPruneResult, error)`
+- `(*Embedded).PruneAllWAL(options ...WALPruneOption) (*WALPruneResult, error)` (`result.Collections[i].Error` reports per-collection failures)
 - `(*Embedded).Reset() error`
 
 ```go
@@ -212,6 +246,17 @@ if err != nil {
     panic(err)
 }
 fmt.Println(rebuild.Precheck, rebuild.WouldRebuild)
+```
+
+```go
+walReport, err := embedded.PruneAllWAL(
+    chroma.WithWALPruneDryRun(),
+    chroma.WithWALPruneMaxAge(24*time.Hour),
+)
+if err != nil {
+    panic(err)
+}
+fmt.Println(walReport.CandidateCountTotal, walReport.PrunedCountTotal)
 ```
 
 ### 3.3 Tenant APIs
