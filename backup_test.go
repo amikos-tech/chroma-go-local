@@ -870,7 +870,8 @@ func startTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	require.NoError(t, Init(""))
 
-	persistDir := filepath.Join(t.TempDir(), "server-persist")
+	rootDir := makeManagedTestTempDir(t, "chroma-server-")
+	persistDir := filepath.Join(rootDir, "server-persist")
 	require.NoError(t, os.MkdirAll(persistDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("server-backup"), 0o644))
 
@@ -882,7 +883,10 @@ func startTestServer(t *testing.T) (*Server, string) {
 		WithAllowReset(true),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() {
+		_ = server.Close()
+		waitForWindowsDirectoryUnlock(t, persistDir)
+	})
 	requireServerHeartbeat(t, server.URL())
 	return server, persistDir
 }
@@ -891,7 +895,8 @@ func startTestEmbedded(t *testing.T) (*Embedded, string) {
 	t.Helper()
 	require.NoError(t, Init(""))
 
-	persistDir := filepath.Join(t.TempDir(), "embedded-persist")
+	rootDir := makeManagedTestTempDir(t, "chroma-embedded-")
+	persistDir := filepath.Join(rootDir, "embedded-persist")
 	require.NoError(t, os.MkdirAll(persistDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(persistDir, "sentinel.txt"), []byte("embedded-backup"), 0o644))
 
@@ -900,8 +905,70 @@ func startTestEmbedded(t *testing.T) (*Embedded, string) {
 		WithEmbeddedAllowReset(true),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = embedded.Close() })
+	t.Cleanup(func() {
+		_ = embedded.Close()
+		waitForWindowsDirectoryUnlock(t, persistDir)
+	})
 	return embedded, persistDir
+}
+
+func makeManagedTestTempDir(t *testing.T, prefix string) string {
+	t.Helper()
+	rootDir, err := os.MkdirTemp("", prefix)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		err := removeDirAllWithRetries(rootDir, 40, 250*time.Millisecond)
+		if err == nil {
+			return
+		}
+		if runtime.GOOS == "windows" {
+			t.Logf("skipping strict temp cleanup for %s on windows: %v", rootDir, err)
+			return
+		}
+		require.NoError(t, err)
+	})
+
+	return rootDir
+}
+
+func removeDirAllWithRetries(path string, maxAttempts int, delay time.Duration) error {
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err := os.RemoveAll(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("failed to remove %s after %d attempts: %w", path, maxAttempts, lastErr)
+}
+
+func waitForWindowsDirectoryUnlock(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return
+	}
+
+	probePath := path + ".cleanup-probe"
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_ = os.RemoveAll(probePath)
+		err := os.Rename(path, probePath)
+		if err == nil {
+			require.NoError(t, os.Rename(probePath, path))
+			return
+		}
+		if os.IsNotExist(err) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Logf("windows cleanup probe timed out for %s: %v", path, err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func reserveFreeLoopbackPort(t *testing.T) int {

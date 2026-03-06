@@ -1,17 +1,24 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::fs;
+use std::io::Write;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use chroma_config::registry::Registry;
 use chroma_config::Configurable;
 use chroma_frontend::config::FrontendServerConfig;
 use chroma_frontend::frontend_service_entrypoint_with_config_system_registry;
 use chroma_frontend::Frontend;
+use chroma_index::{HnswIndex, HnswIndexConfig, IndexConfig, IndexUuid};
 use chroma_log::{BackfillMessage, LocalCompactionManager, PurgeLogsMessage};
+use chroma_segment::local_segment_manager::LocalSegmentManager;
+use chroma_sysdb::SysDb;
 use chroma_system::{ComponentHandle, System};
 use chroma_types::{
     AddCollectionRecordsRequest, CollectionConfiguration, CollectionMetadataUpdate, CollectionUuid,
@@ -27,6 +34,7 @@ use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_pickle::{DeOptions, SerOptions};
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
@@ -45,6 +53,7 @@ pub const ERROR_OPERATION_FAILED: i32 = -8;
 const DEFAULT_TENANT: &str = "default_tenant";
 const DEFAULT_DATABASE: &str = "default_database";
 const DEFAULT_QUERY_RESULTS: u32 = 10;
+const HNSW_METADATA_FILENAME: &str = "index_metadata.pickle";
 
 fn parse_database_name(database_name: String) -> Result<DatabaseName, String> {
     DatabaseName::new(database_name)
@@ -416,6 +425,730 @@ struct EmbeddedCompactionResponse {
 enum CompactionFailureMode {
     FailFast,
     ContinueOnError,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddedRebuildCollectionPayload {
+    name: String,
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    database_name: Option<String>,
+    #[serde(default)]
+    precheck: Option<bool>,
+    #[serde(default)]
+    keep_backup: Option<bool>,
+}
+
+struct RebuildCollectionRequestParts {
+    request: GetCollectionRequest,
+    precheck: bool,
+    keep_backup: bool,
+}
+
+impl EmbeddedRebuildCollectionPayload {
+    fn into_request(self) -> Result<RebuildCollectionRequestParts, String> {
+        let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
+        let database_name = resolve_database_name_typed(self.database_name)?;
+        let request = GetCollectionRequest::try_new(tenant_id, database_name, self.name)
+            .map_err(|e| e.to_string())?;
+        Ok(RebuildCollectionRequestParts {
+            request,
+            precheck: self.precheck.unwrap_or(false),
+            keep_backup: self.keep_backup.unwrap_or(true),
+        })
+    }
+}
+
+// Mirrors Chroma 1.5.2 PersistentData pickle layout used for index_metadata.pickle
+// (chromadb/segment/impl/vector/local_persistent_hnsw.py). Keep this in sync.
+#[derive(Debug, Deserialize, Serialize, Default)]
+struct HnswIdMap {
+    dimensionality: Option<usize>,
+    total_elements_added: u32,
+    #[serde(default)]
+    max_seq_id: Option<u64>,
+    id_to_label: HashMap<String, u32>,
+    label_to_id: HashMap<u32, String>,
+    id_to_seq_id: HashMap<String, u32>,
+}
+
+impl HnswIdMap {
+    fn validate(&self) -> Result<(), String> {
+        if self.id_to_label.len() != self.label_to_id.len() {
+            return Err(format!(
+                "id_to_label/label_to_id length mismatch: {} != {}",
+                self.id_to_label.len(),
+                self.label_to_id.len()
+            ));
+        }
+
+        for (id, label) in &self.id_to_label {
+            match self.label_to_id.get(label) {
+                Some(mapped_id) if mapped_id == id => {}
+                Some(mapped_id) => {
+                    return Err(format!(
+                        "non-bijective mapping for id {id}: label {label} maps to {mapped_id}"
+                    ));
+                }
+                None => {
+                    return Err(format!("missing reverse mapping for id {id} label {label}"));
+                }
+            }
+        }
+
+        for (label, id) in &self.label_to_id {
+            match self.id_to_label.get(id) {
+                Some(mapped_label) if mapped_label == label => {}
+                Some(mapped_label) => {
+                    return Err(format!(
+                        "non-bijective mapping for label {label}: id {id} maps to {mapped_label}"
+                    ));
+                }
+                None => {
+                    return Err(format!("missing forward mapping for label {label} id {id}"));
+                }
+            }
+        }
+
+        for id in self.id_to_seq_id.keys() {
+            if !self.id_to_label.contains_key(id) {
+                return Err(format!("seq-id mapping references unknown id {id}"));
+            }
+        }
+
+        if let Some(max_seq_id) = self.max_seq_id {
+            if let Some(observed_max_seq_id) = self.id_to_seq_id.values().copied().max() {
+                let observed_max_seq_id = u64::from(observed_max_seq_id);
+                if max_seq_id < observed_max_seq_id {
+                    return Err(format!(
+                        "max_seq_id {max_seq_id} is smaller than observed seq id {observed_max_seq_id}"
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn insert_record(
+        &mut self,
+        user_id: String,
+        label: u32,
+        seq_id: Option<u32>,
+    ) -> Result<(), String> {
+        if self.id_to_label.contains_key(&user_id) {
+            return Err(format!("duplicate id mapping for {user_id}"));
+        }
+        if self.label_to_id.contains_key(&label) {
+            return Err(format!("duplicate label mapping for {label}"));
+        }
+
+        self.id_to_label.insert(user_id.clone(), label);
+        self.label_to_id.insert(label, user_id.clone());
+        if let Some(seq_id) = seq_id {
+            self.id_to_seq_id.insert(user_id, seq_id);
+        }
+        self.total_elements_added = label;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddedRebuildCollectionResponse {
+    collection_id: String,
+    name: String,
+    tenant_id: String,
+    database_name: String,
+    precheck: bool,
+    would_rebuild: bool,
+    rebuilt: bool,
+    records_scanned: u64,
+    vectors_reindexed: u64,
+    duration_ms: u64,
+    backup_path: String,
+    warnings: Vec<String>,
+}
+
+struct RebuildCollectionIdentity {
+    collection_id: String,
+    name: String,
+    tenant_id: String,
+    database_name: String,
+}
+
+impl EmbeddedRebuildCollectionResponse {
+    fn skipped(
+        identity: &RebuildCollectionIdentity,
+        precheck: bool,
+        warnings: Vec<String>,
+    ) -> Self {
+        Self {
+            collection_id: identity.collection_id.clone(),
+            name: identity.name.clone(),
+            tenant_id: identity.tenant_id.clone(),
+            database_name: identity.database_name.clone(),
+            precheck,
+            would_rebuild: false,
+            rebuilt: false,
+            records_scanned: 0,
+            vectors_reindexed: 0,
+            duration_ms: 0,
+            backup_path: String::new(),
+            warnings,
+        }
+    }
+
+    fn precheck(
+        identity: &RebuildCollectionIdentity,
+        records_scanned: u64,
+        warnings: Vec<String>,
+    ) -> Self {
+        Self {
+            collection_id: identity.collection_id.clone(),
+            name: identity.name.clone(),
+            tenant_id: identity.tenant_id.clone(),
+            database_name: identity.database_name.clone(),
+            precheck: true,
+            would_rebuild: true,
+            rebuilt: false,
+            records_scanned,
+            vectors_reindexed: 0,
+            duration_ms: 0,
+            backup_path: String::new(),
+            warnings,
+        }
+    }
+
+    fn rebuilt(
+        identity: &RebuildCollectionIdentity,
+        records_scanned: u64,
+        vectors_reindexed: u64,
+        duration_ms: u64,
+        backup_path: String,
+        warnings: Vec<String>,
+    ) -> Self {
+        Self {
+            collection_id: identity.collection_id.clone(),
+            name: identity.name.clone(),
+            tenant_id: identity.tenant_id.clone(),
+            database_name: identity.database_name.clone(),
+            precheck: false,
+            would_rebuild: true,
+            rebuilt: true,
+            records_scanned,
+            vectors_reindexed,
+            duration_ms,
+            backup_path,
+            warnings,
+        }
+    }
+}
+
+fn load_hnsw_id_map(path: &Path) -> Result<HnswIdMap, String> {
+    let file = fs::File::open(path)
+        .map_err(|e| format!("failed to open hnsw metadata {}: {e}", path.display()))?;
+    let id_map: HnswIdMap = serde_pickle::from_reader(file, DeOptions::new())
+        .map_err(|e| format!("failed to decode hnsw metadata {}: {e}", path.display()))?;
+    id_map
+        .validate()
+        .map_err(|e| format!("invalid hnsw metadata {}: {e}", path.display()))?;
+    Ok(id_map)
+}
+
+fn write_hnsw_id_map(path: &Path, id_map: &HnswIdMap) -> Result<(), String> {
+    let file = fs::File::create(path)
+        .map_err(|e| format!("failed to create hnsw metadata {}: {e}", path.display()))?;
+    let mut writer = std::io::BufWriter::new(file);
+    serde_pickle::to_writer(&mut writer, id_map, SerOptions::new())
+        .map_err(|e| format!("failed to encode hnsw metadata {}: {e}", path.display()))?;
+    writer
+        .flush()
+        .map_err(|e| format!("failed to flush hnsw metadata {}: {e}", path.display()))
+}
+
+fn unique_path_suffix() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{now}_{}", std::process::id())
+}
+
+fn build_temp_rebuild_dir(source_dir: &Path) -> Result<PathBuf, String> {
+    let parent = source_dir
+        .parent()
+        .ok_or_else(|| format!("invalid source index path {}", source_dir.display()))?;
+    let stem = source_dir
+        .file_name()
+        .ok_or_else(|| format!("invalid source index path {}", source_dir.display()))?
+        .to_string_lossy();
+    Ok(parent.join(format!("{stem}.rebuild.{}", unique_path_suffix())))
+}
+
+struct TempRebuildDirGuard {
+    path: PathBuf,
+    active: bool,
+}
+
+impl TempRebuildDirGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, active: true }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+
+    fn remove_now(&mut self) -> Result<(), String> {
+        if !self.active {
+            return Ok(());
+        }
+
+        match fs::remove_dir_all(&self.path) {
+            Ok(_) => {
+                self.active = false;
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                self.active = false;
+                Ok(())
+            }
+            Err(e) => Err(format!(
+                "failed to remove temporary rebuild directory {}: {e}",
+                self.path.display()
+            )),
+        }
+    }
+}
+
+impl Drop for TempRebuildDirGuard {
+    fn drop(&mut self) {
+        if self.active {
+            // Drop is a best-effort safety net for panic/early-return paths. We intentionally
+            // ignore cleanup errors here because Drop cannot return a Result; explicit error
+            // paths call remove_now() to surface failures.
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+trait SwapFsOps {
+    fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()>;
+    fn remove_dir_all(&self, path: &Path) -> std::io::Result<()>;
+}
+
+struct StdSwapFsOps;
+
+const WINDOWS_FS_RETRY_DELAYS_MS: [u64; 6] = [10, 25, 50, 100, 200, 400];
+
+fn is_windows_retryable_fs_error(err: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        // ERROR_ACCESS_DENIED (5), ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33)
+        matches!(err.raw_os_error(), Some(5 | 32 | 33))
+            || err.kind() == std::io::ErrorKind::PermissionDenied
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = err;
+        false
+    }
+}
+
+fn run_with_windows_fs_retry<F>(mut op: F) -> std::io::Result<()>
+where
+    F: FnMut() -> std::io::Result<()>,
+{
+    let mut attempt = 0usize;
+    loop {
+        match op() {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                if !is_windows_retryable_fs_error(&err)
+                    || attempt >= WINDOWS_FS_RETRY_DELAYS_MS.len()
+                {
+                    return Err(err);
+                }
+                let delay_ms = WINDOWS_FS_RETRY_DELAYS_MS[attempt];
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+        }
+    }
+}
+
+impl SwapFsOps for StdSwapFsOps {
+    fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        run_with_windows_fs_retry(|| fs::rename(from, to))
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> std::io::Result<()> {
+        run_with_windows_fs_retry(|| fs::remove_dir_all(path))
+    }
+}
+
+fn swap_rebuilt_index_dir(
+    source_dir: &Path,
+    rebuilt_dir: &Path,
+    keep_backup: bool,
+) -> Result<(String, Vec<String>), String> {
+    let fs_ops = StdSwapFsOps;
+    swap_rebuilt_index_dir_with_ops(
+        source_dir,
+        rebuilt_dir,
+        keep_backup,
+        unique_path_suffix(),
+        &fs_ops,
+    )
+}
+
+fn rebuild_required_capacity(record_count: usize, resize_factor: f64) -> usize {
+    let live_records = record_count.max(1);
+    let scaled_capacity = ((live_records as f64) * resize_factor).ceil() as usize;
+    scaled_capacity.max(record_count.saturating_add(1)).max(100)
+}
+
+fn swap_rebuilt_index_dir_with_ops(
+    source_dir: &Path,
+    rebuilt_dir: &Path,
+    keep_backup: bool,
+    suffix: String,
+    fs_ops: &dyn SwapFsOps,
+) -> Result<(String, Vec<String>), String> {
+    let parent = source_dir
+        .parent()
+        .ok_or_else(|| format!("invalid source index path {}", source_dir.display()))?;
+    let name = source_dir
+        .file_name()
+        .ok_or_else(|| format!("invalid source index path {}", source_dir.display()))?
+        .to_string_lossy();
+
+    let moved_source = if keep_backup {
+        parent.join(format!("{name}_backup_{suffix}"))
+    } else {
+        parent.join(format!("{name}_rollback_{suffix}"))
+    };
+
+    fs_ops.rename(source_dir, &moved_source).map_err(|e| {
+        format!(
+            "failed to stage existing index {} -> {}: {e}",
+            source_dir.display(),
+            moved_source.display()
+        )
+    })?;
+
+    if let Err(swap_err) = fs_ops.rename(rebuilt_dir, source_dir) {
+        let rollback_result = fs_ops.rename(&moved_source, source_dir);
+        return Err(format_swap_activation_error(
+            rebuilt_dir,
+            source_dir,
+            &swap_err,
+            rollback_result.err().as_ref(),
+        ));
+    }
+
+    if keep_backup {
+        return Ok((moved_source.to_string_lossy().to_string(), Vec::new()));
+    }
+
+    let mut warnings = Vec::new();
+    if let Err(remove_err) = fs_ops.remove_dir_all(&moved_source) {
+        warnings.push(format!(
+            "failed to remove rollback directory {}: {remove_err}",
+            moved_source.display()
+        ));
+    }
+    Ok((String::new(), warnings))
+}
+
+fn format_swap_activation_error(
+    rebuilt_dir: &Path,
+    source_dir: &Path,
+    swap_err: &std::io::Error,
+    rollback_err: Option<&std::io::Error>,
+) -> String {
+    match rollback_err {
+        Some(rollback_err) => format!(
+            "failed to activate rebuilt index {} -> {}: {swap_err}; rollback failed: {rollback_err}",
+            rebuilt_dir.display(),
+            source_dir.display()
+        ),
+        None => format!(
+            "failed to activate rebuilt index {} -> {}: {swap_err}; rollback succeeded",
+            rebuilt_dir.display(),
+            source_dir.display()
+        ),
+    }
+}
+
+// NOTE: This relies on current upstream error string content from chroma-index/hnswlib.
+// Keep as a best-effort fallback until typed error variants are exposed.
+fn is_hnsw_label_not_found(error_message: &str) -> bool {
+    error_message.contains("Label not found")
+}
+
+async fn run_rebuild_collection(
+    frontend: &mut Frontend,
+    registry: &Registry,
+    persist_root: &Path,
+    request: GetCollectionRequest,
+    precheck: bool,
+    keep_backup: bool,
+) -> Result<EmbeddedRebuildCollectionResponse, String> {
+    let collection = frontend
+        .get_collection(request)
+        .await
+        .map_err(|e| format!("get collection failed: {e}"))?;
+    let response_identity = RebuildCollectionIdentity {
+        collection_id: collection.collection_id.to_string(),
+        name: collection.name.clone(),
+        tenant_id: collection.tenant.clone(),
+        database_name: collection.database.clone(),
+    };
+
+    let mut sysdb = registry
+        .get::<SysDb>()
+        .map_err(|e| format!("sysdb unavailable: {e}"))?;
+    let local_segment_manager = registry
+        .get::<LocalSegmentManager>()
+        .map_err(|e| format!("local segment manager unavailable: {e}"))?;
+
+    let mut collection_and_segments = sysdb
+        .get_collection_with_segments(None, collection.collection_id)
+        .await
+        .map_err(|e| format!("get collection with segments failed: {e}"))?;
+
+    if collection_and_segments.collection.schema.is_none() {
+        collection_and_segments.collection.schema = Some(
+            Schema::try_from(&collection_and_segments.collection.config)
+                .map_err(|e| format!("failed to reconcile collection schema: {e}"))?,
+        );
+    }
+
+    let hnsw_config = collection_and_segments
+        .collection
+        .schema
+        .as_ref()
+        .map(|schema| {
+            schema.get_internal_hnsw_config_with_legacy_fallback(
+                &collection_and_segments.vector_segment,
+            )
+        })
+        .transpose()
+        .map_err(|e| format!("failed to load hnsw configuration: {e}"))?
+        .flatten()
+        .ok_or_else(|| "collection is missing hnsw configuration".to_string())?;
+
+    let source_dir = persist_root.join(collection_and_segments.vector_segment.id.to_string());
+    let metadata_path = source_dir.join(HNSW_METADATA_FILENAME);
+
+    let mut warnings = Vec::new();
+    if !source_dir.exists() {
+        warnings.push(format!(
+            "vector index directory {} does not exist",
+            source_dir.display()
+        ));
+        return Ok(EmbeddedRebuildCollectionResponse::skipped(
+            &response_identity,
+            precheck,
+            warnings,
+        ));
+    }
+
+    if !metadata_path.exists() {
+        warnings.push(format!(
+            "hnsw metadata file {} does not exist",
+            metadata_path.display()
+        ));
+        return Ok(EmbeddedRebuildCollectionResponse::skipped(
+            &response_identity,
+            precheck,
+            warnings,
+        ));
+    }
+
+    let source_id_map = load_hnsw_id_map(&metadata_path)?;
+    if source_id_map.id_to_label.is_empty() {
+        warnings.push("index metadata contains no records; rebuild skipped".to_string());
+        return Ok(EmbeddedRebuildCollectionResponse::skipped(
+            &response_identity,
+            precheck,
+            warnings,
+        ));
+    }
+
+    let dimensionality = source_id_map
+        .dimensionality
+        .or(collection_and_segments
+            .collection
+            .dimension
+            .map(|d| d as usize))
+        .ok_or_else(|| "collection dimension is unknown; cannot rebuild".to_string())?;
+    let source_dir_str = source_dir.to_str().ok_or_else(|| {
+        format!(
+            "source index path is not valid UTF-8: {}",
+            source_dir.display()
+        )
+    })?;
+
+    let index_config = IndexConfig::new(dimensionality as i32, hnsw_config.space.clone().into());
+    let source_index = HnswIndex::load(
+        source_dir_str,
+        &index_config,
+        hnsw_config.ef_search,
+        IndexUuid(collection_and_segments.vector_segment.id.0),
+    )
+    .map_err(|e| format!("failed to load source hnsw index: {e}"))?;
+
+    let mut rebuild_records: Vec<(String, u32, Option<u32>)> = source_id_map
+        .id_to_label
+        .iter()
+        .map(|(user_id, label)| {
+            (
+                user_id.clone(),
+                *label,
+                source_id_map.id_to_seq_id.get(user_id).copied(),
+            )
+        })
+        .collect();
+    rebuild_records.sort_by_key(|(_, label, _)| *label);
+    let records_scanned = rebuild_records.len() as u64;
+
+    if precheck {
+        return Ok(EmbeddedRebuildCollectionResponse::precheck(
+            &response_identity,
+            records_scanned,
+            warnings,
+        ));
+    }
+
+    let started_at = Instant::now();
+    let rebuilt_dir = build_temp_rebuild_dir(&source_dir)?;
+    fs::create_dir(&rebuilt_dir).map_err(|e| {
+        format!(
+            "failed to create temporary rebuild directory {}: {e}",
+            rebuilt_dir.display()
+        )
+    })?;
+    let mut rebuilt_dir_guard = TempRebuildDirGuard::new(rebuilt_dir.clone());
+
+    let required_capacity =
+        rebuild_required_capacity(rebuild_records.len(), hnsw_config.resize_factor);
+
+    let mut target_config = HnswIndexConfig::new_persistent(
+        hnsw_config.max_neighbors,
+        hnsw_config.ef_construction,
+        hnsw_config.ef_search,
+        &rebuilt_dir,
+    )
+    .map_err(|e| format!("failed to create hnsw target configuration: {e}"))?;
+    target_config.max_elements = required_capacity;
+
+    let mut rebuilt_index = HnswIndex::init(
+        &index_config,
+        Some(&target_config),
+        IndexUuid(collection_and_segments.vector_segment.id.0),
+    )
+    .map_err(|e| format!("failed to initialize rebuilt hnsw index: {e}"))?;
+    if rebuilt_index.capacity() < required_capacity {
+        let next_pow2 = required_capacity.next_power_of_two();
+        rebuilt_index
+            .resize(next_pow2)
+            .map_err(|e| format!("failed to resize rebuilt hnsw index: {e}"))?;
+    }
+
+    let mut rebuilt_id_map = HnswIdMap {
+        dimensionality: Some(dimensionality),
+        total_elements_added: 0,
+        max_seq_id: source_id_map.max_seq_id,
+        id_to_label: HashMap::new(),
+        label_to_id: HashMap::new(),
+        id_to_seq_id: HashMap::new(),
+    };
+
+    let mut vectors_reindexed: u64 = 0;
+    for (user_id, source_label, seq_id) in rebuild_records {
+        let embedding = match source_index.get(source_label as usize) {
+            Ok(embedding) => embedding,
+            Err(e) => {
+                let msg = e.to_string();
+                if is_hnsw_label_not_found(&msg) {
+                    return Err(format!(
+                        "source index is inconsistent: missing embedding for label {source_label} referenced by id {user_id}"
+                    ));
+                }
+                return Err(format!(
+                    "failed to read source embedding for label {source_label}: {e}"
+                ));
+            }
+        };
+        let Some(embedding) = embedding else {
+            return Err(format!(
+                "source index is inconsistent: missing embedding for label {source_label} referenced by id {user_id}"
+            ));
+        };
+
+        let next_label = rebuilt_id_map
+            .total_elements_added
+            .checked_add(1)
+            .ok_or_else(|| "label counter overflow while rebuilding index".to_string())?;
+        rebuilt_index
+            .add(next_label as usize, &embedding)
+            .map_err(|e| format!("failed to add embedding for label {next_label}: {e}"))?;
+
+        rebuilt_id_map
+            .insert_record(user_id.clone(), next_label, seq_id)
+            .map_err(|e| format!("failed to update rebuilt metadata for id {user_id}: {e}"))?;
+        vectors_reindexed = vectors_reindexed.saturating_add(1);
+    }
+
+    rebuilt_index
+        .save()
+        .map_err(|e| format!("failed to persist rebuilt hnsw index: {e}"))?;
+    write_hnsw_id_map(&rebuilt_dir.join(HNSW_METADATA_FILENAME), &rebuilt_id_map)?;
+
+    // Ensure all HNSW file handles are closed before attempting directory swap on Windows.
+    drop(source_index);
+    drop(rebuilt_index);
+
+    local_segment_manager
+        .reset()
+        .await
+        .map_err(|e| format!("failed to reset local segment manager before swap: {e}"))?;
+
+    let swap_result = swap_rebuilt_index_dir(&source_dir, &rebuilt_dir, keep_backup);
+    let (backup_path, mut swap_warnings) = match swap_result {
+        Ok(result) => result,
+        Err(mut e) => {
+            if let Err(reset_err) = local_segment_manager.reset().await {
+                e = format!(
+                    "{e}; failed to reset local segment manager after swap failure: {reset_err}"
+                );
+            }
+            if let Err(cleanup_err) = rebuilt_dir_guard.remove_now() {
+                e = format!("{e}; {cleanup_err}");
+            }
+            return Err(e);
+        }
+    };
+    rebuilt_dir_guard.disarm();
+    warnings.append(&mut swap_warnings);
+
+    local_segment_manager
+        .reset()
+        .await
+        .map_err(|e| format!("failed to reset local segment manager after swap: {e}"))?;
+
+    let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    Ok(EmbeddedRebuildCollectionResponse::rebuilt(
+        &response_identity,
+        records_scanned,
+        vectors_reindexed,
+        duration_ms,
+        backup_path,
+        warnings,
+    ))
 }
 
 fn compaction_target_from_parts(
@@ -1613,8 +2346,8 @@ pub unsafe extern "C" fn chroma_embedded_get_tenant(
         let embedded = &*(handle as *const EmbeddedHandle);
         let mut frontend = match embedded.frontend.lock() {
             Ok(frontend) => frontend,
-            Err(_) => {
-                set_last_error("embedded frontend lock poisoned");
+            Err(e) => {
+                set_last_error(&format!("embedded frontend lock poisoned: {e}"));
                 return ptr::null_mut();
             }
         };
@@ -2815,6 +3548,82 @@ pub unsafe extern "C" fn chroma_embedded_healthcheck(handle: *mut c_void) -> *mu
     })
 }
 
+/// Rebuild vector index artifacts for a single collection in embedded mode.
+/// Returns a JSON-serialized rebuild response on success, NULL on failure.
+///
+/// # Safety
+/// `handle` must be a valid embedded handle.
+/// `request_json` must be a valid null-terminated JSON string.
+/// Returned pointer must be freed with `chroma_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_rebuild_collection(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
+
+        let payload: EmbeddedRebuildCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+        let parts = match payload.into_request() {
+            Ok(parts) => parts,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
+
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(e) => {
+                set_last_error(&format!("embedded frontend lock poisoned: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        let persist_path = match embedded.persist_path.as_c_str().to_str() {
+            Ok(path) => PathBuf::from(path),
+            Err(e) => {
+                set_last_error(&format!("persist path is not valid UTF-8: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        let response = match embedded.runtime.block_on(async {
+            run_rebuild_collection(
+                &mut frontend,
+                &embedded.registry,
+                &persist_path,
+                parts.request,
+                parts.precheck,
+                parts.keep_backup,
+            )
+            .await
+        }) {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("rebuild collection failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr_with_context(
+            &response,
+            "rebuild collection completed but failed to serialize response",
+        )
+    })
+}
+
 /// Run explicit compaction for a single collection in embedded mode.
 /// Returns a JSON-serialized compaction response on success, NULL on failure.
 ///
@@ -3097,6 +3906,55 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use serde_json::json;
+    use tempfile::tempdir;
+
+    struct ScriptedSwapFsOps {
+        rename_results: std::sync::Mutex<Vec<std::io::Result<()>>>,
+        remove_results: std::sync::Mutex<Vec<std::io::Result<()>>>,
+        rename_calls: std::sync::Mutex<Vec<(PathBuf, PathBuf)>>,
+    }
+
+    impl ScriptedSwapFsOps {
+        fn new(
+            rename_results: Vec<std::io::Result<()>>,
+            remove_results: Vec<std::io::Result<()>>,
+        ) -> Self {
+            Self {
+                rename_results: std::sync::Mutex::new(rename_results),
+                remove_results: std::sync::Mutex::new(remove_results),
+                rename_calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl SwapFsOps for ScriptedSwapFsOps {
+        fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+            self.rename_calls
+                .lock()
+                .expect("rename_calls lock should be available")
+                .push((from.to_path_buf(), to.to_path_buf()));
+
+            let mut results = self
+                .rename_results
+                .lock()
+                .expect("rename_results lock should be available");
+            if results.is_empty() {
+                return Ok(());
+            }
+            results.remove(0)
+        }
+
+        fn remove_dir_all(&self, _path: &Path) -> std::io::Result<()> {
+            let mut results = self
+                .remove_results
+                .lock()
+                .expect("remove_results lock should be available");
+            if results.is_empty() {
+                return Ok(());
+            }
+            results.remove(0)
+        }
+    }
 
     fn last_error_string() -> Option<String> {
         LAST_ERROR
@@ -3331,6 +4189,313 @@ allow_reset: true
 
         let request = payload.into_request().expect("request should build");
         assert!(request.metadatas.is_some());
+    }
+
+    #[test]
+    fn test_rebuild_payload_defaults() {
+        let payload: EmbeddedRebuildCollectionPayload = serde_json::from_value(json!({
+            "name": "docs"
+        }))
+        .expect("payload should deserialize");
+
+        let parts = payload.into_request().expect("request should build");
+        assert_eq!(parts.request.collection_name, "docs");
+        assert_eq!(parts.request.tenant_id, DEFAULT_TENANT);
+        assert_eq!(parts.request.database_name.as_ref(), DEFAULT_DATABASE);
+        assert!(!parts.precheck);
+        assert!(parts.keep_backup);
+    }
+
+    #[test]
+    fn test_rebuild_payload_precheck_and_keep_backup_false() {
+        let payload: EmbeddedRebuildCollectionPayload = serde_json::from_value(json!({
+            "name": "docs",
+            "precheck": true,
+            "keep_backup": false,
+            "database_name": "prod"
+        }))
+        .expect("payload should deserialize");
+
+        let parts = payload.into_request().expect("request should build");
+        assert!(parts.precheck);
+        assert!(!parts.keep_backup);
+    }
+
+    #[test]
+    fn test_rebuild_payload_rejects_short_database_name() {
+        let payload: EmbeddedRebuildCollectionPayload = serde_json::from_value(json!({
+            "name": "docs",
+            "database_name": "ab"
+        }))
+        .expect("payload should deserialize");
+
+        match payload.into_request() {
+            Ok(_) => panic!("payload should fail for invalid database"),
+            Err(err) => assert!(err.contains("database_name must be at least 3 characters")),
+        }
+    }
+
+    #[test]
+    fn test_hnsw_id_map_round_trip_validates() {
+        let temp = tempdir().expect("tempdir should be created");
+        let metadata_path = temp.path().join(HNSW_METADATA_FILENAME);
+
+        let mut id_map = HnswIdMap {
+            dimensionality: Some(3),
+            total_elements_added: 0,
+            max_seq_id: Some(22),
+            id_to_label: HashMap::new(),
+            label_to_id: HashMap::new(),
+            id_to_seq_id: HashMap::new(),
+        };
+        id_map
+            .insert_record("doc-1".to_string(), 1, Some(11))
+            .expect("first insert should succeed");
+        id_map
+            .insert_record("doc-2".to_string(), 2, None)
+            .expect("second insert should succeed");
+
+        write_hnsw_id_map(&metadata_path, &id_map).expect("metadata write should succeed");
+        let decoded = load_hnsw_id_map(&metadata_path).expect("metadata load should succeed");
+
+        assert_eq!(decoded.dimensionality, Some(3));
+        assert_eq!(decoded.total_elements_added, 2);
+        assert_eq!(decoded.max_seq_id, Some(22));
+        assert_eq!(decoded.id_to_label.get("doc-1"), Some(&1));
+        assert_eq!(decoded.id_to_label.get("doc-2"), Some(&2));
+        assert_eq!(
+            decoded.label_to_id.get(&1).map(String::as_str),
+            Some("doc-1")
+        );
+        assert_eq!(
+            decoded.label_to_id.get(&2).map(String::as_str),
+            Some("doc-2")
+        );
+        assert_eq!(decoded.id_to_seq_id.get("doc-1"), Some(&11));
+    }
+
+    #[test]
+    fn test_load_hnsw_id_map_rejects_non_bijective_mapping() {
+        let temp = tempdir().expect("tempdir should be created");
+        let metadata_path = temp.path().join(HNSW_METADATA_FILENAME);
+
+        let mut id_to_label = HashMap::new();
+        id_to_label.insert("doc-1".to_string(), 1);
+        let mut label_to_id = HashMap::new();
+        label_to_id.insert(2, "doc-1".to_string());
+        let invalid = HnswIdMap {
+            dimensionality: Some(3),
+            total_elements_added: 2,
+            max_seq_id: None,
+            id_to_label,
+            label_to_id,
+            id_to_seq_id: HashMap::new(),
+        };
+
+        write_hnsw_id_map(&metadata_path, &invalid).expect("metadata write should succeed");
+        let err =
+            load_hnsw_id_map(&metadata_path).expect_err("invalid metadata should be rejected");
+        assert!(err.contains("invalid hnsw metadata"));
+        assert!(err.contains("non-bijective") || err.contains("missing reverse mapping"));
+    }
+
+    #[test]
+    fn test_load_hnsw_id_map_rejects_seq_id_for_unknown_id() {
+        let temp = tempdir().expect("tempdir should be created");
+        let metadata_path = temp.path().join(HNSW_METADATA_FILENAME);
+
+        let mut id_to_label = HashMap::new();
+        id_to_label.insert("doc-1".to_string(), 1);
+        let mut label_to_id = HashMap::new();
+        label_to_id.insert(1, "doc-1".to_string());
+        let mut id_to_seq_id = HashMap::new();
+        id_to_seq_id.insert("doc-2".to_string(), 22);
+        let invalid = HnswIdMap {
+            dimensionality: Some(3),
+            total_elements_added: 1,
+            max_seq_id: Some(22),
+            id_to_label,
+            label_to_id,
+            id_to_seq_id,
+        };
+
+        write_hnsw_id_map(&metadata_path, &invalid).expect("metadata write should succeed");
+        let err =
+            load_hnsw_id_map(&metadata_path).expect_err("invalid metadata should be rejected");
+        assert!(err.contains("invalid hnsw metadata"));
+        assert!(err.contains("seq-id mapping references unknown id"));
+    }
+
+    #[test]
+    fn test_load_hnsw_id_map_rejects_max_seq_id_below_observed() {
+        let temp = tempdir().expect("tempdir should be created");
+        let metadata_path = temp.path().join(HNSW_METADATA_FILENAME);
+
+        let mut id_to_label = HashMap::new();
+        id_to_label.insert("doc-1".to_string(), 1);
+        let mut label_to_id = HashMap::new();
+        label_to_id.insert(1, "doc-1".to_string());
+        let mut id_to_seq_id = HashMap::new();
+        id_to_seq_id.insert("doc-1".to_string(), 22);
+        let invalid = HnswIdMap {
+            dimensionality: Some(3),
+            total_elements_added: 1,
+            max_seq_id: Some(21),
+            id_to_label,
+            label_to_id,
+            id_to_seq_id,
+        };
+
+        write_hnsw_id_map(&metadata_path, &invalid).expect("metadata write should succeed");
+        let err =
+            load_hnsw_id_map(&metadata_path).expect_err("invalid metadata should be rejected");
+        assert!(err.contains("invalid hnsw metadata"));
+        assert!(err.contains("max_seq_id"));
+    }
+
+    #[test]
+    fn test_temp_rebuild_dir_guard_removes_directory_on_drop() {
+        let temp = tempdir().expect("tempdir should be created");
+        let rebuilt_path = temp.path().join("tmp.rebuild.guard");
+        fs::create_dir_all(&rebuilt_path).expect("rebuilt path should be created");
+        fs::write(rebuilt_path.join("segment.bin"), b"test")
+            .expect("rebuilt artifact should be written");
+
+        {
+            let _guard = TempRebuildDirGuard::new(rebuilt_path.clone());
+        }
+
+        assert!(
+            !rebuilt_path.exists(),
+            "temporary rebuilt directory should be removed by drop guard"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_required_capacity_uses_resize_factor_headroom() {
+        let target = rebuild_required_capacity(10_000, 1.2);
+        assert_eq!(target, 12_000);
+    }
+
+    #[test]
+    fn test_rebuild_required_capacity_enforces_minimums() {
+        let low_scale = rebuild_required_capacity(80, 0.5);
+        assert_eq!(low_scale, 100);
+
+        let needs_plus_one = rebuild_required_capacity(220, 1.0);
+        assert_eq!(needs_plus_one, 221);
+    }
+
+    #[test]
+    fn test_swap_rebuilt_index_dir_reports_rollback_success_context() {
+        let temp = tempdir().expect("tempdir should be created");
+        let source = temp.path().join("source");
+        fs::create_dir(&source).expect("source dir should be created");
+
+        let rebuilt_missing = temp.path().join("missing_rebuild");
+        let err = swap_rebuilt_index_dir(&source, &rebuilt_missing, true)
+            .expect_err("swap should fail when rebuilt path is missing");
+
+        assert!(err.contains("failed to activate rebuilt index"));
+        assert!(err.contains("rollback succeeded"));
+    }
+
+    #[test]
+    fn test_swap_rebuilt_index_dir_with_ops_rolls_back_on_activation_failure() {
+        let source = Path::new("/tmp/source");
+        let rebuilt = Path::new("/tmp/rebuilt");
+        let ops = ScriptedSwapFsOps::new(
+            vec![
+                Ok(()),
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "activation failed",
+                )),
+                Ok(()),
+            ],
+            Vec::new(),
+        );
+
+        let err = swap_rebuilt_index_dir_with_ops(
+            source,
+            rebuilt,
+            true,
+            "fixed_suffix".to_string(),
+            &ops,
+        )
+        .expect_err("swap should fail and rollback should be attempted");
+
+        assert!(err.contains("rollback succeeded"));
+
+        let calls = ops
+            .rename_calls
+            .lock()
+            .expect("rename_calls lock should be available");
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0].0, source);
+        assert!(calls[0]
+            .1
+            .to_string_lossy()
+            .contains("source_backup_fixed_suffix"));
+        assert_eq!(calls[1].0, rebuilt);
+        assert_eq!(calls[1].1, source);
+        assert_eq!(calls[2].0, calls[0].1);
+        assert_eq!(calls[2].1, source);
+    }
+
+    #[test]
+    fn test_swap_rebuilt_index_dir_with_ops_reports_rollback_failure() {
+        let source = Path::new("/tmp/source");
+        let rebuilt = Path::new("/tmp/rebuilt");
+        let ops = ScriptedSwapFsOps::new(
+            vec![
+                Ok(()),
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "activation failed",
+                )),
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "rollback denied",
+                )),
+            ],
+            Vec::new(),
+        );
+
+        let err = swap_rebuilt_index_dir_with_ops(
+            source,
+            rebuilt,
+            false,
+            "fixed_suffix".to_string(),
+            &ops,
+        )
+        .expect_err("swap should fail and rollback failure should be reported");
+
+        assert!(err.contains("rollback failed"));
+
+        let calls = ops
+            .rename_calls
+            .lock()
+            .expect("rename_calls lock should be available");
+        assert_eq!(calls.len(), 3);
+        assert!(calls[0]
+            .1
+            .to_string_lossy()
+            .contains("source_rollback_fixed_suffix"));
+    }
+
+    #[test]
+    fn test_format_swap_activation_error_includes_rollback_failure() {
+        let source = Path::new("/tmp/source");
+        let rebuilt = Path::new("/tmp/rebuilt");
+        let swap_err = std::io::Error::new(std::io::ErrorKind::Other, "swap failed");
+        let rollback_err =
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "rollback failed");
+
+        let message = format_swap_activation_error(rebuilt, source, &swap_err, Some(&rollback_err));
+        assert!(message.contains("failed to activate rebuilt index"));
+        assert!(message.contains("rollback failed"));
+        assert!(message.contains("swap failed"));
     }
 
     #[test]

@@ -1778,7 +1778,10 @@ version = "0.1.0"
 dependencies = [
  "chroma-config",
  "chroma-frontend",
+ "chroma-index",
  "chroma-log",
+ "chroma-segment",
+ "chroma-sysdb",
  "chroma-system",
  "chroma-types",
  "criterion 0.5.1",
@@ -1786,6 +1789,7 @@ dependencies = [
  "libc",
  "proptest",
  "serde",
+ "serde-pickle",
  "serde_json",
  "tempfile",
  "tokio",

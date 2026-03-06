@@ -56,6 +56,7 @@ var (
 	chromaEmbeddedQuery             func(uintptr, *byte) *byte
 	chromaEmbeddedIndexingStatus    func(uintptr, *byte) *byte
 	chromaEmbeddedHealthcheck       func(uintptr) *byte
+	chromaEmbeddedRebuildCollection func(uintptr, *byte) *byte
 	chromaEmbeddedCompactCollection func(uintptr, *byte) *byte
 	chromaEmbeddedCompactAll        func(uintptr, *byte) *byte
 	chromaStringFree                func(*byte)
@@ -120,6 +121,7 @@ func registerFunctions() error {
 		{&chromaEmbeddedQuery, "chroma_embedded_query"},
 		{&chromaEmbeddedIndexingStatus, "chroma_embedded_indexing_status"},
 		{&chromaEmbeddedHealthcheck, "chroma_embedded_healthcheck"},
+		{&chromaEmbeddedRebuildCollection, "chroma_embedded_rebuild_collection"},
 		{&chromaEmbeddedCompactCollection, "chroma_embedded_compact_collection"},
 		{&chromaEmbeddedCompactAll, "chroma_embedded_compact_all"},
 		{&chromaStringFree, "chroma_string_free"},

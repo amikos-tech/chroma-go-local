@@ -33,6 +33,7 @@ Notes:
 ## Code Map
 
 - `chroma.go`: server lifecycle and public Go API
+- `rebuild.go`: collection rebuild maintenance API and server orchestration
 - `config.go`: server config and builder options (`With...`)
 - `library.go`: dynamic library loading and symbol binding via `purego`
 - `errors.go`: error handling types and codes
