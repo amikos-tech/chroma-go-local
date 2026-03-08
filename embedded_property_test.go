@@ -306,6 +306,23 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		gen.AnyString(),
 	))
 
+	properties.Property("DeleteRecords rejects limit without where/where_document", prop.ForAll(
+		func(collectionID string, limit uint8) bool {
+			limit32 := uint32(limit)
+			err := fakeEmbedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+				CollectionID: collectionID,
+				IDs:          []string{"id-a"},
+				Limit:        &limit32,
+			})
+			if strings.TrimSpace(collectionID) == "" {
+				return err != nil && strings.Contains(err.Error(), "collection_id is required")
+			}
+			return err != nil && strings.Contains(err.Error(), "limit requires where or where_document")
+		},
+		gen.AnyString(),
+		gen.UInt8(),
+	))
+
 	properties.TestingRun(t)
 }
 

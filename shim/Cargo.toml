@@ -16,15 +16,15 @@ serde_json = "1"
 serde-pickle = "1"
 
 # Chroma dependencies from official repo
-chroma-frontend = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-config = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-system = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-types = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-log = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-index = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-segment = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-sysdb = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
-chroma-sqlite = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.2" }
+chroma-frontend = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-config = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-system = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-types = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-log = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-index = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-segment = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-sysdb = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
+chroma-sqlite = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.3" }
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
 
 [profile.release]

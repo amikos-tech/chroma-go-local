@@ -379,6 +379,7 @@ _ = copyCol
 - `(*Embedded).UpdateRecords(request EmbeddedUpdateRecordsRequest) error`
 - `(*Embedded).UpsertRecords(request EmbeddedUpsertRecordsRequest) error`
 - `(*Embedded).DeleteRecords(request EmbeddedDeleteRecordsRequest) error`
+- `(*Embedded).DeleteRecordsWithResponse(request EmbeddedDeleteRecordsRequest) (*EmbeddedDeleteRecordsResponse, error)`
 
 ```go
 _ = embedded.Add(chroma.EmbeddedAddRequest{
@@ -458,11 +459,28 @@ _ = embedded.DeleteRecords(chroma.EmbeddedDeleteRecordsRequest{
 })
 ```
 
+Filtered delete with limit example:
+
+```go
+limit := uint32(10)
+resp, _ := embedded.DeleteRecordsWithResponse(chroma.EmbeddedDeleteRecordsRequest{
+    CollectionID: col.ID,
+    DatabaseName: "my_db",
+    Where: map[string]any{
+        "status": "stale",
+    },
+    Limit: &limit,
+})
+fmt.Println(resp.Deleted)
+```
+
 `DeleteRecords` requires at least one of:
 
 - `IDs`
 - `Where`
 - `WhereDocument`
+
+If `Limit` is set, `Where` or `WhereDocument` must also be set.
 
 ## 5. Not Yet Exposed in This Go Surface
 

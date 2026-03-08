@@ -320,8 +320,14 @@ type EmbeddedDeleteRecordsRequest struct {
 	IDs           []string       `json:"ids,omitempty"`
 	Where         map[string]any `json:"where,omitempty"`
 	WhereDocument map[string]any `json:"where_document,omitempty"`
+	Limit         *uint32        `json:"limit,omitempty"`
 	TenantID      string         `json:"tenant_id,omitempty"`
 	DatabaseName  string         `json:"database_name,omitempty"`
+}
+
+// EmbeddedDeleteRecordsResponse reports how many records were deleted.
+type EmbeddedDeleteRecordsResponse struct {
+	Deleted uint32 `json:"deleted"`
 }
 
 // EmbeddedIndexingStatusRequest gets indexing progress for a collection.
@@ -1129,10 +1135,30 @@ func (e *Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error {
 	return nil
 }
 
+func validateDeleteRecordsRequest(request EmbeddedDeleteRecordsRequest) error {
+	if strings.TrimSpace(request.CollectionID) == "" {
+		return errors.New("collection_id is required")
+	}
+	if len(request.IDs) == 0 && len(request.Where) == 0 && len(request.WhereDocument) == 0 {
+		return errors.New("at least one of ids, where, or where_document must be provided")
+	}
+	if request.Limit != nil && len(request.Where) == 0 && len(request.WhereDocument) == 0 {
+		return errors.New("limit requires where or where_document")
+	}
+	return nil
+}
+
 // DeleteRecords deletes records by ids and/or filters.
+// The deleted-count response is discarded to preserve the original API.
 func (e *Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error {
+	_, err := e.DeleteRecordsWithResponse(request)
+	return err
+}
+
+// DeleteRecordsWithResponse deletes records by ids and/or filters and returns the delete count.
+func (e *Embedded) DeleteRecordsWithResponse(request EmbeddedDeleteRecordsRequest) (*EmbeddedDeleteRecordsResponse, error) {
 	if e == nil {
-		return ErrEmbeddedNotStarted
+		return nil, ErrEmbeddedNotStarted
 	}
 
 	ffiMu.Lock()
@@ -1140,25 +1166,28 @@ func (e *Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error {
 	defer runtime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
-		return ErrEmbeddedNotStarted
+		return nil, ErrEmbeddedNotStarted
 	}
-	if strings.TrimSpace(request.CollectionID) == "" {
-		return errors.New("collection_id is required")
-	}
-	if len(request.IDs) == 0 && len(request.Where) == 0 && len(request.WhereDocument) == 0 {
-		return errors.New("at least one of ids, where, or where_document must be provided")
+	if err := validateDeleteRecordsRequest(request); err != nil {
+		return nil, err
 	}
 
 	requestBytes, err := marshalRequestJSON(request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	rc := chromaEmbeddedDeleteRecords(handle, &requestBytes[0])
-	if rc != Success {
-		return errorFromCode(rc, getLastErrorUnlocked())
+	respPtr := chromaEmbeddedDeleteRecordsWithResponse(handle, &requestBytes[0])
+	if respPtr == nil {
+		return nil, errors.Wrap(ErrNullPointer, getLastErrorUnlocked())
 	}
-	return nil
+	defer chromaStringFree(respPtr)
+
+	var response EmbeddedDeleteRecordsResponse
+	if err := json.Unmarshal([]byte(goStringFromPtr(respPtr)), &response); err != nil {
+		return nil, errors.Wrap(err, "failed to decode delete records response")
+	}
+	return &response, nil
 }
 
 // CreateCollection creates a collection and returns a compact response object.

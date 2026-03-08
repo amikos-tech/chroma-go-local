@@ -19,51 +19,52 @@ var (
 	ffiMu     sync.Mutex
 
 	// FFI functions
-	chromaServerStart                func(*byte) uintptr
-	chromaServerStartFromString      func(*byte) uintptr
-	chromaServerPort                 func(uintptr) int32
-	chromaServerAddress              func(uintptr) *byte
-	chromaServerPersistPath          func(uintptr) *byte
-	chromaServerStop                 func(uintptr) int32
-	chromaServerFree                 func(uintptr)
-	chromaEmbeddedStart              func(*byte) uintptr
-	chromaEmbeddedStartFromString    func(*byte) uintptr
-	chromaEmbeddedPersistPath        func(uintptr) *byte
-	chromaEmbeddedFree               func(uintptr)
-	chromaEmbeddedHeartbeat          func(uintptr, *uint64) int32
-	chromaEmbeddedGetMaxBatchSize    func(uintptr, *uint32) int32
-	chromaEmbeddedCreateTenant       func(uintptr, *byte) int32
-	chromaEmbeddedGetTenant          func(uintptr, *byte) *byte
-	chromaEmbeddedUpdateTenant       func(uintptr, *byte) int32
-	chromaEmbeddedReset              func(uintptr) int32
-	chromaEmbeddedCreateDatabase     func(uintptr, *byte) int32
-	chromaEmbeddedListDatabases      func(uintptr, *byte) *byte
-	chromaEmbeddedGetDatabase        func(uintptr, *byte) *byte
-	chromaEmbeddedDeleteDatabase     func(uintptr, *byte) int32
-	chromaEmbeddedListCollections    func(uintptr, *byte) *byte
-	chromaEmbeddedGetCollection      func(uintptr, *byte) *byte
-	chromaEmbeddedCountCollections   func(uintptr, *byte, *uint32) int32
-	chromaEmbeddedUpdateCollection   func(uintptr, *byte) int32
-	chromaEmbeddedDeleteCollection   func(uintptr, *byte) int32
-	chromaEmbeddedForkCollection     func(uintptr, *byte) *byte
-	chromaEmbeddedCount              func(uintptr, *byte, *uint32) int32
-	chromaEmbeddedGet                func(uintptr, *byte) *byte
-	chromaEmbeddedUpdate             func(uintptr, *byte) int32
-	chromaEmbeddedUpsert             func(uintptr, *byte) int32
-	chromaEmbeddedDeleteRecords      func(uintptr, *byte) int32
-	chromaEmbeddedCreateCollection   func(uintptr, *byte) *byte
-	chromaEmbeddedAdd                func(uintptr, *byte) int32
-	chromaEmbeddedQuery              func(uintptr, *byte) *byte
-	chromaEmbeddedIndexingStatus     func(uintptr, *byte) *byte
-	chromaEmbeddedHealthcheck        func(uintptr) *byte
-	chromaEmbeddedRebuildCollection  func(uintptr, *byte) *byte
-	chromaEmbeddedCompactCollection  func(uintptr, *byte) *byte
-	chromaEmbeddedCompactAll         func(uintptr, *byte) *byte
-	chromaEmbeddedPruneWALCollection func(uintptr, *byte) *byte
-	chromaEmbeddedPruneWALAll        func(uintptr, *byte) *byte
-	chromaStringFree                 func(*byte)
-	chromaGetLastError               func() *byte
-	chromaVersion                    func() *byte
+	chromaServerStart                       func(*byte) uintptr
+	chromaServerStartFromString             func(*byte) uintptr
+	chromaServerPort                        func(uintptr) int32
+	chromaServerAddress                     func(uintptr) *byte
+	chromaServerPersistPath                 func(uintptr) *byte
+	chromaServerStop                        func(uintptr) int32
+	chromaServerFree                        func(uintptr)
+	chromaEmbeddedStart                     func(*byte) uintptr
+	chromaEmbeddedStartFromString           func(*byte) uintptr
+	chromaEmbeddedPersistPath               func(uintptr) *byte
+	chromaEmbeddedFree                      func(uintptr)
+	chromaEmbeddedHeartbeat                 func(uintptr, *uint64) int32
+	chromaEmbeddedGetMaxBatchSize           func(uintptr, *uint32) int32
+	chromaEmbeddedCreateTenant              func(uintptr, *byte) int32
+	chromaEmbeddedGetTenant                 func(uintptr, *byte) *byte
+	chromaEmbeddedUpdateTenant              func(uintptr, *byte) int32
+	chromaEmbeddedReset                     func(uintptr) int32
+	chromaEmbeddedCreateDatabase            func(uintptr, *byte) int32
+	chromaEmbeddedListDatabases             func(uintptr, *byte) *byte
+	chromaEmbeddedGetDatabase               func(uintptr, *byte) *byte
+	chromaEmbeddedDeleteDatabase            func(uintptr, *byte) int32
+	chromaEmbeddedListCollections           func(uintptr, *byte) *byte
+	chromaEmbeddedGetCollection             func(uintptr, *byte) *byte
+	chromaEmbeddedCountCollections          func(uintptr, *byte, *uint32) int32
+	chromaEmbeddedUpdateCollection          func(uintptr, *byte) int32
+	chromaEmbeddedDeleteCollection          func(uintptr, *byte) int32
+	chromaEmbeddedForkCollection            func(uintptr, *byte) *byte
+	chromaEmbeddedCount                     func(uintptr, *byte, *uint32) int32
+	chromaEmbeddedGet                       func(uintptr, *byte) *byte
+	chromaEmbeddedUpdate                    func(uintptr, *byte) int32
+	chromaEmbeddedUpsert                    func(uintptr, *byte) int32
+	chromaEmbeddedDeleteRecords             func(uintptr, *byte) int32
+	chromaEmbeddedDeleteRecordsWithResponse func(uintptr, *byte) *byte
+	chromaEmbeddedCreateCollection          func(uintptr, *byte) *byte
+	chromaEmbeddedAdd                       func(uintptr, *byte) int32
+	chromaEmbeddedQuery                     func(uintptr, *byte) *byte
+	chromaEmbeddedIndexingStatus            func(uintptr, *byte) *byte
+	chromaEmbeddedHealthcheck               func(uintptr) *byte
+	chromaEmbeddedRebuildCollection         func(uintptr, *byte) *byte
+	chromaEmbeddedCompactCollection         func(uintptr, *byte) *byte
+	chromaEmbeddedCompactAll                func(uintptr, *byte) *byte
+	chromaEmbeddedPruneWALCollection        func(uintptr, *byte) *byte
+	chromaEmbeddedPruneWALAll               func(uintptr, *byte) *byte
+	chromaStringFree                        func(*byte)
+	chromaGetLastError                      func() *byte
+	chromaVersion                           func() *byte
 )
 
 const maxCStringLen = 1 << 20
@@ -118,6 +119,7 @@ func registerFunctions() error {
 		{&chromaEmbeddedUpdate, "chroma_embedded_update"},
 		{&chromaEmbeddedUpsert, "chroma_embedded_upsert"},
 		{&chromaEmbeddedDeleteRecords, "chroma_embedded_delete_records"},
+		{&chromaEmbeddedDeleteRecordsWithResponse, "chroma_embedded_delete_records_with_response"},
 		{&chromaEmbeddedCreateCollection, "chroma_embedded_create_collection"},
 		{&chromaEmbeddedAdd, "chroma_embedded_add"},
 		{&chromaEmbeddedQuery, "chroma_embedded_query"},
