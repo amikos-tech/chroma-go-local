@@ -376,6 +376,8 @@ For the Java scaffold surface, see [`JAVA_API_SURFACE.md`](JAVA_API_SURFACE.md).
 | `(*Server) RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)` | Rebuild persisted vector index artifacts for one collection (server restarts after operation). |
 | `(*Server) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` | Run explicit compaction for one collection (server restarts after operation). Scope can include both `TenantID` and `DatabaseName` together. |
 | `(*Server) CompactAll(request CompactAllRequest) (*CompactionResult, error)` | Run explicit compaction for all collections (server restarts after operation). Scope can include both `TenantID` and `DatabaseName` together. Per-collection failures are reported in `result.Collections[i].Error`. |
+| `(*Server) PruneCollectionWAL(name string, options ...WALPruneOption) (*WALPruneResult, error)` | Run explicit WAL prune for one collection (server restarts after operation). Scope can include `WithWALPruneTenantID(...)` + `WithWALPruneDatabaseName(...)`. |
+| `(*Server) PruneAllWAL(options ...WALPruneOption) (*WALPruneResult, error)` | Run explicit WAL prune for all collections in scope (server restarts after operation). Per-collection failures are reported in `result.Collections[i].Error`. |
 | `NewEmbedded(opts ...EmbeddedOption) (*Embedded, error)` | Start in-process embedded mode. |
 | `StartEmbedded(config StartEmbeddedConfig) (*Embedded, error)` | Start embedded mode from YAML config. |
 | `(*Embedded) Heartbeat() (uint64, error)` | Read in-process heartbeat nanoseconds. |
@@ -406,6 +408,8 @@ For the Java scaffold surface, see [`JAVA_API_SURFACE.md`](JAVA_API_SURFACE.md).
 | `(*Embedded) RebuildCollection(name string, options ...RebuildCollectionOption) (*RebuildCollectionResult, error)` | Rebuild persisted vector index artifacts for one collection. |
 | `(*Embedded) CompactCollection(request CompactCollectionRequest) (*CompactionResult, error)` | Run explicit compaction for one collection. Scope can include both `TenantID` and `DatabaseName` together. |
 | `(*Embedded) CompactAll(request CompactAllRequest) (*CompactionResult, error)` | Run explicit compaction for all collections. Scope can include both `TenantID` and `DatabaseName` together. Per-collection failures are reported in `result.Collections[i].Error`. |
+| `(*Embedded) PruneCollectionWAL(name string, options ...WALPruneOption) (*WALPruneResult, error)` | Run explicit WAL prune for one collection. Scope can include `WithWALPruneTenantID(...)` + `WithWALPruneDatabaseName(...)`. |
+| `(*Embedded) PruneAllWAL(options ...WALPruneOption) (*WALPruneResult, error)` | Run explicit WAL prune for all collections in scope. Per-collection failures are reported in `result.Collections[i].Error`. |
 | `(*Embedded) Reset() error` | Reset local state when enabled. |
 | `(*Embedded) Backup(options ...BackupOption) (*BackupManifest, error)` | Snapshot persisted data with optional reopen. |
 | `(*Embedded) Close() error` | Free embedded resources. |
@@ -443,13 +447,39 @@ if err != nil {
 fmt.Println(result.CollectionCount)
 ```
 
-### Rebuild vs Compaction vs Vacuum
+### WAL Prune Semantics
+
+`PruneCollectionWAL` and `PruneAllWAL` prune only safety-eligible WAL rows (below the minimum segment max-seq boundary for each collection).
+
+Operational notes:
+- Scope is controlled with `WithWALPruneTenantID(...)` and `WithWALPruneDatabaseName(...)` (same defaults as other maintenance APIs when omitted).
+- Dry-run mode (`WithWALPruneDryRun()`) reports candidates/projections without mutating rows.
+- Mutating prune calls require at least one retention policy:
+  - `WithWALPruneMaxAge(duration)`
+  - `WithWALPruneMaxBytes(bytes)` (`0` means "prune all safety-eligible candidates" for this policy)
+  - `WithWALPruneWatermark(highBytes, lowBytes)`
+- Multiple policies combine with AND semantics (a row must satisfy all configured strategies).
+- `PruneAllWAL` continues across collections and reports per-collection failures in `result.Collections[i].Error`.
+- Optional `WithWALPruneVacuum()` runs SQLite `VACUUM` once after prune execution (skipped in dry-run mode).
+- `result.Warning` is set when prune succeeds but a follow-up vacuum step fails.
+- For max-age policy, rows with NULL/invalid `created_at` are treated as UNIX epoch (`0`) and therefore considered oldest.
+- In dry-run mode, `pruned_*` fields are projected counts/bytes rather than applied mutations.
+- The shim logic adapts core flow from Chroma's Rust CLI vacuum command (migration + purge + optional vacuum), but does not depend on the CLI crate.
+
+Recommended ordering for heavy maintenance:
+- run `CompactCollection`/`CompactAll` first when backfill is needed
+- run WAL prune with explicit policy controls
+- optionally run vacuum when disk-file shrink is desired
+- use rebuild only for index repair scenarios
+
+### Rebuild vs WAL Prune vs Compaction vs Vacuum
 
 `RebuildCollection` is a low-level maintenance primitive for rebuilding one collection's persisted vector index artifacts.
 
 - Use `RebuildCollection` when index artifacts are inconsistent/corrupted or you need a full index rewrite for a specific collection.
 - Use `CompactCollection`/`CompactAll` for WAL backfill + purge maintenance; compaction is not a full HNSW rebuild.
-- Vacuum is a SQLite storage concern and is not currently exposed as a first-class Go API in this wrapper.
+- Use `PruneCollectionWAL`/`PruneAllWAL` for explicit policy-driven WAL retention pruning.
+- Vacuum can be requested through WAL prune (`WithWALPruneVacuum()`) when physical file shrink is needed.
 
 Rebuild options:
 

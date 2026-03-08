@@ -16,8 +16,12 @@ use chroma_frontend::config::FrontendServerConfig;
 use chroma_frontend::frontend_service_entrypoint_with_config_system_registry;
 use chroma_frontend::Frontend;
 use chroma_index::{HnswIndex, HnswIndexConfig, IndexConfig, IndexUuid};
-use chroma_log::{BackfillMessage, LocalCompactionManager, PurgeLogsMessage};
+use chroma_log::sqlite_log::{
+    legacy_embeddings_queue_config_default_kind, LegacyEmbeddingsQueueConfig,
+};
+use chroma_log::{BackfillMessage, LocalCompactionManager, Log, PurgeLogsMessage};
 use chroma_segment::local_segment_manager::LocalSegmentManager;
+use chroma_sqlite::db::SqliteDb;
 use chroma_sysdb::SysDb;
 use chroma_system::{ComponentHandle, System};
 use chroma_types::{
@@ -35,6 +39,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_pickle::{DeOptions, SerOptions};
+use sqlx::Row;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
@@ -423,6 +428,196 @@ struct EmbeddedCompactionResponse {
 
 #[derive(Debug, Clone, Copy)]
 enum CompactionFailureMode {
+    FailFast,
+    ContinueOnError,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct WalPrunePolicyPayload {
+    #[serde(default)]
+    max_age_seconds: Option<u64>,
+    #[serde(default)]
+    max_bytes: Option<u64>,
+    #[serde(default)]
+    watermark_high_bytes: Option<u64>,
+    #[serde(default)]
+    watermark_low_bytes: Option<u64>,
+}
+
+impl WalPrunePolicyPayload {
+    fn has_policy(&self) -> bool {
+        self.max_age_seconds.is_some()
+            || self.max_bytes.is_some()
+            || (self.watermark_high_bytes.is_some() && self.watermark_low_bytes.is_some())
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if let Some(max_age_seconds) = self.max_age_seconds {
+            if max_age_seconds == 0 {
+                return Err("max_age_seconds must be greater than 0".to_string());
+            }
+        }
+        if self.watermark_high_bytes.is_some() != self.watermark_low_bytes.is_some() {
+            return Err("wal prune watermark requires both high and low bytes".to_string());
+        }
+        if let (Some(high), Some(low)) = (self.watermark_high_bytes, self.watermark_low_bytes) {
+            if low > high {
+                return Err(
+                    "wal prune watermark low bytes must be less than or equal to high bytes"
+                        .to_string(),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct WalPruneExecutionOptions {
+    dry_run: bool,
+    vacuum: bool,
+    policies: WalPrunePolicyPayload,
+}
+
+impl WalPruneExecutionOptions {
+    fn validate(&self) -> Result<(), String> {
+        self.policies.validate()?;
+        if !self.dry_run && !self.policies.has_policy() {
+            return Err(
+                "at least one WAL prune policy is required unless dry-run is enabled".to_string(),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddedPruneWalCollectionPayload {
+    name: String,
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    database_name: Option<String>,
+    #[serde(default)]
+    dry_run: Option<bool>,
+    #[serde(default)]
+    vacuum: Option<bool>,
+    #[serde(flatten)]
+    policies: WalPrunePolicyPayload,
+}
+
+struct WalPruneCollectionRequestParts {
+    request: GetCollectionRequest,
+    options: WalPruneExecutionOptions,
+}
+
+impl EmbeddedPruneWalCollectionPayload {
+    fn into_request(self) -> Result<WalPruneCollectionRequestParts, String> {
+        let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
+        let database_name = resolve_database_name_typed(self.database_name)?;
+        let request = GetCollectionRequest::try_new(tenant_id, database_name, self.name)
+            .map_err(|e| e.to_string())?;
+        let options = WalPruneExecutionOptions {
+            dry_run: self.dry_run.unwrap_or(false),
+            vacuum: self.vacuum.unwrap_or(false),
+            policies: self.policies,
+        };
+        options.validate()?;
+        Ok(WalPruneCollectionRequestParts { request, options })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddedPruneWalAllPayload {
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    database_name: Option<String>,
+    #[serde(default)]
+    dry_run: Option<bool>,
+    #[serde(default)]
+    vacuum: Option<bool>,
+    #[serde(flatten)]
+    policies: WalPrunePolicyPayload,
+}
+
+impl EmbeddedPruneWalAllPayload {
+    fn into_options(self) -> Result<WalPruneExecutionOptions, String> {
+        if let Some(database_name) = self.database_name.as_ref() {
+            parse_database_name(database_name.clone())?;
+        }
+        if let Some(tenant_id) = self.tenant_id.as_ref() {
+            if tenant_id.trim().len() < 3 {
+                return Err("tenant_id must be at least 3 characters".to_string());
+            }
+        }
+        let options = WalPruneExecutionOptions {
+            dry_run: self.dry_run.unwrap_or(false),
+            vacuum: self.vacuum.unwrap_or(false),
+            policies: self.policies,
+        };
+        options.validate()?;
+        Ok(options)
+    }
+}
+
+#[derive(Debug)]
+struct WalPruneTarget {
+    collection_id: CollectionUuid,
+    name: String,
+    tenant_id: String,
+    database_name_raw: String,
+}
+
+#[derive(Debug)]
+struct WalPruneCandidateRow {
+    seq_id: i64,
+    created_at_secs: i64,
+    estimated_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddedWalPruneCollectionResult {
+    collection_id: String,
+    name: String,
+    tenant_id: String,
+    database_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    safe_seq_cutoff: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate_seq_min: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate_seq_max: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pruned_seq_min: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pruned_seq_max: Option<u64>,
+    candidate_count: u64,
+    candidate_bytes: u64,
+    pruned_count: u64,
+    pruned_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddedWalPruneResponse {
+    collection_count: u32,
+    duration_ms: u64,
+    dry_run: bool,
+    vacuum_requested: bool,
+    vacuum_executed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
+    candidate_count_total: u64,
+    candidate_bytes_total: u64,
+    pruned_count_total: u64,
+    pruned_bytes_total: u64,
+    collections: Vec<EmbeddedWalPruneCollectionResult>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum WalPruneFailureMode {
     FailFast,
     ContinueOnError,
 }
@@ -1311,6 +1506,641 @@ async fn run_explicit_compaction(
         pending_ops_after_total,
         collections: collection_results,
     })
+}
+
+async fn get_collection_ids_to_migrate(sqlite: &SqliteDb) -> Result<Vec<CollectionUuid>, String> {
+    let rows = sqlx::query(
+        r#"
+        SELECT collection
+        FROM segments
+        WHERE id NOT IN (SELECT segment_id FROM max_seq_id)
+          AND type = 'urn:chroma:segment/vector/hnsw-local-persisted'
+        "#,
+    )
+    .fetch_all(sqlite.get_conn())
+    .await
+    .map_err(|e| format!("failed to list segments missing max_seq_id: {e}"))?;
+
+    rows.into_iter()
+        .map(|row| {
+            let raw: String = row
+                .try_get(0)
+                .map_err(|e| format!("failed to decode missing max_seq_id row: {e}"))?;
+            CollectionUuid::from_str(&raw)
+                .map_err(|e| format!("invalid collection id in segments table: {e}"))
+        })
+        .collect()
+}
+
+async fn trigger_vector_segments_max_seq_id_migration(
+    sqlite: &SqliteDb,
+    sysdb: &mut SysDb,
+    segment_manager: &LocalSegmentManager,
+) -> Result<(), String> {
+    let collection_ids = get_collection_ids_to_migrate(sqlite).await?;
+
+    for collection_id in collection_ids {
+        let collection = sysdb
+            .get_collection_with_segments(None, collection_id)
+            .await
+            .map_err(|e| format!("failed to load collection for max_seq_id migration: {e}"))?;
+
+        // If collection is uninitialized, there is no sequence id to materialize.
+        let dim = match collection.collection.dimension {
+            Some(dim) => dim,
+            None => continue,
+        };
+
+        segment_manager
+            .get_hnsw_writer(
+                &collection.collection,
+                &collection.vector_segment,
+                dim as usize,
+            )
+            .await
+            .map_err(|e| format!("failed to initialize hnsw writer for migration: {e}"))?;
+    }
+
+    Ok(())
+}
+
+async fn configure_sqlite_log_auto_purge(log: &Log) -> Result<(), String> {
+    match log {
+        Log::Sqlite(sqlite_log) => {
+            let config = LegacyEmbeddingsQueueConfig {
+                automatically_purge: true,
+                kind: legacy_embeddings_queue_config_default_kind(),
+            };
+            sqlite_log
+                .update_legacy_embeddings_queue_config(config)
+                .await
+                .map_err(|e| format!("failed to configure sqlite log auto purge: {e}"))?;
+            Ok(())
+        }
+        _ => Err("expected a sqlite log for wal prune".to_string()),
+    }
+}
+
+async fn query_collection_safe_seq_cutoff(
+    sqlite: &SqliteDb,
+    collection_id: CollectionUuid,
+) -> Result<Option<i64>, String> {
+    let row = sqlx::query(
+        r#"
+        SELECT MIN(COALESCE(CAST(max_seq_id.seq_id AS INTEGER), -1)) AS min_seq
+        FROM segments
+        LEFT JOIN max_seq_id ON segments.id = max_seq_id.segment_id
+        WHERE segments.collection = ?
+        "#,
+    )
+    .bind(collection_id.to_string())
+    .fetch_one(sqlite.get_conn())
+    .await
+    .map_err(|e| format!("failed to query safe seq cutoff: {e}"))?;
+
+    let min_seq: Option<i64> = row
+        .try_get("min_seq")
+        .map_err(|e| format!("failed to decode safe seq cutoff: {e}"))?;
+    match min_seq {
+        Some(value) if value > 0 => Ok(Some(value)),
+        _ => Ok(None),
+    }
+}
+
+async fn query_wal_candidate_rows(
+    sqlite: &SqliteDb,
+    collection_id: CollectionUuid,
+    safe_seq_cutoff: i64,
+) -> Result<Vec<WalPruneCandidateRow>, String> {
+    if safe_seq_cutoff <= 0 {
+        return Ok(Vec::new());
+    }
+
+    let topic_suffix = format!("%/{}", collection_id);
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            seq_id,
+            COALESCE(CAST(strftime('%s', created_at) AS INTEGER), 0) AS created_at_secs,
+            (
+                LENGTH(COALESCE(id, '')) +
+                LENGTH(COALESCE(metadata, '')) +
+                LENGTH(COALESCE(encoding, '')) +
+                LENGTH(COALESCE(vector, x'')) +
+                32
+            ) AS estimated_bytes
+        FROM embeddings_queue
+        WHERE topic LIKE ?
+          AND seq_id < ?
+        ORDER BY seq_id ASC
+        "#,
+    )
+    .bind(topic_suffix)
+    .bind(safe_seq_cutoff)
+    .fetch_all(sqlite.get_conn())
+    .await
+    .map_err(|e| format!("failed to query wal candidates: {e}"))?;
+
+    rows.into_iter()
+        .map(|row| {
+            let seq_id: i64 = row
+                .try_get("seq_id")
+                .map_err(|e| format!("failed to decode candidate seq_id: {e}"))?;
+            let created_at_secs: i64 = row
+                .try_get("created_at_secs")
+                .map_err(|e| format!("failed to decode candidate created_at_secs: {e}"))?;
+            let estimated_bytes_i64: i64 = row
+                .try_get("estimated_bytes")
+                .map_err(|e| format!("failed to decode candidate estimated_bytes: {e}"))?;
+            Ok(WalPruneCandidateRow {
+                seq_id,
+                created_at_secs,
+                estimated_bytes: u64::try_from(estimated_bytes_i64.max(0)).unwrap_or(u64::MAX),
+            })
+        })
+        .collect()
+}
+
+fn wal_candidate_total_bytes(rows: &[WalPruneCandidateRow]) -> u64 {
+    rows.iter()
+        .fold(0u64, |acc, row| acc.saturating_add(row.estimated_bytes))
+}
+
+// Assumes created_at is monotonic with seq_id ordering. This holds because
+// embeddings_queue uses seq_id INTEGER PRIMARY KEY (auto-increment) and
+// created_at DEFAULT CURRENT_TIMESTAMP, both set atomically within the same
+// single-writer SQLite INSERT. A backward clock jump would cause conservative
+// under-pruning (never incorrect deletion) since purge_logs requires a
+// contiguous seq_id prefix.
+fn wal_prune_prefix_for_max_age(
+    rows: &[WalPruneCandidateRow],
+    max_age_seconds: u64,
+    now_secs: i64,
+) -> usize {
+    let max_age_i64 = i64::try_from(max_age_seconds).unwrap_or(i64::MAX);
+    let cutoff = now_secs.saturating_sub(max_age_i64);
+    let mut prefix = 0usize;
+    for row in rows {
+        if row.created_at_secs < cutoff {
+            prefix += 1;
+            continue;
+        }
+        break;
+    }
+    prefix
+}
+
+fn wal_prune_prefix_for_max_bytes(rows: &[WalPruneCandidateRow], max_bytes: u64) -> usize {
+    let total_bytes = wal_candidate_total_bytes(rows);
+    if total_bytes <= max_bytes {
+        return 0;
+    }
+
+    let mut removed = 0u64;
+    let mut prefix = 0usize;
+    for row in rows {
+        removed = removed.saturating_add(row.estimated_bytes);
+        prefix += 1;
+        if total_bytes.saturating_sub(removed) <= max_bytes {
+            break;
+        }
+    }
+    prefix
+}
+
+fn wal_prune_prefix_for_watermark(
+    rows: &[WalPruneCandidateRow],
+    high_bytes: u64,
+    low_bytes: u64,
+) -> usize {
+    let total_bytes = wal_candidate_total_bytes(rows);
+    if total_bytes <= high_bytes {
+        return 0;
+    }
+
+    let mut removed = 0u64;
+    let mut prefix = 0usize;
+    for row in rows {
+        removed = removed.saturating_add(row.estimated_bytes);
+        prefix += 1;
+        if total_bytes.saturating_sub(removed) <= low_bytes {
+            break;
+        }
+    }
+    prefix
+}
+
+fn wal_prune_prefix_count(
+    rows: &[WalPruneCandidateRow],
+    policies: &WalPrunePolicyPayload,
+    now_secs: i64,
+) -> usize {
+    if rows.is_empty() || !policies.has_policy() {
+        return 0;
+    }
+
+    let mut prefix = rows.len();
+    if let Some(max_age_seconds) = policies.max_age_seconds {
+        prefix = prefix.min(wal_prune_prefix_for_max_age(
+            rows,
+            max_age_seconds,
+            now_secs,
+        ));
+    }
+    if let Some(max_bytes) = policies.max_bytes {
+        prefix = prefix.min(wal_prune_prefix_for_max_bytes(rows, max_bytes));
+    }
+    if let (Some(high_bytes), Some(low_bytes)) =
+        (policies.watermark_high_bytes, policies.watermark_low_bytes)
+    {
+        prefix = prefix.min(wal_prune_prefix_for_watermark(rows, high_bytes, low_bytes));
+    }
+    prefix
+}
+
+fn seq_opt_u64(value: Option<i64>, field: &str) -> Result<Option<u64>, String> {
+    match value {
+        Some(v) => u64::try_from(v)
+            .map(Some)
+            .map_err(|_| format!("negative sequence id for {field}: {v}")),
+        None => Ok(None),
+    }
+}
+
+async fn run_explicit_wal_prune(
+    _frontend: &mut Frontend,
+    registry: &Registry,
+    targets: Vec<WalPruneTarget>,
+    options: WalPruneExecutionOptions,
+    failure_mode: WalPruneFailureMode,
+) -> Result<EmbeddedWalPruneResponse, String> {
+    if targets.is_empty() {
+        return Ok(EmbeddedWalPruneResponse {
+            collection_count: 0,
+            duration_ms: 0,
+            dry_run: options.dry_run,
+            vacuum_requested: options.vacuum,
+            vacuum_executed: false,
+            warning: None,
+            candidate_count_total: 0,
+            candidate_bytes_total: 0,
+            pruned_count_total: 0,
+            pruned_bytes_total: 0,
+            collections: Vec::new(),
+        });
+    }
+
+    let sqlite = registry
+        .get::<SqliteDb>()
+        .map_err(|e| format!("sqlite db unavailable: {e}"))?;
+    let segment_manager = registry
+        .get::<LocalSegmentManager>()
+        .map_err(|e| format!("local segment manager unavailable: {e}"))?;
+    let mut sysdb = registry
+        .get::<SysDb>()
+        .map_err(|e| format!("sysdb unavailable: {e}"))?;
+    let mut log = registry
+        .get::<Log>()
+        .map_err(|e| format!("log unavailable: {e}"))?;
+
+    // Runs unconditionally (including dry-run) because safe_seq_cutoff depends
+    // on max_seq_id entries. This is an idempotent one-time migration that
+    // writes to the max_seq_id table (not WAL rows). Matches upstream Chroma
+    // CLI vacuum behavior (vacuum.rs:159).
+    trigger_vector_segments_max_seq_id_migration(&sqlite, &mut sysdb, &segment_manager).await?;
+    if !options.dry_run {
+        configure_sqlite_log_auto_purge(&log).await?;
+    }
+
+    let started_at = Instant::now();
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("system clock is before UNIX epoch: {e}"))?
+        .as_secs();
+    let now_secs_i64 = i64::try_from(now_secs).unwrap_or(i64::MAX);
+
+    let mut candidate_count_total = 0u64;
+    let mut candidate_bytes_total = 0u64;
+    let mut pruned_count_total = 0u64;
+    let mut pruned_bytes_total = 0u64;
+    let mut warning: Option<String> = None;
+    let mut collection_results: Vec<EmbeddedWalPruneCollectionResult> =
+        Vec::with_capacity(targets.len());
+
+    for target in targets {
+        let WalPruneTarget {
+            collection_id,
+            name,
+            tenant_id,
+            database_name_raw,
+        } = target;
+
+        let safe_seq_cutoff = match query_collection_safe_seq_cutoff(&sqlite, collection_id).await {
+            Ok(value) => value,
+            Err(error) => match failure_mode {
+                WalPruneFailureMode::FailFast => return Err(error),
+                WalPruneFailureMode::ContinueOnError => {
+                    collection_results.push(EmbeddedWalPruneCollectionResult {
+                        collection_id: collection_id.to_string(),
+                        name: name.clone(),
+                        tenant_id: tenant_id.clone(),
+                        database_name: database_name_raw.clone(),
+                        safe_seq_cutoff: None,
+                        candidate_seq_min: None,
+                        candidate_seq_max: None,
+                        pruned_seq_min: None,
+                        pruned_seq_max: None,
+                        candidate_count: 0,
+                        candidate_bytes: 0,
+                        pruned_count: 0,
+                        pruned_bytes: 0,
+                        error: Some(error),
+                    });
+                    continue;
+                }
+            },
+        };
+
+        let candidate_rows = match safe_seq_cutoff {
+            Some(cutoff) => match query_wal_candidate_rows(&sqlite, collection_id, cutoff).await {
+                Ok(rows) => rows,
+                Err(error) => match failure_mode {
+                    WalPruneFailureMode::FailFast => return Err(error),
+                    WalPruneFailureMode::ContinueOnError => {
+                        collection_results.push(EmbeddedWalPruneCollectionResult {
+                            collection_id: collection_id.to_string(),
+                            name: name.clone(),
+                            tenant_id: tenant_id.clone(),
+                            database_name: database_name_raw.clone(),
+                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")
+                                .unwrap_or(None),
+                            candidate_seq_min: None,
+                            candidate_seq_max: None,
+                            pruned_seq_min: None,
+                            pruned_seq_max: None,
+                            candidate_count: 0,
+                            candidate_bytes: 0,
+                            pruned_count: 0,
+                            pruned_bytes: 0,
+                            error: Some(error),
+                        });
+                        continue;
+                    }
+                },
+            },
+            None => Vec::new(),
+        };
+        if let Some(negative_row) = candidate_rows.iter().find(|row| row.seq_id < 0) {
+            let error = format!(
+                "negative wal seq_id encountered for collection {}: {}",
+                collection_id, negative_row.seq_id
+            );
+            match failure_mode {
+                WalPruneFailureMode::FailFast => return Err(error),
+                WalPruneFailureMode::ContinueOnError => {
+                    collection_results.push(EmbeddedWalPruneCollectionResult {
+                        collection_id: collection_id.to_string(),
+                        name: name.clone(),
+                        tenant_id: tenant_id.clone(),
+                        database_name: database_name_raw.clone(),
+                        safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")
+                            .unwrap_or(None),
+                        candidate_seq_min: None,
+                        candidate_seq_max: None,
+                        pruned_seq_min: None,
+                        pruned_seq_max: None,
+                        candidate_count: 0,
+                        candidate_bytes: 0,
+                        pruned_count: 0,
+                        pruned_bytes: 0,
+                        error: Some(error),
+                    });
+                    continue;
+                }
+            }
+        }
+
+        let candidate_count = u64::try_from(candidate_rows.len()).unwrap_or(u64::MAX);
+        let candidate_bytes = wal_candidate_total_bytes(&candidate_rows);
+        let prune_prefix = wal_prune_prefix_count(&candidate_rows, &options.policies, now_secs_i64);
+        let selected_rows = &candidate_rows[..prune_prefix];
+        let pruned_count = u64::try_from(selected_rows.len()).unwrap_or(u64::MAX);
+        let pruned_bytes = wal_candidate_total_bytes(selected_rows);
+
+        if !options.dry_run && prune_prefix > 0 {
+            let last_selected_seq = selected_rows
+                .last()
+                .map(|row| row.seq_id)
+                .ok_or_else(|| "internal wal prune error: selected rows empty".to_string())?;
+            let purge_exclusive = u64::try_from(last_selected_seq)
+                .map_err(|_| format!("invalid WAL seq_id for purge: {last_selected_seq}"))?
+                .checked_add(1)
+                .ok_or_else(|| "purge sequence id overflow".to_string())?;
+
+            if let Err(error) = log.purge_logs(collection_id, purge_exclusive).await {
+                let message = format!("purge failed for collection {}: {error}", collection_id);
+                match failure_mode {
+                    WalPruneFailureMode::FailFast => return Err(message),
+                    WalPruneFailureMode::ContinueOnError => {
+                        collection_results.push(EmbeddedWalPruneCollectionResult {
+                            collection_id: collection_id.to_string(),
+                            name,
+                            tenant_id,
+                            database_name: database_name_raw,
+                            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")
+                                .unwrap_or(None),
+                            candidate_seq_min: seq_opt_u64(
+                                candidate_rows.first().map(|r| r.seq_id),
+                                "candidate_seq_min",
+                            )
+                            .unwrap_or(None),
+                            candidate_seq_max: seq_opt_u64(
+                                candidate_rows.last().map(|r| r.seq_id),
+                                "candidate_seq_max",
+                            )
+                            .unwrap_or(None),
+                            pruned_seq_min: seq_opt_u64(
+                                selected_rows.first().map(|r| r.seq_id),
+                                "pruned_seq_min",
+                            )
+                            .unwrap_or(None),
+                            pruned_seq_max: seq_opt_u64(
+                                selected_rows.last().map(|r| r.seq_id),
+                                "pruned_seq_max",
+                            )
+                            .unwrap_or(None),
+                            candidate_count,
+                            candidate_bytes,
+                            pruned_count: 0,
+                            pruned_bytes: 0,
+                            error: Some(message),
+                        });
+                        candidate_count_total =
+                            candidate_count_total.saturating_add(candidate_count);
+                        candidate_bytes_total =
+                            candidate_bytes_total.saturating_add(candidate_bytes);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        candidate_count_total = candidate_count_total.saturating_add(candidate_count);
+        candidate_bytes_total = candidate_bytes_total.saturating_add(candidate_bytes);
+        pruned_count_total = pruned_count_total.saturating_add(pruned_count);
+        pruned_bytes_total = pruned_bytes_total.saturating_add(pruned_bytes);
+
+        collection_results.push(EmbeddedWalPruneCollectionResult {
+            collection_id: collection_id.to_string(),
+            name,
+            tenant_id,
+            database_name: database_name_raw,
+            safe_seq_cutoff: seq_opt_u64(safe_seq_cutoff, "safe_seq_cutoff")?,
+            candidate_seq_min: seq_opt_u64(
+                candidate_rows.first().map(|r| r.seq_id),
+                "candidate_seq_min",
+            )?,
+            candidate_seq_max: seq_opt_u64(
+                candidate_rows.last().map(|r| r.seq_id),
+                "candidate_seq_max",
+            )?,
+            pruned_seq_min: seq_opt_u64(selected_rows.first().map(|r| r.seq_id), "pruned_seq_min")?,
+            pruned_seq_max: seq_opt_u64(selected_rows.last().map(|r| r.seq_id), "pruned_seq_max")?,
+            candidate_count,
+            candidate_bytes,
+            pruned_count,
+            pruned_bytes,
+            error: None,
+        });
+    }
+
+    let mut vacuum_executed = false;
+    if !options.dry_run && options.vacuum && pruned_count_total > 0 {
+        let prev_timeout: Option<i64> = sqlx::query_scalar("PRAGMA busy_timeout")
+            .fetch_optional(sqlite.get_conn())
+            .await
+            .ok()
+            .flatten();
+
+        match sqlx::query("PRAGMA busy_timeout = 5000")
+            .execute(sqlite.get_conn())
+            .await
+        {
+            Ok(_) => match sqlx::query("VACUUM").execute(sqlite.get_conn()).await {
+                Ok(_) => {
+                    vacuum_executed = true;
+                }
+                Err(e) => {
+                    warning = Some(format!(
+                        "wal prune completed, but sqlite VACUUM failed: {e}"
+                    ));
+                }
+            },
+            Err(e) => {
+                warning = Some(format!(
+                    "wal prune completed, but sqlite VACUUM was skipped because busy_timeout configuration failed: {e}"
+                ));
+            }
+        }
+
+        if let Some(timeout) = prev_timeout {
+            let _ = sqlx::query(&format!("PRAGMA busy_timeout = {timeout}"))
+                .execute(sqlite.get_conn())
+                .await;
+        }
+    } else if !options.dry_run && options.vacuum && pruned_count_total == 0 {
+        warning = Some(
+            "wal prune completed, but sqlite VACUUM was skipped because no rows were pruned"
+                .to_string(),
+        );
+    }
+
+    let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let collection_count = u32::try_from(collection_results.len()).unwrap_or(u32::MAX);
+    Ok(EmbeddedWalPruneResponse {
+        collection_count,
+        duration_ms,
+        dry_run: options.dry_run,
+        vacuum_requested: options.vacuum,
+        vacuum_executed,
+        warning,
+        candidate_count_total,
+        candidate_bytes_total,
+        pruned_count_total,
+        pruned_bytes_total,
+        collections: collection_results,
+    })
+}
+
+async fn list_wal_prune_targets(
+    frontend: &mut Frontend,
+    tenant_id: String,
+    database_name: Option<String>,
+) -> Result<Vec<WalPruneTarget>, String> {
+    let mut database_names: Vec<String> = Vec::new();
+    if let Some(database_name) = database_name {
+        database_names.push(database_name);
+    } else {
+        let page_size: u32 = 100;
+        let mut offset: u32 = 0;
+        loop {
+            let request = ListDatabasesRequest::try_new(tenant_id.clone(), Some(page_size), offset)
+                .map_err(|e| e.to_string())?;
+            let databases = frontend
+                .list_databases(request)
+                .await
+                .map_err(|e| format!("list databases failed: {e}"))?;
+            if databases.is_empty() {
+                break;
+            }
+
+            let count = u32::try_from(databases.len()).unwrap_or(u32::MAX);
+            database_names.extend(databases.into_iter().map(|database| database.name));
+            if count < page_size {
+                break;
+            }
+            offset = offset.saturating_add(count);
+        }
+    }
+
+    let mut targets = Vec::new();
+    for database_name in database_names {
+        let parsed_database_name = parse_database_name(database_name.clone())?;
+        let page_size: u32 = 100;
+        let mut offset: u32 = 0;
+        loop {
+            let request = ListCollectionsRequest::try_new(
+                tenant_id.clone(),
+                parsed_database_name.clone(),
+                Some(page_size),
+                offset,
+            )
+            .map_err(|e| e.to_string())?;
+            let collections = frontend.list_collections(request).await.map_err(|e| {
+                format!(
+                    "list collections failed for database {}: {e}",
+                    database_name
+                )
+            })?;
+            if collections.is_empty() {
+                break;
+            }
+
+            let count = u32::try_from(collections.len()).unwrap_or(u32::MAX);
+            targets.extend(collections.into_iter().map(|collection| WalPruneTarget {
+                collection_id: collection.collection_id,
+                name: collection.name,
+                tenant_id: collection.tenant,
+                database_name_raw: collection.database,
+            }));
+            if count < page_size {
+                break;
+            }
+            offset = offset.saturating_add(count);
+        }
+    }
+
+    Ok(targets)
 }
 
 #[derive(Debug, Deserialize)]
@@ -3829,6 +4659,156 @@ pub unsafe extern "C" fn chroma_embedded_compact_all(
     })
 }
 
+/// Run explicit WAL prune for one collection in embedded mode.
+/// Returns a JSON-serialized WAL prune response on success, NULL on failure.
+///
+/// # Safety
+/// `handle` must be a valid embedded handle.
+/// `request_json` must be a valid null-terminated JSON string.
+/// Returned pointer must be freed with `chroma_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_prune_wal_collection(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
+
+        let payload: EmbeddedPruneWalCollectionPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+        let parts = match payload.into_request() {
+            Ok(parts) => parts,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
+
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(e) => {
+                set_last_error(&format!("embedded frontend lock poisoned: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        let response = match embedded.runtime.block_on(async {
+            let collection = frontend
+                .get_collection(parts.request)
+                .await
+                .map_err(|e| format!("get collection failed: {e}"))?;
+            let target = WalPruneTarget {
+                collection_id: collection.collection_id,
+                name: collection.name,
+                tenant_id: collection.tenant,
+                database_name_raw: collection.database,
+            };
+            run_explicit_wal_prune(
+                &mut frontend,
+                &embedded.registry,
+                vec![target],
+                parts.options,
+                WalPruneFailureMode::FailFast,
+            )
+            .await
+        }) {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("prune wal collection failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr_with_context(
+            &response,
+            "prune wal collection completed but failed to serialize response",
+        )
+    })
+}
+
+/// Run explicit WAL prune for all collections in embedded mode.
+/// Returns a JSON-serialized WAL prune response on success, NULL on failure.
+///
+/// # Safety
+/// `handle` must be a valid embedded handle.
+/// `request_json` must be a valid null-terminated JSON string.
+/// Returned pointer must be freed with `chroma_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_prune_wal_all(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard_ptr_mut!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return ptr::null_mut();
+        }
+
+        let payload: EmbeddedPruneWalAllPayload =
+            match parse_json_request(request_json, "request_json") {
+                Ok(payload) => payload,
+                Err(e) => {
+                    set_last_error(&e);
+                    return ptr::null_mut();
+                }
+            };
+        let tenant_id = payload
+            .tenant_id
+            .clone()
+            .unwrap_or_else(|| DEFAULT_TENANT.to_string());
+        let database_name = payload.database_name.clone();
+        let options = match payload.into_options() {
+            Ok(options) => options,
+            Err(e) => {
+                set_last_error(&e);
+                return ptr::null_mut();
+            }
+        };
+
+        let embedded = &*(handle as *const EmbeddedHandle);
+        let mut frontend = match embedded.frontend.lock() {
+            Ok(frontend) => frontend,
+            Err(e) => {
+                set_last_error(&format!("embedded frontend lock poisoned: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        let response = match embedded.runtime.block_on(async {
+            let targets = list_wal_prune_targets(&mut frontend, tenant_id, database_name).await?;
+            run_explicit_wal_prune(
+                &mut frontend,
+                &embedded.registry,
+                targets,
+                options,
+                WalPruneFailureMode::ContinueOnError,
+            )
+            .await
+        }) {
+            Ok(response) => response,
+            Err(e) => {
+                set_last_error(&format!("prune wal all failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+
+        json_to_c_string_ptr_with_context(
+            &response,
+            "prune wal all completed but failed to serialize response",
+        )
+    })
+}
+
 /// Reset local state in embedded mode.
 /// Returns SUCCESS on success.
 ///
@@ -4233,6 +5213,94 @@ allow_reset: true
             Ok(_) => panic!("payload should fail for invalid database"),
             Err(err) => assert!(err.contains("database_name must be at least 3 characters")),
         }
+    }
+
+    #[test]
+    fn test_wal_prune_collection_payload_allows_dry_run_without_policy() {
+        let payload: EmbeddedPruneWalCollectionPayload = serde_json::from_value(json!({
+            "name": "docs",
+            "dry_run": true
+        }))
+        .expect("payload should deserialize");
+
+        let parts = payload.into_request().expect("request should build");
+        assert!(parts.options.dry_run);
+        assert!(!parts.options.policies.has_policy());
+    }
+
+    #[test]
+    fn test_wal_prune_collection_payload_requires_policy_when_mutating() {
+        let payload: EmbeddedPruneWalCollectionPayload = serde_json::from_value(json!({
+            "name": "docs"
+        }))
+        .expect("payload should deserialize");
+
+        match payload.into_request() {
+            Ok(_) => panic!("request should fail without policy"),
+            Err(err) => assert!(err.contains("at least one WAL prune policy is required")),
+        }
+    }
+
+    #[test]
+    fn test_wal_prune_payload_rejects_invalid_watermark() {
+        let payload: EmbeddedPruneWalCollectionPayload = serde_json::from_value(json!({
+            "name": "docs",
+            "max_bytes": 1024,
+            "watermark_high_bytes": 100,
+            "watermark_low_bytes": 200
+        }))
+        .expect("payload should deserialize");
+
+        match payload.into_request() {
+            Ok(_) => panic!("request should fail for invalid watermark"),
+            Err(err) => assert!(err.contains("wal prune watermark")),
+        }
+    }
+
+    #[test]
+    fn test_wal_prune_all_payload_rejects_short_tenant() {
+        let payload: EmbeddedPruneWalAllPayload = serde_json::from_value(json!({
+            "tenant_id": "ab",
+            "dry_run": true
+        }))
+        .expect("payload should deserialize");
+
+        let err = payload
+            .into_options()
+            .expect_err("request should fail for short tenant");
+        assert!(err.contains("tenant_id must be at least 3 characters"));
+    }
+
+    #[test]
+    fn test_wal_prune_prefix_count_uses_and_semantics() {
+        let rows = vec![
+            WalPruneCandidateRow {
+                seq_id: 1,
+                created_at_secs: 100,
+                estimated_bytes: 50,
+            },
+            WalPruneCandidateRow {
+                seq_id: 2,
+                created_at_secs: 200,
+                estimated_bytes: 50,
+            },
+            WalPruneCandidateRow {
+                seq_id: 3,
+                created_at_secs: 300,
+                estimated_bytes: 50,
+            },
+        ];
+        let policies = WalPrunePolicyPayload {
+            max_age_seconds: Some(150),
+            max_bytes: Some(90),
+            watermark_high_bytes: Some(120),
+            watermark_low_bytes: Some(60),
+        };
+
+        // age prefix at now=300 is 1 row (created_at <= 150), max_bytes prefix is 2 rows,
+        // watermark prefix is 2 rows; AND semantics keeps min(prefixes)=1.
+        let prefix = wal_prune_prefix_count(&rows, &policies, 300);
+        assert_eq!(prefix, 1);
     }
 
     #[test]

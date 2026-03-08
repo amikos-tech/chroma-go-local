@@ -979,6 +979,14 @@ func reserveFreeLoopbackPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
+func reserveBusyLoopbackPort(t *testing.T) (int, func()) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	return port, func() { _ = listener.Close() }
+}
+
 func requireServerHeartbeat(t *testing.T, url string) {
 	t.Helper()
 	client := &http.Client{Timeout: 250 * time.Millisecond}

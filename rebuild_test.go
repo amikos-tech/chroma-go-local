@@ -321,10 +321,12 @@ func TestServerRebuildCollectionNonexistentRestartsServer(t *testing.T) {
 
 func TestServerRebuildCollectionRestartFailureReturnsResultAndError(t *testing.T) {
 	server, databaseName, collectionName := startTestServerWithRebuildReadyCollection(t)
+	blockedPort, releaseBlockedPort := reserveBusyLoopbackPort(t)
+	defer releaseBlockedPort()
 
 	cfg := DefaultServerConfig()
-	cfg.Port = reserveFreeLoopbackPort(t)
-	cfg.ListenAddress = "256.256.256.256"
+	cfg.Port = blockedPort
+	cfg.ListenAddress = "127.0.0.1"
 	cfg.PersistPath = server.persistPath
 	cfg.AllowReset = true
 

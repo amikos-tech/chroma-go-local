@@ -1781,6 +1781,7 @@ dependencies = [
  "chroma-index",
  "chroma-log",
  "chroma-segment",
+ "chroma-sqlite",
  "chroma-sysdb",
  "chroma-system",
  "chroma-types",
@@ -1791,6 +1792,7 @@ dependencies = [
  "serde",
  "serde-pickle",
  "serde_json",
+ "sqlx",
  "tempfile",
  "tokio",
 ]
