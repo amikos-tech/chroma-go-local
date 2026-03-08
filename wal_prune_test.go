@@ -188,10 +188,12 @@ func TestServerPruneAllWALRestartsServer(t *testing.T) {
 
 func TestServerPruneAllWALRestartFailureReturnsResultAndError(t *testing.T) {
 	server, persistDir := startTestServer(t)
+	blockedPort, releaseBlockedPort := reserveBusyLoopbackPort(t)
+	defer releaseBlockedPort()
 
 	cfg := DefaultServerConfig()
-	cfg.Port = reserveFreeLoopbackPort(t)
-	cfg.ListenAddress = "256.256.256.256"
+	cfg.Port = blockedPort
+	cfg.ListenAddress = "127.0.0.1"
 	cfg.PersistPath = persistDir
 	cfg.AllowReset = true
 
