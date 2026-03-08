@@ -1666,6 +1666,12 @@ fn wal_candidate_total_bytes(rows: &[WalPruneCandidateRow]) -> u64 {
         .fold(0u64, |acc, row| acc.saturating_add(row.estimated_bytes))
 }
 
+// Assumes created_at is monotonic with seq_id ordering. This holds because
+// embeddings_queue uses seq_id INTEGER PRIMARY KEY (auto-increment) and
+// created_at DEFAULT CURRENT_TIMESTAMP, both set atomically within the same
+// single-writer SQLite INSERT. A backward clock jump would cause conservative
+// under-pruning (never incorrect deletion) since purge_logs requires a
+// contiguous seq_id prefix.
 fn wal_prune_prefix_for_max_age(
     rows: &[WalPruneCandidateRow],
     max_age_seconds: u64,
@@ -1797,6 +1803,10 @@ async fn run_explicit_wal_prune(
         .get::<Log>()
         .map_err(|e| format!("log unavailable: {e}"))?;
 
+    // Runs unconditionally (including dry-run) because safe_seq_cutoff depends
+    // on max_seq_id entries. This is an idempotent one-time migration that
+    // writes to the max_seq_id table (not WAL rows). Matches upstream Chroma
+    // CLI vacuum behavior (vacuum.rs:159).
     trigger_vector_segments_max_seq_id_migration(&sqlite, &mut sysdb, &segment_manager).await?;
     if !options.dry_run {
         configure_sqlite_log_auto_purge(&log).await?;
@@ -2006,6 +2016,12 @@ async fn run_explicit_wal_prune(
 
     let mut vacuum_executed = false;
     if !options.dry_run && options.vacuum && pruned_count_total > 0 {
+        let prev_timeout: Option<i64> = sqlx::query_scalar("PRAGMA busy_timeout")
+            .fetch_optional(sqlite.get_conn())
+            .await
+            .ok()
+            .flatten();
+
         match sqlx::query("PRAGMA busy_timeout = 5000")
             .execute(sqlite.get_conn())
             .await
@@ -2025,6 +2041,12 @@ async fn run_explicit_wal_prune(
                     "wal prune completed, but sqlite VACUUM was skipped because busy_timeout configuration failed: {e}"
                 ));
             }
+        }
+
+        if let Some(timeout) = prev_timeout {
+            let _ = sqlx::query(&format!("PRAGMA busy_timeout = {timeout}"))
+                .execute(sqlite.get_conn())
+                .await;
         }
     } else if !options.dry_run && options.vacuum && pruned_count_total == 0 {
         warning = Some(

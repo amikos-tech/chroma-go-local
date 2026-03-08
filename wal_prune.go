@@ -94,13 +94,10 @@ func (o walPruneCallOptions) hasPolicy() bool {
 }
 
 func (o walPruneCallOptions) validate() error {
-	databaseName := strings.TrimSpace(o.databaseName)
-	if databaseName != "" && len(databaseName) < 3 {
+	if o.databaseName != "" && len(o.databaseName) < 3 {
 		return errors.New("database_name must be at least 3 characters")
 	}
-
-	tenantID := strings.TrimSpace(o.tenantID)
-	if tenantID != "" && len(tenantID) < 3 {
+	if o.tenantID != "" && len(o.tenantID) < 3 {
 		return errors.New("tenant_id must be at least 3 characters")
 	}
 
@@ -226,8 +223,8 @@ func resolveWALPruneCollectionRequest(name string, options []WALPruneOption) (wa
 
 	return walPruneCollectionRequest{
 		Name:               trimmedName,
-		TenantID:           strings.TrimSpace(resolved.tenantID),
-		DatabaseName:       strings.TrimSpace(resolved.databaseName),
+		TenantID:           resolved.tenantID,
+		DatabaseName:       resolved.databaseName,
 		DryRun:             resolved.dryRun,
 		Vacuum:             resolved.vacuum,
 		MaxAgeSeconds:      resolved.maxAgeSeconds,
@@ -244,8 +241,8 @@ func resolveWALPruneAllRequest(options []WALPruneOption) (walPruneAllRequest, er
 	}
 
 	return walPruneAllRequest{
-		TenantID:           strings.TrimSpace(resolved.tenantID),
-		DatabaseName:       strings.TrimSpace(resolved.databaseName),
+		TenantID:           resolved.tenantID,
+		DatabaseName:       resolved.databaseName,
 		DryRun:             resolved.dryRun,
 		Vacuum:             resolved.vacuum,
 		MaxAgeSeconds:      resolved.maxAgeSeconds,
