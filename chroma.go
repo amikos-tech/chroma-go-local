@@ -50,7 +50,6 @@ var (
 	chromaEmbeddedGet                       func(uintptr, *byte) *byte
 	chromaEmbeddedUpdate                    func(uintptr, *byte) int32
 	chromaEmbeddedUpsert                    func(uintptr, *byte) int32
-	chromaEmbeddedDeleteRecords             func(uintptr, *byte) int32
 	chromaEmbeddedDeleteRecordsWithResponse func(uintptr, *byte) *byte
 	chromaEmbeddedCreateCollection          func(uintptr, *byte) *byte
 	chromaEmbeddedAdd                       func(uintptr, *byte) int32
@@ -118,7 +117,6 @@ func registerFunctions() error {
 		{&chromaEmbeddedGet, "chroma_embedded_get"},
 		{&chromaEmbeddedUpdate, "chroma_embedded_update"},
 		{&chromaEmbeddedUpsert, "chroma_embedded_upsert"},
-		{&chromaEmbeddedDeleteRecords, "chroma_embedded_delete_records"},
 		{&chromaEmbeddedDeleteRecordsWithResponse, "chroma_embedded_delete_records_with_response"},
 		{&chromaEmbeddedCreateCollection, "chroma_embedded_create_collection"},
 		{&chromaEmbeddedAdd, "chroma_embedded_add"},

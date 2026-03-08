@@ -307,23 +307,42 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 	))
 
 	properties.Property("DeleteRecords rejects limit without where/where_document", prop.ForAll(
-		func(collectionID string, limit uint8) bool {
-			limit32 := uint32(limit)
+		func(collectionID string, limit uint32) bool {
+			if limit == 0 {
+				limit = 1
+			}
 			err := fakeEmbedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
 				CollectionID: collectionID,
 				IDs:          []string{"id-a"},
-				Limit:        &limit32,
+				Limit:        &limit,
 			})
 			if strings.TrimSpace(collectionID) == "" {
 				return err != nil && strings.Contains(err.Error(), "collection_id is required")
 			}
-			return err != nil && strings.Contains(err.Error(), "limit requires where or where_document")
+			return err != nil && strings.Contains(err.Error(), deleteRecordsLimitRequiresFilterErr)
 		},
 		gen.AnyString(),
-		gen.UInt8(),
+		gen.UInt32(),
 	))
 
 	properties.TestingRun(t)
+}
+
+func TestDeleteRecordsRejectsZeroLimit(t *testing.T) {
+	fakeEmbedded := &Embedded{handle: 1}
+	limit := uint32(0)
+
+	err := fakeEmbedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+		CollectionID: "collection-id",
+		Where: map[string]any{
+			"status": "stale",
+		},
+		Limit: &limit,
+	})
+
+	if err == nil || !strings.Contains(err.Error(), deleteRecordsLimitMustBePositiveErr) {
+		t.Fatalf("expected zero limit to be rejected with %q, got %v", deleteRecordsLimitMustBePositiveErr, err)
+	}
 }
 
 func TestCStringRoundTripProperties(t *testing.T) {

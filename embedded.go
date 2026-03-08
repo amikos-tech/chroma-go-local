@@ -320,15 +320,22 @@ type EmbeddedDeleteRecordsRequest struct {
 	IDs           []string       `json:"ids,omitempty"`
 	Where         map[string]any `json:"where,omitempty"`
 	WhereDocument map[string]any `json:"where_document,omitempty"`
-	Limit         *uint32        `json:"limit,omitempty"`
-	TenantID      string         `json:"tenant_id,omitempty"`
-	DatabaseName  string         `json:"database_name,omitempty"`
+	// Limit caps filtered deletes. It must be greater than zero and requires
+	// Where or WhereDocument. Nil means no limit.
+	Limit        *uint32 `json:"limit,omitempty"`
+	TenantID     string  `json:"tenant_id,omitempty"`
+	DatabaseName string  `json:"database_name,omitempty"`
 }
 
 // EmbeddedDeleteRecordsResponse reports how many records were deleted.
 type EmbeddedDeleteRecordsResponse struct {
 	Deleted uint32 `json:"deleted"`
 }
+
+const (
+	deleteRecordsLimitRequiresFilterErr = "limit can only be specified when a where or where_document clause is provided"
+	deleteRecordsLimitMustBePositiveErr = "limit must be greater than 0"
+)
 
 // EmbeddedIndexingStatusRequest gets indexing progress for a collection.
 type EmbeddedIndexingStatusRequest struct {
@@ -1142,8 +1149,13 @@ func validateDeleteRecordsRequest(request EmbeddedDeleteRecordsRequest) error {
 	if len(request.IDs) == 0 && len(request.Where) == 0 && len(request.WhereDocument) == 0 {
 		return errors.New("at least one of ids, where, or where_document must be provided")
 	}
-	if request.Limit != nil && len(request.Where) == 0 && len(request.WhereDocument) == 0 {
-		return errors.New("limit requires where or where_document")
+	if request.Limit != nil {
+		if *request.Limit == 0 {
+			return errors.New(deleteRecordsLimitMustBePositiveErr)
+		}
+		if len(request.Where) == 0 && len(request.WhereDocument) == 0 {
+			return errors.New(deleteRecordsLimitRequiresFilterErr)
+		}
 	}
 	return nil
 }

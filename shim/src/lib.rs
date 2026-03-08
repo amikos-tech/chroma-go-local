@@ -59,6 +59,9 @@ const DEFAULT_TENANT: &str = "default_tenant";
 const DEFAULT_DATABASE: &str = "default_database";
 const DEFAULT_QUERY_RESULTS: u32 = 10;
 const HNSW_METADATA_FILENAME: &str = "index_metadata.pickle";
+const DELETE_RECORDS_LIMIT_REQUIRES_FILTER_ERR: &str =
+    "limit can only be specified when a where or where_document clause is provided";
+const DELETE_RECORDS_LIMIT_MUST_BE_POSITIVE_ERR: &str = "limit must be greater than 0";
 
 fn parse_database_name(database_name: String) -> Result<DatabaseName, String> {
     DatabaseName::new(database_name)
@@ -2521,6 +2524,14 @@ impl EmbeddedDeleteRecordsPayload {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
         let database_name = resolve_database_name(self.database_name);
         let r#where = parse_where_fields(self.r#where, self.where_document)?;
+        if let Some(limit) = self.limit {
+            if limit == 0 {
+                return Err(DELETE_RECORDS_LIMIT_MUST_BE_POSITIVE_ERR.to_string());
+            }
+            if r#where.is_none() {
+                return Err(DELETE_RECORDS_LIMIT_REQUIRES_FILTER_ERR.to_string());
+            }
+        }
 
         DeleteCollectionRecordsRequest::try_new(
             tenant_id,
@@ -4122,7 +4133,8 @@ pub unsafe extern "C" fn chroma_embedded_upsert(
 }
 
 /// Delete records in a collection in embedded mode.
-/// Returns SUCCESS on success.
+/// Retained as a legacy compatibility entrypoint for callers that only expect
+/// a success/failure code instead of a JSON delete response.
 ///
 /// # Safety
 /// `handle` must be a valid embedded handle.
@@ -5035,6 +5047,22 @@ allow_reset: true
     }
 
     #[test]
+    fn test_delete_records_payload_accepts_limit_with_where() {
+        let payload = EmbeddedDeleteRecordsPayload {
+            collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            ids: None,
+            r#where: Some(json!({"status": "stale"})),
+            where_document: None,
+            limit: Some(1),
+            tenant_id: None,
+            database_name: None,
+        };
+
+        let request = payload.into_request().expect("payload should parse");
+        assert_eq!(request.limit, Some(1));
+    }
+
+    #[test]
     fn test_delete_records_payload_rejects_limit_without_filter() {
         let payload = EmbeddedDeleteRecordsPayload {
             collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
@@ -5049,7 +5077,25 @@ allow_reset: true
         let err = payload
             .into_request()
             .expect_err("payload should be rejected");
-        assert!(err.contains("limit can only be specified when a where clause is provided"));
+        assert!(err.contains(DELETE_RECORDS_LIMIT_REQUIRES_FILTER_ERR));
+    }
+
+    #[test]
+    fn test_delete_records_payload_rejects_zero_limit() {
+        let payload = EmbeddedDeleteRecordsPayload {
+            collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            ids: None,
+            r#where: Some(json!({"status": "stale"})),
+            where_document: None,
+            limit: Some(0),
+            tenant_id: None,
+            database_name: None,
+        };
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should be rejected");
+        assert!(err.contains(DELETE_RECORDS_LIMIT_MUST_BE_POSITIVE_ERR));
     }
 
     #[test]

@@ -480,7 +480,7 @@ fmt.Println(resp.Deleted)
 - `Where`
 - `WhereDocument`
 
-If `Limit` is set, `Where` or `WhereDocument` must also be set.
+If `Limit` is set, it must be greater than zero, and `Where` or `WhereDocument` must also be set.
 
 ## 5. Not Yet Exposed in This Go Surface
 
