@@ -56,6 +56,7 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 	parameters.MinSuccessfulTests = 100
 	properties := gopter.NewProperties(parameters)
 
+	// Non-zero handle bypasses the nil-handle check; validation fires before FFI.
 	fakeEmbedded := &Embedded{handle: 1}
 
 	properties.Property("Add rejects mismatched ids/embeddings lengths", prop.ForAll(
@@ -329,6 +330,7 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 }
 
 func TestDeleteRecordsRejectsZeroLimit(t *testing.T) {
+	// Non-zero handle bypasses the nil-handle check; validation fires before FFI.
 	fakeEmbedded := &Embedded{handle: 1}
 	limit := uint32(0)
 
