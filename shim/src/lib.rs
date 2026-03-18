@@ -27,12 +27,12 @@ use chroma_system::{ComponentHandle, System};
 use chroma_types::{
     AddCollectionRecordsRequest, CollectionConfiguration, CollectionMetadataUpdate, CollectionUuid,
     CountCollectionsRequest, CountRequest, CreateCollectionRequest, CreateDatabaseRequest,
-    CreateTenantRequest, DatabaseName, DeleteCollectionRecordsRequest, DeleteCollectionRequest,
-    DeleteDatabaseRequest, ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest,
-    GetRequest, GetTenantRequest, IncludeList, ListCollectionsRequest, ListDatabasesRequest,
-    Metadata, QueryRequest, RawWhereFields, Schema, UpdateCollectionRecordsRequest,
-    UpdateCollectionRequest, UpdateMetadata, UpdateTenantRequest, UpsertCollectionRecordsRequest,
-    Where,
+    CreateTenantRequest, DatabaseName, DeleteCollectionRecordsRequest,
+    DeleteCollectionRecordsResponse, DeleteCollectionRequest, DeleteDatabaseRequest,
+    ForkCollectionRequest, GetCollectionRequest, GetDatabaseRequest, GetRequest, GetTenantRequest,
+    IncludeList, ListCollectionsRequest, ListDatabasesRequest, Metadata, QueryRequest,
+    RawWhereFields, Schema, UpdateCollectionRecordsRequest, UpdateCollectionRequest,
+    UpdateMetadata, UpdateTenantRequest, UpsertCollectionRecordsRequest, Where,
 };
 use figment::providers::{Env, Format, Yaml};
 use serde::de::DeserializeOwned;
@@ -59,6 +59,9 @@ const DEFAULT_TENANT: &str = "default_tenant";
 const DEFAULT_DATABASE: &str = "default_database";
 const DEFAULT_QUERY_RESULTS: u32 = 10;
 const HNSW_METADATA_FILENAME: &str = "index_metadata.pickle";
+const DELETE_RECORDS_LIMIT_REQUIRES_FILTER_ERR: &str =
+    "limit can only be specified when a where or where_document clause is provided";
+const DELETE_RECORDS_LIMIT_MUST_BE_POSITIVE_ERR: &str = "limit must be greater than 0";
 
 fn parse_database_name(database_name: String) -> Result<DatabaseName, String> {
     DatabaseName::new(database_name)
@@ -655,7 +658,7 @@ impl EmbeddedRebuildCollectionPayload {
     }
 }
 
-// Mirrors Chroma 1.5.2 PersistentData pickle layout used for index_metadata.pickle
+// Mirrors Chroma 1.5.3 PersistentData pickle layout used for index_metadata.pickle
 // (chromadb/segment/impl/vector/local_persistent_hnsw.py). Keep this in sync.
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct HnswIdMap {
@@ -2359,7 +2362,14 @@ impl EmbeddedCountPayload {
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
         let database_name = resolve_database_name(self.database_name);
-        CountRequest::try_new(tenant_id, database_name, collection_id).map_err(|e| e.to_string())
+        // ReadLevel parameter added in Chroma 1.5.3; default suits count operations.
+        CountRequest::try_new(
+            tenant_id,
+            database_name,
+            collection_id,
+            chroma_types::plan::ReadLevel::default(),
+        )
+        .map_err(|e| e.to_string())
     }
 }
 
@@ -2501,6 +2511,8 @@ struct EmbeddedDeleteRecordsPayload {
     #[serde(default)]
     where_document: Option<Value>,
     #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
     tenant_id: Option<String>,
     #[serde(default)]
     database_name: Option<String>,
@@ -2513,6 +2525,14 @@ impl EmbeddedDeleteRecordsPayload {
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
         let database_name = resolve_database_name(self.database_name);
         let r#where = parse_where_fields(self.r#where, self.where_document)?;
+        if let Some(limit) = self.limit {
+            if limit == 0 {
+                return Err(DELETE_RECORDS_LIMIT_MUST_BE_POSITIVE_ERR.to_string());
+            }
+            if r#where.is_none() {
+                return Err(DELETE_RECORDS_LIMIT_REQUIRES_FILTER_ERR.to_string());
+            }
+        }
 
         DeleteCollectionRecordsRequest::try_new(
             tenant_id,
@@ -2520,8 +2540,56 @@ impl EmbeddedDeleteRecordsPayload {
             collection_id,
             self.ids,
             r#where,
+            self.limit,
         )
         .map_err(|e| e.to_string())
+    }
+}
+
+unsafe fn run_embedded_delete_records(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> Result<DeleteCollectionRecordsResponse, i32> {
+    if handle.is_null() {
+        set_last_error("handle is null");
+        return Err(ERROR_INVALID_HANDLE);
+    }
+
+    let payload: EmbeddedDeleteRecordsPayload =
+        match parse_json_request(request_json, "request_json") {
+            Ok(payload) => payload,
+            Err(e) => {
+                set_last_error(&e);
+                return Err(ERROR_CONFIG_PARSE);
+            }
+        };
+
+    let request = match payload.into_request() {
+        Ok(request) => request,
+        Err(e) => {
+            set_last_error(&e);
+            return Err(ERROR_CONFIG_PARSE);
+        }
+    };
+
+    let embedded = &*(handle as *const EmbeddedHandle);
+    let mut frontend = match embedded.frontend.lock() {
+        Ok(frontend) => frontend,
+        Err(_) => {
+            set_last_error("embedded frontend lock poisoned");
+            return Err(ERROR_OPERATION_FAILED);
+        }
+    };
+
+    match embedded
+        .runtime
+        .block_on(async { frontend.delete(request).await })
+    {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            set_last_error(&format!("delete records failed: {e}"));
+            Err(ERROR_OPERATION_FAILED)
+        }
     }
 }
 
@@ -4066,7 +4134,8 @@ pub unsafe extern "C" fn chroma_embedded_upsert(
 }
 
 /// Delete records in a collection in embedded mode.
-/// Returns SUCCESS on success.
+/// Retained as a legacy compatibility entrypoint for callers that only expect
+/// a success/failure code instead of a JSON delete response.
 ///
 /// # Safety
 /// `handle` must be a valid embedded handle.
@@ -4077,47 +4146,31 @@ pub unsafe extern "C" fn chroma_embedded_delete_records(
     request_json: *const c_char,
 ) -> i32 {
     ffi_guard_code!({
-        if handle.is_null() {
-            set_last_error("handle is null");
-            return ERROR_INVALID_HANDLE;
-        }
-
-        let payload: EmbeddedDeleteRecordsPayload =
-            match parse_json_request(request_json, "request_json") {
-                Ok(payload) => payload,
-                Err(e) => {
-                    set_last_error(&e);
-                    return ERROR_CONFIG_PARSE;
-                }
-            };
-
-        let request = match payload.into_request() {
-            Ok(request) => request,
-            Err(e) => {
-                set_last_error(&e);
-                return ERROR_CONFIG_PARSE;
-            }
-        };
-
-        let embedded = &*(handle as *const EmbeddedHandle);
-        let mut frontend = match embedded.frontend.lock() {
-            Ok(frontend) => frontend,
-            Err(_) => {
-                set_last_error("embedded frontend lock poisoned");
-                return ERROR_OPERATION_FAILED;
-            }
-        };
-
-        match embedded
-            .runtime
-            .block_on(async { frontend.delete(request).await })
-        {
+        match run_embedded_delete_records(handle, request_json) {
             Ok(_) => SUCCESS,
-            Err(e) => {
-                set_last_error(&format!("delete records failed: {e}"));
-                ERROR_OPERATION_FAILED
-            }
+            Err(code) => code,
         }
+    })
+}
+
+/// Delete records in a collection in embedded mode.
+/// Returns a JSON-serialized delete response on success, NULL on failure.
+///
+/// # Safety
+/// `handle` must be a valid embedded handle.
+/// `request_json` must be a valid null-terminated JSON string.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_embedded_delete_records_with_response(
+    handle: *mut c_void,
+    request_json: *const c_char,
+) -> *mut c_char {
+    ffi_guard_ptr_mut!({
+        let response = match run_embedded_delete_records(handle, request_json) {
+            Ok(response) => response,
+            Err(_) => return ptr::null_mut(),
+        };
+
+        json_to_c_string_ptr(&response)
     })
 }
 
@@ -4971,10 +5024,79 @@ allow_reset: true
             ids: None,
             r#where: None,
             where_document: None,
+            limit: None,
             tenant_id: None,
             database_name: None,
         };
         assert!(payload.into_request().is_ok());
+    }
+
+    #[test]
+    fn test_delete_records_payload_accepts_limit_with_where_document() {
+        let payload = EmbeddedDeleteRecordsPayload {
+            collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            ids: None,
+            r#where: None,
+            where_document: Some(json!({"$contains": "delete"})),
+            limit: Some(1),
+            tenant_id: None,
+            database_name: None,
+        };
+
+        let request = payload.into_request().expect("payload should parse");
+        assert_eq!(request.limit, Some(1));
+    }
+
+    #[test]
+    fn test_delete_records_payload_accepts_limit_with_where() {
+        let payload = EmbeddedDeleteRecordsPayload {
+            collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            ids: None,
+            r#where: Some(json!({"status": "stale"})),
+            where_document: None,
+            limit: Some(1),
+            tenant_id: None,
+            database_name: None,
+        };
+
+        let request = payload.into_request().expect("payload should parse");
+        assert_eq!(request.limit, Some(1));
+    }
+
+    #[test]
+    fn test_delete_records_payload_rejects_limit_without_filter() {
+        let payload = EmbeddedDeleteRecordsPayload {
+            collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            ids: Some(vec!["doc-1".to_string()]),
+            r#where: None,
+            where_document: None,
+            limit: Some(1),
+            tenant_id: None,
+            database_name: None,
+        };
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should be rejected");
+        assert!(err.contains(DELETE_RECORDS_LIMIT_REQUIRES_FILTER_ERR));
+    }
+
+    #[test]
+    fn test_delete_records_payload_rejects_zero_limit() {
+        let payload = EmbeddedDeleteRecordsPayload {
+            collection_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            ids: None,
+            r#where: Some(json!({"status": "stale"})),
+            where_document: None,
+            limit: Some(0),
+            tenant_id: None,
+            database_name: None,
+        };
+
+        let err = payload
+            .into_request()
+            .expect_err("payload should be rejected");
+        assert!(err.contains(DELETE_RECORDS_LIMIT_MUST_BE_POSITIVE_ERR));
     }
 
     #[test]
@@ -5604,6 +5726,7 @@ allow_reset: true
                 ids: None,
                 r#where: None,
                 where_document: Some(json!({"$contains": n})),
+                limit: None,
                 tenant_id: None,
                 database_name: None,
             };

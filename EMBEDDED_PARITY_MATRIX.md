@@ -50,7 +50,7 @@ Legend:
 | Count records | done | `(*Embedded).CountRecords()` |
 | Update records | done | `(*Embedded).UpdateRecords()` |
 | Upsert records | done | `(*Embedded).UpsertRecords()` |
-| Delete records | done | `(*Embedded).DeleteRecords()` (ids and/or filters) |
+| Delete records | done | `(*Embedded).DeleteRecords()` and `(*Embedded).DeleteRecordsWithResponse()` (ids and/or filters, optional `limit` with filters) |
 | Query/get/delete filters (`where`, `where_document`) | done | Supported in query/get/delete record calls |
 
 ## Tenants and Admin

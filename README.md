@@ -91,7 +91,7 @@ rustup toolchain install stable-aarch64-pc-windows-msvc
 rustup default stable-aarch64-pc-windows-msvc
 ```
 
-3. Install `protoc` 31.x (matches Chroma `1.5.2` toolchain and this repo's CI).
+3. Install `protoc` 31.x (matches Chroma `1.5.3` toolchain and this repo's CI).
 4. Install `golangci-lint`.
 5. Install `goimports`:
 
@@ -401,7 +401,8 @@ For the Java scaffold surface, see [`JAVA_API_SURFACE.md`](JAVA_API_SURFACE.md).
 | `(*Embedded) GetRecords(request EmbeddedGetRecordsRequest) (*EmbeddedGetRecordsResponse, error)` | Get records from a collection (supports `where` and `where_document`). |
 | `(*Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error` | Update existing records by id. |
 | `(*Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error` | Upsert records by id. |
-| `(*Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error` | Delete records by ids and/or filters. |
+| `(*Embedded) DeleteRecords(request EmbeddedDeleteRecordsRequest) error` | Delete records by ids and/or filters. Discards the deleted-count response for backward compatibility. |
+| `(*Embedded) DeleteRecordsWithResponse(request EmbeddedDeleteRecordsRequest) (*EmbeddedDeleteRecordsResponse, error)` | Delete records by ids and/or filters and return `{deleted}`. Supports optional `limit` with `where` / `where_document` (`limit` must be greater than zero). |
 | `(*Embedded) Add(request EmbeddedAddRequest) error` | Add records without HTTP. |
 | `(*Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, error)` | Query records without HTTP (supports `where` and `where_document`). |
 | `(*Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*EmbeddedIndexingStatusResponse, error)` | Get collection indexing status (may be unimplemented in local backend). |

@@ -193,6 +193,190 @@ func TestEmbeddedDeleteByDocumentFilterOnly(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after filtered delete")
 }
 
+func TestEmbeddedDeleteByDocumentFilterWithLimit(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("delete_filter_limit_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         fmt.Sprintf("delete_filter_limit_collection_%d", time.Now().UnixNano()),
+		DatabaseName: databaseName,
+		GetOrCreate:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+
+	if err := embedded.Add(EmbeddedAddRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		IDs:          []string{"doc-1", "doc-2", "doc-3"},
+		Embeddings: [][]float32{
+			{0.1, 0.2, 0.3},
+			{0.3, 0.2, 0.1},
+			{0.4, 0.4, 0.4},
+		},
+		Documents: []string{"delete me first", "delete me second", "keep me"},
+	}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	limit := uint32(1)
+	if err := embedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		WhereDocument: map[string]any{
+			"$contains": "delete me",
+		},
+		Limit: &limit,
+	}); err != nil {
+		t.Fatalf("DeleteRecords with limit failed: %v", err)
+	}
+
+	var count uint32
+	require.Eventually(t, func() bool {
+		count, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+		})
+		return err == nil && count == 2
+	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after limited delete")
+}
+
+func TestEmbeddedDeleteByMetadataFilterWithLimit(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("delete_meta_limit_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         fmt.Sprintf("delete_meta_limit_collection_%d", time.Now().UnixNano()),
+		DatabaseName: databaseName,
+		GetOrCreate:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+
+	if err := embedded.Add(EmbeddedAddRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		IDs:          []string{"doc-1", "doc-2", "doc-3"},
+		Embeddings: [][]float32{
+			{0.1, 0.2, 0.3},
+			{0.3, 0.2, 0.1},
+			{0.4, 0.4, 0.4},
+		},
+		Documents: []string{"stale one", "stale two", "fresh"},
+		Metadatas: []map[string]any{
+			{"status": "stale"},
+			{"status": "stale"},
+			{"status": "fresh"},
+		},
+	}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	limit := uint32(1)
+	if err := embedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		Where: map[string]any{
+			"status": "stale",
+		},
+		Limit: &limit,
+	}); err != nil {
+		t.Fatalf("DeleteRecords with metadata limit failed: %v", err)
+	}
+
+	var count uint32
+	require.Eventually(t, func() bool {
+		count, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+		})
+		return err == nil && count == 2
+	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after limited metadata delete")
+
+	var getResp *EmbeddedGetRecordsResponse
+	require.Eventually(t, func() bool {
+		getResp, err = embedded.GetRecords(EmbeddedGetRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+			Where: map[string]any{
+				"status": "stale",
+			},
+		})
+		return err == nil && getResp != nil
+	}, 5*time.Second, 100*time.Millisecond, "GetRecords did not converge after limited metadata delete")
+	require.Len(t, getResp.IDs, 1)
+}
+
+func TestEmbeddedDeleteByMetadataFilterWithLimitResponse(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("delete_meta_limit_response_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         fmt.Sprintf("delete_meta_limit_response_collection_%d", time.Now().UnixNano()),
+		DatabaseName: databaseName,
+		GetOrCreate:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+
+	if err := embedded.Add(EmbeddedAddRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		IDs:          []string{"doc-1", "doc-2", "doc-3"},
+		Embeddings: [][]float32{
+			{0.1, 0.2, 0.3},
+			{0.3, 0.2, 0.1},
+			{0.4, 0.4, 0.4},
+		},
+		Metadatas: []map[string]any{
+			{"status": "stale"},
+			{"status": "stale"},
+			{"status": "fresh"},
+		},
+	}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	limit := uint32(1)
+	deleteResp, err := embedded.DeleteRecordsWithResponse(EmbeddedDeleteRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		Where: map[string]any{
+			"status": "stale",
+		},
+		Limit: &limit,
+	})
+	if err != nil {
+		t.Fatalf("DeleteRecordsWithResponse with metadata limit failed: %v", err)
+	}
+	require.NotNil(t, deleteResp)
+	require.Equal(t, uint32(1), deleteResp.Deleted)
+
+	var count uint32
+	require.Eventually(t, func() bool {
+		count, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+		})
+		return err == nil && count == 2
+	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after limited metadata delete with response")
+}
+
 func TestEmbeddedCreateCollectionRejectsInvalidConfigurationIntegration(t *testing.T) {
 	embedded := newEmbeddedForIntegrationTest(t)
 

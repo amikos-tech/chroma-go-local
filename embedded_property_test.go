@@ -56,6 +56,7 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 	parameters.MinSuccessfulTests = 100
 	properties := gopter.NewProperties(parameters)
 
+	// Non-zero handle bypasses the nil-handle check; validation fires before FFI.
 	fakeEmbedded := &Embedded{handle: 1}
 
 	properties.Property("Add rejects mismatched ids/embeddings lengths", prop.ForAll(
@@ -306,7 +307,44 @@ func TestEmbeddedValidationProperties(t *testing.T) {
 		gen.AnyString(),
 	))
 
+	properties.Property("DeleteRecords rejects limit without where/where_document", prop.ForAll(
+		func(collectionID string, limit uint32) bool {
+			if limit == 0 {
+				limit = 1
+			}
+			err := fakeEmbedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+				CollectionID: collectionID,
+				IDs:          []string{"id-a"},
+				Limit:        &limit,
+			})
+			if strings.TrimSpace(collectionID) == "" {
+				return err != nil && strings.Contains(err.Error(), "collection_id is required")
+			}
+			return err != nil && strings.Contains(err.Error(), deleteRecordsLimitRequiresFilterErr)
+		},
+		gen.AnyString(),
+		gen.UInt32(),
+	))
+
 	properties.TestingRun(t)
+}
+
+func TestDeleteRecordsRejectsZeroLimit(t *testing.T) {
+	// Non-zero handle bypasses the nil-handle check; validation fires before FFI.
+	fakeEmbedded := &Embedded{handle: 1}
+	limit := uint32(0)
+
+	err := fakeEmbedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+		CollectionID: "collection-id",
+		Where: map[string]any{
+			"status": "stale",
+		},
+		Limit: &limit,
+	})
+
+	if err == nil || !strings.Contains(err.Error(), deleteRecordsLimitMustBePositiveErr) {
+		t.Fatalf("expected zero limit to be rejected with %q, got %v", deleteRecordsLimitMustBePositiveErr, err)
+	}
 }
 
 func TestCStringRoundTripProperties(t *testing.T) {

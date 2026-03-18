@@ -569,14 +569,16 @@ func TestEmbeddedModeBasicFlow(t *testing.T) {
 		t.Fatalf("expected total_ops >= num_indexed_ops, got total=%d indexed=%d", indexingStatus.TotalOps, indexingStatus.NumIndexedOps)
 	}
 
-	err = embedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+	deleteResp, err := embedded.DeleteRecordsWithResponse(EmbeddedDeleteRecordsRequest{
 		CollectionID: collection.ID,
 		DatabaseName: databaseName,
 		IDs:          []string{"doc-2"},
 	})
 	if err != nil {
-		t.Fatalf("DeleteRecords failed: %v", err)
+		t.Fatalf("DeleteRecordsWithResponse failed: %v", err)
 	}
+	require.NotNil(t, deleteResp)
+	require.Equal(t, uint32(1), deleteResp.Deleted)
 
 	require.Eventually(t, func() bool {
 		recordCount, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
