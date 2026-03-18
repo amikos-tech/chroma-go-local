@@ -2362,6 +2362,7 @@ impl EmbeddedCountPayload {
             .map_err(|e| format!("invalid collection_id: {e}"))?;
         let tenant_id = self.tenant_id.unwrap_or_else(|| DEFAULT_TENANT.to_string());
         let database_name = resolve_database_name(self.database_name);
+        // ReadLevel parameter added in Chroma 1.5.3; default suits count operations.
         CountRequest::try_new(
             tenant_id,
             database_name,

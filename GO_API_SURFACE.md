@@ -481,7 +481,7 @@ fmt.Println(resp.Deleted)
 - `WhereDocument`
 
 If `Limit` is set, it must be greater than zero, and `Where` or `WhereDocument` must also be set.
-When a limit is applied, matching records are selected in insertion order (earliest first).
+When a limit is applied, the order in which matching records are selected for deletion depends on upstream Chroma internals and may vary across versions.
 
 ## 5. Not Yet Exposed in This Go Surface
 

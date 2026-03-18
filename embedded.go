@@ -322,7 +322,7 @@ type EmbeddedDeleteRecordsRequest struct {
 	WhereDocument map[string]any `json:"where_document,omitempty"`
 	// Limit caps filtered deletes. It must be greater than zero and requires
 	// Where or WhereDocument. Nil means no limit.
-	// Matching records are selected in insertion order (earliest first).
+	// Deletion order depends on upstream Chroma internals and may change across versions.
 	Limit        *uint32 `json:"limit,omitempty"`
 	TenantID     string  `json:"tenant_id,omitempty"`
 	DatabaseName string  `json:"database_name,omitempty"`
