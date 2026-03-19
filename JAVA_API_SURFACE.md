@@ -35,3 +35,9 @@ This document describes the initial Java scaffold for `local-go-chroma`.
   - Linux: `libchroma_shim.so`
   - macOS: `libchroma_shim.dylib`
   - Windows: `chroma_shim.dll`
+
+## Versioning
+
+- Local builds default to Java artifact version `0.0.0-SNAPSHOT`.
+- Release builds can override version with Gradle property `releaseVersion`; a leading `v` is stripped.
+- Java artifacts currently track the same repository release line as the native shim.

@@ -1,4 +1,4 @@
-name: Release Shim Artifacts
+name: Release Artifacts
 
 on:
   push:
@@ -117,9 +117,78 @@ jobs:
             dist/*.tar.gz
           if-no-files-found: error
 
+  build-java-artifacts:
+    name: Build Java Artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Java 22
+        # Gradle runs on Java 22, while the Java 17 toolchain remains available
+        # for modules that compile or test against the older release target.
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "22"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Compute release version
+        id: compute_version
+        shell: bash
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Java release jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd java
+          gradle --no-daemon \
+            -PreleaseVersion="${{ steps.compute_version.outputs.version }}" \
+            :core:jar \
+            :jna:jar \
+            :panama:jar \
+            -x test
+
+      - name: Stage Java release jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION="${{ steps.compute_version.outputs.version }}"
+          cp "java/core/build/libs/core-${VERSION}.jar" "dist/chroma-local-java-core-${VERSION}.jar"
+          cp "java/jna/build/libs/jna-${VERSION}.jar" "dist/chroma-local-java-jna-${VERSION}.jar"
+          cp "java/panama/build/libs/panama-${VERSION}.jar" "dist/chroma-local-java-panama-${VERSION}.jar"
+          ls -lah dist
+
+      - name: Upload Java artifact bundle
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: java-release
+          path: |
+            dist/*.jar
+          if-no-files-found: error
+
   publish-release:
     name: Publish release assets and signed R2 artifacts
-    needs: build-artifacts
+    needs:
+      - build-artifacts
+      - build-java-artifacts
     # publish on tag pushes and manual tag backfills
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -137,6 +206,12 @@ jobs:
           pattern: shim-*
           path: dist
           merge-multiple: true
+
+      - name: Download Java artifact bundles
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: java-release
+          path: dist
 
       - name: Normalize artifact names
         shell: bash
@@ -169,7 +244,13 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sha256sum -- *.tar.gz > SHA256SUMS
+          shopt -s nullglob
+          files=( *.tar.gz *.jar )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release artifacts found for checksum generation"
+            exit 1
+          fi
+          sha256sum -- "${files[@]}" > SHA256SUMS
           ls -lah
 
       - name: Install cosign
@@ -184,8 +265,14 @@ jobs:
           cd dist
           IDENTITY="https://github.com/${WORKFLOW_REF}"
           ISSUER="https://token.actions.githubusercontent.com"
+          shopt -s nullglob
+          files=( *.tar.gz *.jar )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release artifacts found for signing"
+            exit 1
+          fi
 
-          for f in *.tar.gz; do
+          for f in "${files[@]}"; do
             cosign sign-blob --yes \
               --oidc-issuer "${ISSUER}" \
               --output-signature "${f}.sig" \
@@ -318,6 +405,7 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.tar.gz
+            dist/*.jar
             dist/SHA256SUMS
             dist/*.sig
             dist/*.pem
