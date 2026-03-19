@@ -255,6 +255,9 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        with:
+          # Override the action default (v3.0.3) to v3.0.5 for security fixes and deterministic bundle output.
+          cosign-release: v3.0.5
 
       - name: Sign and verify artifacts
         shell: bash
@@ -272,32 +275,36 @@ jobs:
             exit 1
           fi
 
+          cosign version
+
           for f in "${files[@]}"; do
             cosign sign-blob --yes \
-              --oidc-issuer "${ISSUER}" \
+              --bundle "${f}.sigstore.json" \
+              --use-signing-config \
               --output-signature "${f}.sig" \
               --output-certificate "${f}.pem" \
               "${f}"
 
             cosign verify-blob \
-              --signature "${f}.sig" \
-              --certificate "${f}.pem" \
+              --bundle "${f}.sigstore.json" \
               --certificate-identity "${IDENTITY}" \
               --certificate-oidc-issuer "${ISSUER}" \
+              --use-signed-timestamps \
               "${f}"
           done
 
           cosign sign-blob --yes \
-            --oidc-issuer "${ISSUER}" \
+            --bundle SHA256SUMS.sigstore.json \
+            --use-signing-config \
             --output-signature SHA256SUMS.sig \
             --output-certificate SHA256SUMS.pem \
             SHA256SUMS
 
           cosign verify-blob \
-            --signature SHA256SUMS.sig \
-            --certificate SHA256SUMS.pem \
+            --bundle SHA256SUMS.sigstore.json \
             --certificate-identity "${IDENTITY}" \
             --certificate-oidc-issuer "${ISSUER}" \
+            --use-signed-timestamps \
             SHA256SUMS
 
       - name: Upload artifacts to R2
@@ -356,22 +363,26 @@ jobs:
           IDENTITY="https://github.com/${WORKFLOW_REF}"
           ISSUER="https://token.actions.githubusercontent.com"
           cosign sign-blob --yes \
-            --oidc-issuer "${ISSUER}" \
+            --bundle /tmp/releases.json.sigstore.json \
+            --use-signing-config \
             --output-signature /tmp/releases.json.sig \
             --output-certificate /tmp/releases.json.pem \
             /tmp/releases.json
 
           cosign verify-blob \
-            --signature /tmp/releases.json.sig \
-            --certificate /tmp/releases.json.pem \
+            --bundle /tmp/releases.json.sigstore.json \
             --certificate-identity "${IDENTITY}" \
             --certificate-oidc-issuer "${ISSUER}" \
+            --use-signed-timestamps \
             /tmp/releases.json
 
           aws s3 cp /tmp/releases.json "s3://${BUCKET}/${PROJECT}/releases.json" \
             --endpoint-url "${R2_ENDPOINT}" \
             --content-type "application/json" \
             --cache-control "public, max-age=60"
+          aws s3 cp /tmp/releases.json.sigstore.json "s3://${BUCKET}/${PROJECT}/releases.json.sigstore.json" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json"
           aws s3 cp /tmp/releases.json.sig "s3://${BUCKET}/${PROJECT}/releases.json.sig" \
             --endpoint-url "${R2_ENDPOINT}"
           aws s3 cp /tmp/releases.json.pem "s3://${BUCKET}/${PROJECT}/releases.json.pem" \
@@ -407,5 +418,6 @@ jobs:
             dist/*.tar.gz
             dist/*.jar
             dist/SHA256SUMS
+            dist/*.sigstore.json
             dist/*.sig
             dist/*.pem
