@@ -134,6 +134,8 @@ jobs:
           java-version: "17"
 
       - name: Set up Java 22
+        # Gradle runs on Java 22, while the Java 17 toolchain remains available
+        # for modules that compile or test against the older release target.
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           distribution: temurin
@@ -142,16 +144,22 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
-      - name: Build Java release jars
+      - name: Compute release version
+        id: compute_version
         shell: bash
         env:
           TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          VERSION="${TAG#v}"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Java release jars
+        shell: bash
+        run: |
+          set -euo pipefail
           cd java
           gradle --no-daemon \
-            -PreleaseVersion="${VERSION}" \
+            -PreleaseVersion="${{ steps.compute_version.outputs.version }}" \
             :core:jar \
             :jna:jar \
             :panama:jar \
@@ -159,12 +167,10 @@ jobs:
 
       - name: Stage Java release jars
         shell: bash
-        env:
-          TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          VERSION="${TAG#v}"
           mkdir -p dist
+          VERSION="${{ steps.compute_version.outputs.version }}"
           cp "java/core/build/libs/core-${VERSION}.jar" "dist/chroma-local-java-core-${VERSION}.jar"
           cp "java/jna/build/libs/jna-${VERSION}.jar" "dist/chroma-local-java-jna-${VERSION}.jar"
           cp "java/panama/build/libs/panama-${VERSION}.jar" "dist/chroma-local-java-panama-${VERSION}.jar"
