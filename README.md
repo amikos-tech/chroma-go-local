@@ -136,7 +136,6 @@ Canonical release asset naming:
 - `chroma-local-java-panama-<version>.jar`
 - `SHA256SUMS`
 - `*.sigstore.json` for each release asset and `SHA256SUMS`
-- `*.sig` + `*.pem` for each release asset and `SHA256SUMS` (for users verifying with Cosign v2)
 
 Architecture note: native archive `<arch>` is derived from the GitHub runner architecture. In the current hosted matrix for this repository, Linux/Windows builds are `amd64` and macOS builds are `arm64`. Runner mappings can change over time.
 
@@ -194,7 +193,7 @@ cosign verify-blob \
   SHA256SUMS
 ```
 
-Cosign v3 bundles (`*.sigstore.json`) are the primary verification material and the only inputs used by the release workflow's own verification step. Detached `*.sig` and `*.pem` files are also published for users verifying with Cosign v2.
+Cosign v3 bundles (`*.sigstore.json`) are the published verification material and the only inputs used by the release workflow's own verification step. Older releases may still include detached `*.sig` and `*.pem` files from the previous signing flow.
 
 Breaking change in `v0.3.1`: shared library filenames changed from `chroma_go_shim` to `chroma_shim`.
 

@@ -281,8 +281,6 @@ jobs:
             cosign sign-blob --yes \
               --bundle "${f}.sigstore.json" \
               --use-signing-config \
-              --output-signature "${f}.sig" \
-              --output-certificate "${f}.pem" \
               "${f}"
 
             cosign verify-blob \
@@ -296,8 +294,6 @@ jobs:
           cosign sign-blob --yes \
             --bundle SHA256SUMS.sigstore.json \
             --use-signing-config \
-            --output-signature SHA256SUMS.sig \
-            --output-certificate SHA256SUMS.pem \
             SHA256SUMS
 
           cosign verify-blob \
@@ -365,8 +361,6 @@ jobs:
           cosign sign-blob --yes \
             --bundle /tmp/releases.json.sigstore.json \
             --use-signing-config \
-            --output-signature /tmp/releases.json.sig \
-            --output-certificate /tmp/releases.json.pem \
             /tmp/releases.json
 
           cosign verify-blob \
@@ -383,10 +377,6 @@ jobs:
           aws s3 cp /tmp/releases.json.sigstore.json "s3://${BUCKET}/${PROJECT}/releases.json.sigstore.json" \
             --endpoint-url "${R2_ENDPOINT}" \
             --content-type "application/json"
-          aws s3 cp /tmp/releases.json.sig "s3://${BUCKET}/${PROJECT}/releases.json.sig" \
-            --endpoint-url "${R2_ENDPOINT}"
-          aws s3 cp /tmp/releases.json.pem "s3://${BUCKET}/${PROJECT}/releases.json.pem" \
-            --endpoint-url "${R2_ENDPOINT}"
 
       - name: Purge release metadata from CDN cache
         if: vars.CF_ZONE_ID != ''
@@ -419,5 +409,3 @@ jobs:
             dist/*.jar
             dist/SHA256SUMS
             dist/*.sigstore.json
-            dist/*.sig
-            dist/*.pem
