@@ -658,7 +658,7 @@ impl EmbeddedRebuildCollectionPayload {
     }
 }
 
-// Mirrors Chroma 1.5.3 PersistentData pickle layout used for index_metadata.pickle
+// Mirrors Chroma 1.5.5 PersistentData pickle layout used for index_metadata.pickle
 // (chromadb/segment/impl/vector/local_persistent_hnsw.py). Keep this in sync.
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct HnswIdMap {
