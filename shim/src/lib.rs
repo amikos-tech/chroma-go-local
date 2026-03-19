@@ -4929,7 +4929,7 @@ pub unsafe extern "C" fn chroma_get_last_error() -> *const c_char {
 #[no_mangle]
 pub unsafe extern "C" fn chroma_version() -> *const c_char {
     ffi_guard_ptr_const!({
-        static VERSION: &[u8] = b"0.2.0\0";
+        static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
         VERSION.as_ptr() as *const c_char
     })
 }

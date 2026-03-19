@@ -3,6 +3,7 @@ package chroma
 import (
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ func TestInitAndVersion(t *testing.T) {
 	versionWithError, err := VersionWithError()
 	require.NoError(t, err)
 	require.Equal(t, version, versionWithError)
+	require.Equal(t, readShimCargoVersion(t), version)
 
 	t.Logf("Chroma shim version: %s", version)
 }
@@ -78,6 +80,41 @@ allow_reset: true
 	}, 10*time.Second, 100*time.Millisecond, "server heartbeat did not become ready")
 
 	t.Log("Server is running and responding to heartbeat")
+}
+
+func readShimCargoVersion(t *testing.T) string {
+	t.Helper()
+
+	data, err := os.ReadFile("shim/Cargo.toml")
+	require.NoError(t, err)
+
+	section := ""
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = line
+			continue
+		}
+
+		if section != "[package]" || !strings.HasPrefix(line, "version") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		require.Len(t, parts, 2)
+
+		version := strings.TrimSpace(parts[1])
+		version = strings.Trim(version, "\"")
+		require.NotEmpty(t, version)
+		return version
+	}
+
+	t.Fatal("failed to find shim package version in shim/Cargo.toml")
+	return ""
 }
 
 func TestStartServerFromStringReportsBindConflicts(t *testing.T) {

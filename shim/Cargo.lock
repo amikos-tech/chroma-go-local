@@ -1785,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "chroma_go_shim"
-version = "0.1.0"
+version = "0.3.4"
 dependencies = [
  "chroma-config",
  "chroma-frontend",
