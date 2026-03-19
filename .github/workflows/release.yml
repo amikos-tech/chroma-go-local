@@ -256,7 +256,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
         with:
-          # Pin the v3 CLI explicitly so bundle-based signing stays deterministic across releases.
+          # Override the action default (v3.0.3) to v3.0.5 for security fixes and deterministic bundle output.
           cosign-release: v3.0.5
 
       - name: Sign and verify artifacts
@@ -381,7 +381,8 @@ jobs:
             --content-type "application/json" \
             --cache-control "public, max-age=60"
           aws s3 cp /tmp/releases.json.sigstore.json "s3://${BUCKET}/${PROJECT}/releases.json.sigstore.json" \
-            --endpoint-url "${R2_ENDPOINT}"
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json"
           aws s3 cp /tmp/releases.json.sig "s3://${BUCKET}/${PROJECT}/releases.json.sig" \
             --endpoint-url "${R2_ENDPOINT}"
           aws s3 cp /tmp/releases.json.pem "s3://${BUCKET}/${PROJECT}/releases.json.pem" \
