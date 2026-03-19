@@ -26,7 +26,7 @@ The table below captures current support and CI coverage for this repository.
 | macOS | arm64 | yes | yes | Fully exercised in CI. |
 | Windows | arm64 | no | no | Toolchain is documented, but CI/release artifacts are not yet published. |
 
-See [Prebuilt Shim Artifacts](#prebuilt-shim-artifacts) for archive naming and [Windows toolchain setup](#windows-toolchain-setup) for local Windows prerequisites.
+See [Prebuilt Release Artifacts](#prebuilt-release-artifacts) for release asset naming and [Windows toolchain setup](#windows-toolchain-setup) for local Windows prerequisites.
 
 ## Integration Direction (`chroma-go` PersistentClient)
 
@@ -63,6 +63,8 @@ make build-java
 # Run Java smoke tests (expects CHROMA_LIB_PATH, auto-set by make target)
 make test-java
 ```
+
+Local Java builds default to artifact version `0.0.0-SNAPSHOT`. Tag releases pass the repository tag version into Gradle so Java JARs track the same release line as the native shim.
 
 ## Windows Developer Workflow (PowerShell)
 
@@ -115,24 +117,27 @@ pwsh -File .\scripts\dev-windows.ps1 -Task test-rust
 pwsh -File .\scripts\dev-windows.ps1 -Task lint
 ```
 
-## Prebuilt Shim Artifacts
+## Prebuilt Release Artifacts
 
 Tag pushes matching `v*` trigger `.github/workflows/release.yml`, which performs:
 
 - GitHub release upload (for compatibility)
-- signed artifact upload to `https://releases.amikos.tech/chroma-go-local/<version>/`
+- signed native shim archives and Java JARs uploaded to `https://releases.amikos.tech/chroma-go-local/<version>/`
 - `latest.json` update at `https://releases.amikos.tech/chroma-go-local/latest.json`
 - signed `releases.json` index update at `https://releases.amikos.tech/chroma-go-local/releases.json`
 
-Canonical archive naming:
+Canonical release asset naming:
 
 - `chroma-go-local-<version>-linux-<arch>.tar.gz`
 - `chroma-go-local-<version>-darwin-<arch>.tar.gz`
 - `chroma-go-local-<version>-windows-<arch>.tar.gz`
+- `chroma-local-java-core-<version>.jar`
+- `chroma-local-java-jna-<version>.jar`
+- `chroma-local-java-panama-<version>.jar`
 - `SHA256SUMS`
-- `*.sig` + `*.pem` for each archive and `SHA256SUMS`
+- `*.sig` + `*.pem` for each release asset and `SHA256SUMS`
 
-Architecture note: archive `<arch>` is derived from the GitHub runner architecture. In the current hosted matrix for this repository, Linux/Windows builds are `amd64` and macOS builds are `arm64`. Runner mappings can change over time.
+Architecture note: native archive `<arch>` is derived from the GitHub runner architecture. In the current hosted matrix for this repository, Linux/Windows builds are `amd64` and macOS builds are `arm64`. Runner mappings can change over time.
 
 Library filename mapping inside each archive:
 
@@ -142,17 +147,17 @@ Library filename mapping inside each archive:
 | macOS | `libchroma_shim.dylib` |
 | Windows | `chroma_shim.dll` |
 
-Example usage:
+Native shim archive example usage:
 
 ```bash
 # Linux/macOS
-tar -xzf chroma-go-local-v0.3.1-linux-amd64.tar.gz
+tar -xzf chroma-go-local-v<version>-linux-amd64.tar.gz
 export CHROMA_LIB_PATH="$(pwd)/libchroma_shim.so"
 ```
 
 ```powershell
 # Windows PowerShell
-tar -xzf chroma-go-local-v0.3.1-windows-amd64.tar.gz
+tar -xzf chroma-go-local-v<version>-windows-amd64.tar.gz
 $env:CHROMA_LIB_PATH = (Resolve-Path .\chroma_shim.dll).Path
 ```
 
@@ -182,7 +187,7 @@ Verify signatures (cosign keyless):
 cosign verify-blob \
   --signature SHA256SUMS.sig \
   --certificate SHA256SUMS.pem \
-  --certificate-identity "https://github.com/amikos-tech/chroma-go-local/.github/workflows/release.yml@refs/tags/v0.3.1" \
+  --certificate-identity "https://github.com/amikos-tech/chroma-go-local/.github/workflows/release.yml@refs/tags/v<version>" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   SHA256SUMS
 ```
@@ -593,7 +598,7 @@ GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `w
 5. Java JNA smoke tests on Java 17
 6. Java Panama smoke tests on Java 22
 
-Release tags (`v*`) run a separate workflow that builds canonical archives, signs artifacts with cosign keyless, publishes to both GitHub Releases and `releases.amikos.tech`, and updates `latest.json` plus signed `releases.json`.
+Release tags (`v*`) run a separate workflow that builds canonical native archives plus Java release JARs, signs artifacts with cosign keyless, publishes to both GitHub Releases and `releases.amikos.tech`, and updates `latest.json` plus signed `releases.json`.
 
 ## Troubleshooting
 
@@ -602,7 +607,7 @@ Release tags (`v*`) run a separate workflow that builds canonical archives, sign
 If `Init("")` fails, validate all of the following first:
 
 - `CHROMA_LIB_PATH` should be absolute for clarity. Relative paths that include separators are also supported and resolved by the loader.
-- The library filename matches your platform (see [Prebuilt Shim Artifacts](#prebuilt-shim-artifacts)).
+- The library filename matches your platform (see [Prebuilt Release Artifacts](#prebuilt-release-artifacts)).
 - The library exists at that exact path.
 
 Quick verification:
@@ -633,7 +638,7 @@ xattr -dr com.apple.quarantine /path/to/libchroma_shim.dylib
 
 - Prefer the PowerShell helper commands in this README (`scripts/dev-windows.ps1`) instead of `make` for test/lint/bench flows.
 - Ensure the Rust MSVC target is active and `protoc` 31.x is installed before running tests.
-- If path issues appear, set `CHROMA_LIB_PATH` via `Resolve-Path` as shown in [Prebuilt Shim Artifacts](#prebuilt-shim-artifacts).
+- If path issues appear, set `CHROMA_LIB_PATH` via `Resolve-Path` as shown in [Prebuilt Release Artifacts](#prebuilt-release-artifacts).
 
 ### Build and test failures
 
