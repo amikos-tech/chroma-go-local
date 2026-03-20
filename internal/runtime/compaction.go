@@ -1,9 +1,9 @@
-package chroma
+package runtime
 
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 
@@ -74,7 +74,7 @@ func (e *Embedded) CompactCollection(request CompactCollectionRequest) (*Compact
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
@@ -111,7 +111,7 @@ func (e *Embedded) CompactAll(request CompactAllRequest) (*CompactionResult, err
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {

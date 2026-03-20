@@ -1,9 +1,9 @@
-package chroma
+package runtime
 
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 
@@ -135,7 +135,7 @@ func (e *Embedded) RebuildCollection(name string, options ...RebuildCollectionOp
 func (e *Embedded) rebuildCollection(request rebuildCollectionRequest) (*RebuildCollectionResult, error) {
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {

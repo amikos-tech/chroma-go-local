@@ -1,9 +1,9 @@
-package chroma
+package runtime
 
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -268,7 +268,7 @@ func (e *Embedded) PruneCollectionWAL(name string, options ...WALPruneOption) (*
 func (e *Embedded) pruneCollectionWAL(request walPruneCollectionRequest) (*WALPruneResult, error) {
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
@@ -310,7 +310,7 @@ func (e *Embedded) PruneAllWAL(options ...WALPruneOption) (*WALPruneResult, erro
 func (e *Embedded) pruneAllWAL(request walPruneAllRequest) (*WALPruneResult, error) {
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {

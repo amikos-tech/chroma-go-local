@@ -1,11 +1,11 @@
-package chroma
+package runtime
 
 import (
 	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
-	"runtime"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -409,7 +409,7 @@ func StartEmbedded(config StartEmbeddedConfig) (*Embedded, error) {
 		config:      config,
 		persistPath: resolvedPersistPath,
 	}
-	runtime.SetFinalizer(embedded, func(e *Embedded) {
+	goruntime.SetFinalizer(embedded, func(e *Embedded) {
 		_ = e.Close()
 	})
 	return embedded, nil
@@ -423,7 +423,7 @@ func (e *Embedded) Heartbeat() (uint64, error) {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
@@ -446,7 +446,7 @@ func (e *Embedded) MaxBatchSize() (uint32, error) {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
@@ -469,7 +469,7 @@ func (e *Embedded) CreateTenant(request EmbeddedCreateTenantRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -498,7 +498,7 @@ func (e *Embedded) GetTenant(request EmbeddedGetTenantRequest) (*EmbeddedTenant,
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -533,7 +533,7 @@ func (e *Embedded) UpdateTenant(request EmbeddedUpdateTenantRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -565,7 +565,7 @@ func (e *Embedded) Healthcheck() (*EmbeddedHealthCheckResponse, error) {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
@@ -593,7 +593,7 @@ func (e *Embedded) IndexingStatus(request EmbeddedIndexingStatusRequest) (*Embed
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -628,7 +628,7 @@ func (e *Embedded) Reset() error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
@@ -650,7 +650,7 @@ func (e *Embedded) CreateDatabase(request EmbeddedCreateDatabaseRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -679,7 +679,7 @@ func (e *Embedded) ListDatabases(request EmbeddedListDatabasesRequest) ([]Embedd
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -711,7 +711,7 @@ func (e *Embedded) GetDatabase(request EmbeddedGetDatabaseRequest) (*EmbeddedDat
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -746,7 +746,7 @@ func (e *Embedded) DeleteDatabase(request EmbeddedDeleteDatabaseRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -775,7 +775,7 @@ func (e *Embedded) ListCollections(request EmbeddedListCollectionsRequest) ([]Em
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -807,7 +807,7 @@ func (e *Embedded) GetCollection(request EmbeddedGetCollectionRequest) (*Embedde
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -842,7 +842,7 @@ func (e *Embedded) CountCollections(request EmbeddedCountCollectionsRequest) (ui
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return 0, ErrEmbeddedNotStarted
@@ -869,7 +869,7 @@ func (e *Embedded) UpdateCollection(request EmbeddedUpdateCollectionRequest) err
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -915,7 +915,7 @@ func (e *Embedded) DeleteCollection(request EmbeddedDeleteCollectionRequest) err
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -944,7 +944,7 @@ func (e *Embedded) ForkCollection(request EmbeddedForkCollectionRequest) (*Embed
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -982,7 +982,7 @@ func (e *Embedded) CountRecords(request EmbeddedCountRecordsRequest) (uint32, er
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return 0, ErrEmbeddedNotStarted
@@ -1012,7 +1012,7 @@ func (e *Embedded) GetRecords(request EmbeddedGetRecordsRequest) (*EmbeddedGetRe
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -1047,7 +1047,7 @@ func (e *Embedded) UpdateRecords(request EmbeddedUpdateRecordsRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -1099,7 +1099,7 @@ func (e *Embedded) UpsertRecords(request EmbeddedUpsertRecordsRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -1176,7 +1176,7 @@ func (e *Embedded) DeleteRecordsWithResponse(request EmbeddedDeleteRecordsReques
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -1211,7 +1211,7 @@ func (e *Embedded) CreateCollection(request EmbeddedCreateCollectionRequest) (*E
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -1251,7 +1251,7 @@ func (e *Embedded) Add(request EmbeddedAddRequest) error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return ErrEmbeddedNotStarted
@@ -1303,7 +1303,7 @@ func (e *Embedded) Query(request EmbeddedQueryRequest) (*EmbeddedQueryResponse, 
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 	handle := atomic.LoadUintptr(&e.handle)
 	if handle == 0 {
 		return nil, ErrEmbeddedNotStarted
@@ -1343,7 +1343,7 @@ func (e *Embedded) Close() error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(e)
+	defer goruntime.KeepAlive(e)
 
 	handle := atomic.SwapUintptr(&e.handle, 0)
 	if handle == 0 {

@@ -1,8 +1,9 @@
-package chroma
+// Package runtime contains the Chroma server and embedded runtime implementation.
+package runtime
 
 import (
 	"fmt"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -293,7 +294,7 @@ func StartServer(config StartServerConfig) (*Server, error) {
 		persistPath: resolvedPersistPath,
 	}
 
-	runtime.SetFinalizer(server, func(s *Server) {
+	goruntime.SetFinalizer(server, func(s *Server) {
 		_ = s.Close()
 	})
 
@@ -328,7 +329,7 @@ func (s *Server) Stop() error {
 	}
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(s)
+	defer goruntime.KeepAlive(s)
 
 	handle := atomic.LoadUintptr(&s.handle)
 	if handle == 0 {
@@ -352,7 +353,7 @@ func (s *Server) Close() error {
 
 	ffiMu.Lock()
 	defer ffiMu.Unlock()
-	defer runtime.KeepAlive(s)
+	defer goruntime.KeepAlive(s)
 
 	handle := atomic.SwapUintptr(&s.handle, 0)
 	if handle == 0 {

@@ -1,4 +1,4 @@
-package chroma
+package runtime
 
 import (
 	"crypto/sha256"
@@ -9,7 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -322,7 +322,7 @@ func (s *Server) restartFromConfig(config StartServerConfig) error {
 	}
 
 	handle := atomic.SwapUintptr(&restarted.handle, 0)
-	runtime.SetFinalizer(restarted, nil)
+	goruntime.SetFinalizer(restarted, nil)
 	s.stateMu.Lock()
 	s.port = restarted.port
 	s.addr = restarted.addr
@@ -330,7 +330,7 @@ func (s *Server) restartFromConfig(config StartServerConfig) error {
 	s.persistPath = restarted.persistPath
 	atomic.StoreUintptr(&s.handle, handle)
 	s.stateMu.Unlock()
-	runtime.KeepAlive(restarted)
+	goruntime.KeepAlive(restarted)
 	return nil
 }
 
@@ -341,13 +341,13 @@ func (e *Embedded) reopenFromConfig(config StartEmbeddedConfig) error {
 	}
 
 	handle := atomic.SwapUintptr(&restarted.handle, 0)
-	runtime.SetFinalizer(restarted, nil)
+	goruntime.SetFinalizer(restarted, nil)
 	e.stateMu.Lock()
 	e.config = restarted.config
 	e.persistPath = restarted.persistPath
 	atomic.StoreUintptr(&e.handle, handle)
 	e.stateMu.Unlock()
-	runtime.KeepAlive(restarted)
+	goruntime.KeepAlive(restarted)
 	return nil
 }
 
