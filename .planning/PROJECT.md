@@ -24,12 +24,15 @@ The public Go import path and API surface must remain 100% backward-compatible �
 
 ### Active
 
-- [ ] Move Go implementation into `go/` subtree without breaking imports
 - [ ] Add thin root facade to preserve import compatibility
 - [ ] Reorganize tests for subtree layout + API compatibility coverage
 - [ ] Update Make/CI for relocated Go package layout
 - [ ] Refresh docs/examples after Go subtree move
 - [ ] Add compatibility gate checklist for root cleanup refactor
+
+### Validated in Phase 2: File Migration
+
+- ✓ Move Go implementation into `internal/` subtree without breaking imports — all files in `internal/runtime/` and `internal/library/`
 
 ### Out of Scope
 
@@ -65,7 +68,8 @@ Individual issues: #39, #40, #41, #42, #43, #44
 
 ## Current State
 
-- Phase 1 (Layout Design) complete — skeleton `internal/runtime/` and `internal/library/` packages created with anchor validation test. Purely additive, no existing files modified.
+- Phase 1 (Layout Design) complete — skeleton packages created
+- Phase 2 (File Migration) complete — all Go implementation (8 files) and test files (11 files) moved to `internal/runtime/`, library FFI loading (4 files) moved to `internal/library/`. Zero .go files remain at repo root. Race-instrumented compilation and cross-compile pass.
 
 ---
-*Last updated: 2026-03-20 after Phase 1 completion*
+*Last updated: 2026-03-20 after Phase 2 completion*
