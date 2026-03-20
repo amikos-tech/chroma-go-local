@@ -29,7 +29,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `go build ./...` succeeds with the skeleton in place alongside existing root files
   3. The root facade import of `internal/runtime` compiles without "use of internal package not allowed" errors
   4. No existing Go files have been relocated; the skeleton is additive only
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 01-01-PLAN.md — Create skeleton packages and anchor validation test
 
 ### Phase 2: File Migration
 **Goal**: All Go implementation files live in `internal/library/` and `internal/runtime/`; the repo root contains no implementation logic; `go test ./internal/...` passes with race detector on
@@ -85,7 +87,7 @@ Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Layout Design | 0/TBD | Not started | - |
+| 1. Layout Design | 0/1 | Planning complete | - |
 | 2. File Migration | 0/TBD | Not started | - |
 | 3. Root Facade | 0/TBD | Not started | - |
 | 4. Build and Test | 0/TBD | Not started | - |
