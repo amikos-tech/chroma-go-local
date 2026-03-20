@@ -42,7 +42,10 @@ Plans:
   2. Platform-specific files (`library_unix.go`, `library_windows.go`) are present in `internal/library/` with correct build tags verified via `go list`
   3. `go test -race ./internal/...` passes with no data-race reports
   4. Per-package test count in `internal/...` accounts for all tests that previously ran at root; no tests are orphaned
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Move library files to internal/library/, export LoadLibrary, bridge chroma.go Init()
+- [ ] 02-02-PLAN.md — Move runtime files and tests to internal/runtime/, fix imports, remove anchor test
 
 ### Phase 3: Root Facade
 **Goal**: The repo root package re-exports every previously public symbol so that existing callers compile and behave identically without changing a single import statement
@@ -88,7 +91,7 @@ Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Layout Design | 1/1 | Complete | 2026-03-20 |
-| 2. File Migration | 0/TBD | Not started | - |
+| 2. File Migration | 0/2 | Not started | - |
 | 3. Root Facade | 0/TBD | Not started | - |
 | 4. Build and Test | 0/TBD | Not started | - |
 | 5. Compatibility and Docs | 0/TBD | Not started | - |
