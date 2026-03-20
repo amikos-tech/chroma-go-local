@@ -59,7 +59,7 @@ Plans:
   5. The import path `github.com/amikos-tech/chroma-go-local` resolves to the facade package and the package name remains `chroma`
 **Plans:** 2 plans
 Plans:
-- [ ] 03-01-PLAN.md — Create core facade files (doc.go, chroma.go, config.go, errors.go)
+- [x] 03-01-PLAN.md — Create core facade files (doc.go, chroma.go, config.go, errors.go)
 - [ ] 03-02-PLAN.md — Create feature facade files (embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go)
 
 ### Phase 4: Build and Test

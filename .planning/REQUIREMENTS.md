@@ -14,11 +14,11 @@
 
 ### Import Facade
 
-- [ ] **FACADE-01**: Root package exposes all current public types via type aliases (`type X = impl.X`)
-- [ ] **FACADE-02**: Root package re-exports all public functions via variable assignments or wrapper calls
-- [ ] **FACADE-03**: Root package re-exports all constants, variables, and error types
-- [ ] **FACADE-04**: Root package contains zero implementation logic (pure forwarding only)
-- [ ] **FACADE-05**: Import path `github.com/amikos-tech/chroma-go-local` remains valid and unchanged
+- [x] **FACADE-01**: Root package exposes all current public types via type aliases (`type X = impl.X`)
+- [x] **FACADE-02**: Root package re-exports all public functions via variable assignments or wrapper calls
+- [x] **FACADE-03**: Root package re-exports all constants, variables, and error types
+- [x] **FACADE-04**: Root package contains zero implementation logic (pure forwarding only)
+- [x] **FACADE-05**: Import path `github.com/amikos-tech/chroma-go-local` remains valid and unchanged
 
 ### Test Reorganization
 
@@ -72,11 +72,11 @@
 | LAYOUT-02 | Phase 1 | Complete |
 | LAYOUT-03 | Phase 2 | Complete |
 | LAYOUT-04 | Phase 2 | Complete |
-| FACADE-01 | Phase 3 | Pending |
-| FACADE-02 | Phase 3 | Pending |
-| FACADE-03 | Phase 3 | Pending |
-| FACADE-04 | Phase 3 | Pending |
-| FACADE-05 | Phase 3 | Pending |
+| FACADE-01 | Phase 3 | Complete |
+| FACADE-02 | Phase 3 | Complete |
+| FACADE-03 | Phase 3 | Complete |
+| FACADE-04 | Phase 3 | Complete |
+| FACADE-05 | Phase 3 | Complete |
 | TEST-01 | Phase 4 | Pending |
 | TEST-02 | Phase 4 | Pending |
 | TEST-03 | Phase 4 | Pending |

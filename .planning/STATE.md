@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-03-20T17:15:34.898Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-20T19:00:22.741Z"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 5
+  completed_plans: 4
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** Public Go import path and API surface must remain 100% backward-compatible
-**Current focus:** Phase 02 — file-migration
+**Current focus:** Phase 03 — root-facade
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 03 (root-facade) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Plan: Not started
 *Updated after each plan completion*
 | Phase 02 P01 | 2min | 2 tasks | 6 files |
 | Phase 02 P02 | 28min | 2 tasks | 21 files |
+| Phase 03 P01 | 1min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,7 @@ Recent decisions affecting current work:
 - [Phase 02]: Only LoadLibrary exported; all types and helpers remain unexported for encapsulation
 - [Phase 02]: goruntime alias for stdlib runtime import in all internal/runtime/ files that use SetFinalizer/KeepAlive/GOOS
 - [Phase 02]: go build scoped to ./internal/... until Phase 3 facade restores root package
+- [Phase 03]: Zero logic in facade files: thin wrappers and type aliases only (D-04)
 
 ### Pending Todos
 
@@ -77,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:10:12.423Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-03-20T19:00:22.738Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None
