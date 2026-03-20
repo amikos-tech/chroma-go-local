@@ -1,4 +1,4 @@
-package chroma
+package library
 
 import (
 	"errors"

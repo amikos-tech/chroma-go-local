@@ -1,6 +1,6 @@
 //go:build !windows
 
-package chroma
+package library
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-func loadLibrary(path string) (uintptr, error) {
+func LoadLibrary(path string) (uintptr, error) {
 	plan, err := resolveLibraryLoadPlan(path, runtime.GOOS, os.Getenv, os.Stat)
 	if err != nil {
 		return 0, err
