@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-20T19:00:22.741Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-20T19:06:27.117Z"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -49,6 +49,7 @@ Plan: 2 of 2
 | Phase 02 P01 | 2min | 2 tasks | 6 files |
 | Phase 02 P02 | 28min | 2 tasks | 21 files |
 | Phase 03 P01 | 1min | 1 tasks | 4 files |
+| Phase 03 P02 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,8 @@ Recent decisions affecting current work:
 - [Phase 02]: goruntime alias for stdlib runtime import in all internal/runtime/ files that use SetFinalizer/KeepAlive/GOOS
 - [Phase 02]: go build scoped to ./internal/... until Phase 3 facade restores root package
 - [Phase 03]: Zero logic in facade files: thin wrappers and type aliases only (D-04)
+- [Phase 03]: compaction.go has zero functions -- methods auto-forward via type alias
+- [Phase 03]: wal_prune.go imports both time and internal/runtime for WithWALPruneMaxAge(time.Duration)
 
 ### Pending Todos
 
@@ -79,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T19:00:22.738Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-03-20T19:06:27.114Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None

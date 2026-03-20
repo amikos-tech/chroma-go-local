@@ -60,7 +60,7 @@ Plans:
 **Plans:** 2 plans
 Plans:
 - [x] 03-01-PLAN.md — Create core facade files (doc.go, chroma.go, config.go, errors.go)
-- [ ] 03-02-PLAN.md — Create feature facade files (embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go)
+- [x] 03-02-PLAN.md — Create feature facade files (embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go)
 
 ### Phase 4: Build and Test
 **Goal**: All `make` targets pass, the CI matrix stays green, lint is clean, and the test layout reflects the new package structure including a root-level compatibility gate
