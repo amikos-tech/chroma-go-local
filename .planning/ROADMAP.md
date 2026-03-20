@@ -44,8 +44,8 @@ Plans:
   4. Per-package test count in `internal/...` accounts for all tests that previously ran at root; no tests are orphaned
 **Plans:** 2 plans
 Plans:
-- [ ] 02-01-PLAN.md — Move library files to internal/library/, export LoadLibrary, bridge chroma.go Init()
-- [ ] 02-02-PLAN.md — Move runtime files and tests to internal/runtime/, fix imports, remove anchor test
+- [x] 02-01-PLAN.md — Move library files to internal/library/, export LoadLibrary, bridge chroma.go Init()
+- [x] 02-02-PLAN.md — Move runtime files and tests to internal/runtime/, fix imports, remove anchor test
 
 ### Phase 3: Root Facade
 **Goal**: The repo root package re-exports every previously public symbol so that existing callers compile and behave identically without changing a single import statement

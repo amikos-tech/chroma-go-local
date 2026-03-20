@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4
+milestone: v0.4.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-20T16:37:40.057Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-20T17:10:12.426Z"
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -47,6 +47,7 @@ Plan: 2 of 2
 
 *Updated after each plan completion*
 | Phase 02 P01 | 2min | 2 tasks | 6 files |
+| Phase 02 P02 | 28min | 2 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,8 @@ Recent decisions affecting current work:
 - [Phase 01]: Doc comments in main .go files (runtime.go, library.go), not separate doc.go
 - [Phase 02]: Preserved Phase 1 skeleton doc comment as package doc for internal/library
 - [Phase 02]: Only LoadLibrary exported; all types and helpers remain unexported for encapsulation
+- [Phase 02]: goruntime alias for stdlib runtime import in all internal/runtime/ files that use SetFinalizer/KeepAlive/GOOS
+- [Phase 02]: go build scoped to ./internal/... until Phase 3 facade restores root package
 
 ### Pending Todos
 
@@ -74,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T16:37:40.054Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-20T17:10:12.423Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
