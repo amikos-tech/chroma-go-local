@@ -1,0 +1,67 @@
+# chroma-go-local v0.4.0: Go Subtree Reorganization
+
+## What This Is
+
+A structural refactor of the chroma-go-local repository that moves Go implementation code out of the repo root into a dedicated `go/` subtree. This preserves the current public import path (`github.com/amikos-tech/chroma-go-local`) and all API behavior while making Go/Java/Rust ownership boundaries explicit for long-term maintenance.
+
+## Core Value
+
+The public Go import path and API surface must remain 100% backward-compatible — existing users must not need to change any code.
+
+## Requirements
+
+### Validated
+
+- ✓ Pure Go FFI via purego (no cgo) — existing
+- ✓ Server mode (HTTP) and Embedded mode (in-process) — existing
+- ✓ Builder pattern configuration with YAML backing — existing
+- ✓ Explicit resource lifecycle with finalizer fallback — existing
+- ✓ Java scaffold bindings (JNA + Panama) — existing
+- ✓ Rust FFI shim with C-compatible exports — existing
+- ✓ Cross-platform support (Linux, macOS, Windows) — existing
+- ✓ WAL prune maintenance APIs — v0.4.0 (#26)
+- ✓ Collection rebuild maintenance API — v0.4.0 (#25)
+
+### Active
+
+- [ ] Move Go implementation into `go/` subtree without breaking imports
+- [ ] Add thin root facade to preserve import compatibility
+- [ ] Reorganize tests for subtree layout + API compatibility coverage
+- [ ] Update Make/CI for relocated Go package layout
+- [ ] Refresh docs/examples after Go subtree move
+- [ ] Add compatibility gate checklist for root cleanup refactor
+
+### Out of Scope
+
+- New features or API additions — this is purely structural
+- Java binding changes — layout remains unchanged
+- Rust shim changes — shim stays in `shim/`
+- Go module path change — must remain `github.com/amikos-tech/chroma-go-local`
+
+## Context
+
+The current repo has Go implementation files (chroma.go, config.go, embedded.go, errors.go, library.go, backup.go, rebuild.go, compaction.go, wal_prune.go) mixed at the repo root alongside Rust and Java code. This makes long-term maintenance and Java binding expansion harder. The v0.4.0 milestone moves Go implementation into a clean subtree while the root package becomes a thin facade.
+
+GitHub milestone: v0.4.0 (amikos-tech/chroma-go-local milestone #4)
+Umbrella issue: #45
+Individual issues: #39, #40, #41, #42, #43, #44
+
+## Constraints
+
+- **Import compatibility**: Root module path `github.com/amikos-tech/chroma-go-local` must remain valid
+- **API stability**: No public API signature changes allowed
+- **Build system**: `make test`, `make lint`, `make test-all` must pass throughout
+- **CI**: GitHub Actions workflows must remain green across OS matrix
+- **No circular deps**: New package layout must not introduce circular dependencies
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Sequential phases (one issue per phase) | Refactoring has strict dependency chain; each step must be stable before next | — Pending |
+| Subtree under `go/` directory | Keeps Go/Java/Rust separation explicit at repo root level | — Pending |
+| Root becomes thin facade | Preserves import path without requiring Go module replace directives | — Pending |
+| Proposed layout: `go/internal/runtime/`, `go/internal/library/`, etc. | Internal packages prevent unintended external imports | — Pending |
+
+---
+*Last updated: 2026-03-20 after initialization*
