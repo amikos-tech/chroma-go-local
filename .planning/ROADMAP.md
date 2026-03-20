@@ -12,7 +12,7 @@ A strictly sequential structural refactor: move all Go implementation files from
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Layout Design** - Lock directory structure, create skeleton packages, confirm `internal/` is anchored at module root
+- [x] **Phase 1: Layout Design** - Lock directory structure, create skeleton packages, confirm `internal/` is anchored at module root
 - [ ] **Phase 2: File Migration** - Move all Go implementation files into `internal/runtime/` and `internal/library/`, co-locate tests
 - [ ] **Phase 3: Root Facade** - Write thin facade at repo root that re-exports every public symbol via type aliases and function vars
 - [ ] **Phase 4: Build and Test** - Update Makefile, CI, lint config, and test layout; verify all `make` targets and cross-compile pass
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. No existing Go files have been relocated; the skeleton is additive only
 **Plans:** 1 plan
 Plans:
-- [ ] 01-01-PLAN.md — Create skeleton packages and anchor validation test
+- [x] 01-01-PLAN.md — Create skeleton packages and anchor validation test
 
 ### Phase 2: File Migration
 **Goal**: All Go implementation files live in `internal/library/` and `internal/runtime/`; the repo root contains no implementation logic; `go test ./internal/...` passes with race detector on
@@ -87,7 +87,7 @@ Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Layout Design | 0/1 | Planning complete | - |
+| 1. Layout Design | 1/1 | Complete | 2026-03-20 |
 | 2. File Migration | 0/TBD | Not started | - |
 | 3. Root Facade | 0/TBD | Not started | - |
 | 4. Build and Test | 0/TBD | Not started | - |

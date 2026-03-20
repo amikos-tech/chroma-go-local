@@ -7,8 +7,8 @@
 
 ### Layout Migration
 
-- [ ] **LAYOUT-01**: All Go implementation files moved from repo root into `internal/` subtree at module root
-- [ ] **LAYOUT-02**: Implementation organized into `internal/runtime/` (server, embedded, config, errors) and `internal/library/` (FFI loading, platform shims)
+- [x] **LAYOUT-01**: All Go implementation files moved from repo root into `internal/` subtree at module root
+- [x] **LAYOUT-02**: Implementation organized into `internal/runtime/` (server, embedded, config, errors) and `internal/library/` (FFI loading, platform shims)
 - [ ] **LAYOUT-03**: All FFI globals and `sync.Once` initialization moved atomically to implementation package (no split state)
 - [ ] **LAYOUT-04**: Platform-specific files (`library_unix.go`, `library_windows.go`) retain correct build tags after move
 
@@ -68,8 +68,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LAYOUT-01 | Phase 1 | Pending |
-| LAYOUT-02 | Phase 1 | Pending |
+| LAYOUT-01 | Phase 1 | Complete |
+| LAYOUT-02 | Phase 1 | Complete |
 | LAYOUT-03 | Phase 2 | Pending |
 | LAYOUT-04 | Phase 2 | Pending |
 | FACADE-01 | Phase 3 | Pending |
