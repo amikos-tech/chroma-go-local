@@ -1,0 +1,103 @@
+# Requirements: chroma-go-local v0.4.0
+
+**Defined:** 2026-03-20
+**Core Value:** Public Go import path and API surface must remain 100% backward-compatible
+
+## v1 Requirements
+
+### Layout Migration
+
+- [ ] **LAYOUT-01**: All Go implementation files moved from repo root into `internal/` subtree at module root
+- [ ] **LAYOUT-02**: Implementation organized into `internal/runtime/` (server, embedded, config, errors) and `internal/library/` (FFI loading, platform shims)
+- [ ] **LAYOUT-03**: All FFI globals and `sync.Once` initialization moved atomically to implementation package (no split state)
+- [ ] **LAYOUT-04**: Platform-specific files (`library_unix.go`, `library_windows.go`) retain correct build tags after move
+
+### Import Facade
+
+- [ ] **FACADE-01**: Root package exposes all current public types via type aliases (`type X = impl.X`)
+- [ ] **FACADE-02**: Root package re-exports all public functions via variable assignments or wrapper calls
+- [ ] **FACADE-03**: Root package re-exports all constants, variables, and error types
+- [ ] **FACADE-04**: Root package contains zero implementation logic (pure forwarding only)
+- [ ] **FACADE-05**: Import path `github.com/amikos-tech/chroma-go-local` remains valid and unchanged
+
+### Test Reorganization
+
+- [ ] **TEST-01**: Implementation-focused tests moved alongside new internal packages
+- [ ] **TEST-02**: Public API compatibility tests remain at root level
+- [ ] **TEST-03**: `compat_test.go` added at root as compile-time API surface gate
+- [ ] **TEST-04**: `make test` passes with reorganized test layout
+
+### Build & CI
+
+- [ ] **BUILD-01**: Makefile targets updated for new package paths (`make test`, `make lint`, `make test-all`)
+- [ ] **BUILD-02**: CI workflows (`.github/workflows/ci.yml`) updated for new structure
+- [ ] **BUILD-03**: Stale `gci` prefix in `.golangci.yml` corrected to `github.com/amikos-tech/chroma-go-local/`
+- [ ] **BUILD-04**: Cross-compile verification passes for `GOOS=windows`, `GOOS=linux`, `GOOS=darwin`
+
+### Docs & Verification
+
+- [ ] **DOCS-01**: `go-apidiff` run against v0.3.4 tag confirms zero breaking changes
+- [ ] **DOCS-02**: README.md updated with new directory layout and build instructions
+- [ ] **DOCS-03**: CLAUDE.md updated to reflect new architecture
+- [ ] **DOCS-04**: GO_API_SURFACE.md references updated for new file locations
+
+### Compatibility Gate
+
+- [ ] **COMPAT-01**: Explicit compatibility checklist completed before merge
+- [ ] **COMPAT-02**: No import-path break for current users verified
+- [ ] **COMPAT-03**: Release notes include refactor summary and compatibility statement
+
+## v2 Requirements
+
+### Future Improvements
+
+- **FUTURE-01**: Verify `pkg.go.dev` rendering of type aliases to internal paths
+- **FUTURE-02**: Evaluate `go-apidiff` as permanent CI gate for future releases
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| New API features or methods | This is purely structural; new features belong to future milestones |
+| Java binding layout changes | Java layout stays in `java/`; not part of this refactor |
+| Rust shim changes | Shim stays in `shim/`; no code changes needed |
+| Go module path change | Must remain `github.com/amikos-tech/chroma-go-local` |
+| Second `go.mod` under `go/` | Creates separate module requiring `replace` directives; breaks published module |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| LAYOUT-01 | — | Pending |
+| LAYOUT-02 | — | Pending |
+| LAYOUT-03 | — | Pending |
+| LAYOUT-04 | — | Pending |
+| FACADE-01 | — | Pending |
+| FACADE-02 | — | Pending |
+| FACADE-03 | — | Pending |
+| FACADE-04 | — | Pending |
+| FACADE-05 | — | Pending |
+| TEST-01 | — | Pending |
+| TEST-02 | — | Pending |
+| TEST-03 | — | Pending |
+| TEST-04 | — | Pending |
+| BUILD-01 | — | Pending |
+| BUILD-02 | — | Pending |
+| BUILD-03 | — | Pending |
+| BUILD-04 | — | Pending |
+| DOCS-01 | — | Pending |
+| DOCS-02 | — | Pending |
+| DOCS-03 | — | Pending |
+| DOCS-04 | — | Pending |
+| COMPAT-01 | — | Pending |
+| COMPAT-02 | — | Pending |
+| COMPAT-03 | — | Pending |
+
+**Coverage:**
+- v1 requirements: 24 total
+- Mapped to phases: 0
+- Unmapped: 24 (roadmap pending)
+
+---
+*Requirements defined: 2026-03-20*
+*Last updated: 2026-03-20 after initial definition*
