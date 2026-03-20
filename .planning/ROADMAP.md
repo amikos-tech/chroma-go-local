@@ -57,7 +57,10 @@ Plans:
   3. Every exported constant, sentinel error, and package-level variable is forwarded at root; the root file contains zero logic, zero `var` state, and zero `init()` functions
   4. `go test ./...` from the module root passes using the existing test suite with no changes to test files
   5. The import path `github.com/amikos-tech/chroma-go-local` resolves to the facade package and the package name remains `chroma`
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — Create core facade files (doc.go, chroma.go, config.go, errors.go)
+- [ ] 03-02-PLAN.md — Create feature facade files (embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go)
 
 ### Phase 4: Build and Test
 **Goal**: All `make` targets pass, the CI matrix stays green, lint is clean, and the test layout reflects the new package structure including a root-level compatibility gate
@@ -91,7 +94,7 @@ Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Layout Design | 1/1 | Complete | 2026-03-20 |
-| 2. File Migration | 0/2 | Not started | - |
-| 3. Root Facade | 0/TBD | Not started | - |
+| 2. File Migration | 2/2 | Complete | 2026-03-20 |
+| 3. Root Facade | 0/2 | Not started | - |
 | 4. Build and Test | 0/TBD | Not started | - |
 | 5. Compatibility and Docs | 0/TBD | Not started | - |
