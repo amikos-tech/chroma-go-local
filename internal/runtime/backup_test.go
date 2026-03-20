@@ -1,4 +1,4 @@
-package chroma
+package runtime
 
 import (
 	"crypto/sha256"
@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -592,7 +592,7 @@ func TestEmbeddedBackupUsesRuntimePersistPathFromEnvOverride(t *testing.T) {
 }
 
 func TestServerBackupRecoversFromSourceReadFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if goruntime.GOOS == "windows" {
 		t.Skip("permission semantics differ on windows")
 	}
 
@@ -640,7 +640,7 @@ func TestServerBackupRecoversFromSourceReadFailure(t *testing.T) {
 }
 
 func TestNewBackupPlanRejectsSymlinkDestinationInsideSource(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if goruntime.GOOS == "windows" {
 		t.Skip("symlink behavior differs on windows")
 	}
 
@@ -685,7 +685,7 @@ func TestExecuteBackupCreatesEmptySnapshotWhenSourceMissing(t *testing.T) {
 }
 
 func TestExecuteBackupLeavesPartialSnapshotOnCopyFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if goruntime.GOOS == "windows" {
 		t.Skip("symlink behavior differs on windows")
 	}
 
@@ -922,7 +922,7 @@ func makeManagedTestTempDir(t *testing.T, prefix string) string {
 		if err == nil {
 			return
 		}
-		if runtime.GOOS == "windows" {
+		if goruntime.GOOS == "windows" {
 			t.Logf("skipping strict temp cleanup for %s on windows: %v", rootDir, err)
 			return
 		}
@@ -947,7 +947,7 @@ func removeDirAllWithRetries(path string, maxAttempts int, delay time.Duration) 
 
 func waitForWindowsDirectoryUnlock(t *testing.T, path string) {
 	t.Helper()
-	if runtime.GOOS != "windows" {
+	if goruntime.GOOS != "windows" {
 		return
 	}
 

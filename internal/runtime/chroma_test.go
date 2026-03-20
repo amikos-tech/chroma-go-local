@@ -1,4 +1,4 @@
-package chroma
+package runtime
 
 import (
 	"io"
@@ -85,7 +85,7 @@ allow_reset: true
 func readShimCargoVersion(t *testing.T) string {
 	t.Helper()
 
-	data, err := os.ReadFile("shim/Cargo.toml")
+	data, err := os.ReadFile("../../shim/Cargo.toml")
 	require.NoError(t, err)
 
 	section := ""
@@ -113,7 +113,7 @@ func readShimCargoVersion(t *testing.T) string {
 		return version
 	}
 
-	t.Fatal("failed to find shim package version in shim/Cargo.toml")
+	t.Fatal("failed to find shim package version in ../../shim/Cargo.toml")
 	return ""
 }
 
