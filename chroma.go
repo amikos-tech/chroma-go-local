@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/amikos-tech/chroma-go-local/internal/library"
 	"github.com/ebitengine/purego"
 	"github.com/pkg/errors"
 )
@@ -72,7 +73,7 @@ const maxCStringLen = 1 << 20
 // If libPath is empty, it will look for CHROMA_LIB_PATH environment variable.
 func Init(libPath string) error {
 	libOnce.Do(func() {
-		libHandle, libErr = loadLibrary(libPath)
+		libHandle, libErr = library.LoadLibrary(libPath)
 		if libErr != nil {
 			return
 		}
