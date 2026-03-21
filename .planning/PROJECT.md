@@ -25,8 +25,8 @@ The public Go import path and API surface must remain 100% backward-compatible �
 ### Active
 
 - ✓ Add thin root facade to preserve import compatibility — Validated in Phase 3
-- [ ] Reorganize tests for subtree layout + API compatibility coverage
-- [ ] Update Make/CI for relocated Go package layout
+- ✓ Reorganize tests for subtree layout + API compatibility coverage — Validated in Phase 4
+- ✓ Update Make/CI for relocated Go package layout — Validated in Phase 4
 - [ ] Refresh docs/examples after Go subtree move
 - [ ] Add compatibility gate checklist for root cleanup refactor
 
@@ -71,6 +71,7 @@ Individual issues: #39, #40, #41, #42, #43, #44
 - Phase 1 (Layout Design) complete — skeleton packages created
 - Phase 2 (File Migration) complete — all Go implementation (8 files) and test files (11 files) moved to `internal/runtime/`, library FFI loading (4 files) moved to `internal/library/`. Zero .go files remain at repo root. Race-instrumented compilation and cross-compile pass.
 - Phase 3 (Root Facade) complete — 9 facade files at repo root (doc.go, chroma.go, config.go, errors.go, embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go) re-export 54 type aliases and ~37 wrapper functions from internal/runtime. Full public API surface restored. `go build ./...` passes including examples.
+- Phase 4 (Build and Test) complete — lint clean (gci prefix fixed, SA1019 suppressed), `compat_test.go` created with 110-symbol compile gate + 9 behavioral smoke tests, all make targets pass, cross-compile verified for 3 OS.
 
 ---
-*Last updated: 2026-03-20 after Phase 3 completion*
+*Last updated: 2026-03-21 after Phase 4 completion*
