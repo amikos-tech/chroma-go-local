@@ -68,35 +68,35 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | Pending | Pending |
-| FOUND-02 | Pending | Pending |
-| FOUND-03 | Pending | Pending |
-| FOUND-04 | Pending | Pending |
-| FOUND-05 | Pending | Pending |
-| FOUND-06 | Pending | Pending |
-| SRVR-01 | Pending | Pending |
-| SRVR-02 | Pending | Pending |
-| SRVR-03 | Pending | Pending |
-| SRVR-04 | Pending | Pending |
-| EMNT-01 | Pending | Pending |
-| EMNT-02 | Pending | Pending |
-| EMNT-03 | Pending | Pending |
-| EMNT-04 | Pending | Pending |
-| EMNT-05 | Pending | Pending |
-| BKUP-01 | Pending | Pending |
-| BKUP-02 | Pending | Pending |
-| BKUP-03 | Pending | Pending |
-| BKUP-04 | Pending | Pending |
-| SMNT-01 | Pending | Pending |
-| SMNT-02 | Pending | Pending |
-| SMNT-03 | Pending | Pending |
-| SMNT-04 | Pending | Pending |
+| FOUND-01 | Phase 6 | Pending |
+| FOUND-02 | Phase 6 | Pending |
+| FOUND-03 | Phase 6 | Pending |
+| FOUND-04 | Phase 6 | Pending |
+| FOUND-05 | Phase 6 | Pending |
+| FOUND-06 | Phase 6 | Pending |
+| SRVR-01 | Phase 7 | Pending |
+| SRVR-02 | Phase 7 | Pending |
+| SRVR-03 | Phase 7 | Pending |
+| SRVR-04 | Phase 7 | Pending |
+| EMNT-01 | Phase 8 | Pending |
+| EMNT-02 | Phase 8 | Pending |
+| EMNT-03 | Phase 8 | Pending |
+| EMNT-04 | Phase 8 | Pending |
+| EMNT-05 | Phase 8 | Pending |
+| BKUP-01 | Phase 9 | Pending |
+| BKUP-02 | Phase 9 | Pending |
+| BKUP-03 | Phase 9 | Pending |
+| BKUP-04 | Phase 9 | Pending |
+| SMNT-01 | Phase 10 | Pending |
+| SMNT-02 | Phase 10 | Pending |
+| SMNT-03 | Phase 10 | Pending |
+| SMNT-04 | Phase 10 | Pending |
 
 **Coverage:**
 - v1 requirements: 23 total
-- Mapped to phases: 0
-- Unmapped: 23 ⚠️
+- Mapped to phases: 23
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-21 after initial definition*
+*Last updated: 2026-03-21 after roadmap creation*

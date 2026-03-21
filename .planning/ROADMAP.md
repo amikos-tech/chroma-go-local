@@ -1,10 +1,22 @@
-# Roadmap: chroma-go-local v0.4.0 — Go Subtree Reorganization
+# Roadmap: chroma-go-local
 
-## Overview
+## Milestones
 
-A strictly sequential structural refactor: move all Go implementation files from the repo root into `internal/runtime/` and `internal/library/` subtrees, then restore the root package as a pure-forwarding facade. Each phase must be green before the next begins — the dependency chain is irreversible. The public import path `github.com/amikos-tech/chroma-go-local` and every exported symbol must be identical from a caller's perspective before and after.
+- **v0.4.0 Go Subtree Reorganization** - Phases 1-5 (complete)
+- **v0.5.0 Java API Surface** - Phases 6-10 (in progress)
 
 ## Phases
+
+<details>
+<summary>v0.4.0 Go Subtree Reorganization (Phases 1-5)</summary>
+
+- [x] **Phase 1: Layout Design** - Lock directory structure, create skeleton packages, confirm `internal/` is anchored at module root
+- [x] **Phase 2: File Migration** - Move all Go implementation files into `internal/runtime/` and `internal/library/`, co-locate tests
+- [x] **Phase 3: Root Facade** - Write thin facade at repo root that re-exports every public symbol via type aliases and function vars
+- [x] **Phase 4: Build and Test** - Update Makefile, CI, lint config, and test layout; verify all `make` targets and cross-compile pass
+- [x] **Phase 5: Compatibility and Docs** - Run `go-apidiff` against v0.3.4, add `compat_test.go`, update CLAUDE.md and docs
+
+</details>
 
 **Phase Numbering:**
 - Integer phases (1, 2, 3): Planned milestone work
@@ -12,96 +24,104 @@ A strictly sequential structural refactor: move all Go implementation files from
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Layout Design** - Lock directory structure, create skeleton packages, confirm `internal/` is anchored at module root
-- [ ] **Phase 2: File Migration** - Move all Go implementation files into `internal/runtime/` and `internal/library/`, co-locate tests
-- [ ] **Phase 3: Root Facade** - Write thin facade at repo root that re-exports every public symbol via type aliases and function vars
-- [ ] **Phase 4: Build and Test** - Update Makefile, CI, lint config, and test layout; verify all `make` targets and cross-compile pass
-- [ ] **Phase 5: Compatibility and Docs** - Run `go-apidiff` against v0.3.4, add `compat_test.go`, update CLAUDE.md and docs
+### v0.5.0 Java API Surface
+
+- [ ] **Phase 6: Core Foundation Types** - Define all shared interfaces, builders, result POJOs, and FFI safety patterns in the core module with no FFI dependencies
+- [ ] **Phase 7: Server Lifecycle** - Implement server start/stop/close and connection accessors in both JNA and Panama backends
+- [ ] **Phase 8: Embedded Maintenance** - Implement rebuild, compaction, and WAL prune operations on EmbeddedSession in both backends
+- [ ] **Phase 9: Backup API** - Implement backup with filesystem copy, manifest generation, and option builder for both embedded and server modes
+- [ ] **Phase 10: Server Maintenance** - Implement stop-embed-op-restart orchestration for all maintenance operations on ServerSession
 
 ## Phase Details
 
-### Phase 1: Layout Design
-**Goal**: The target directory structure exists as compilable skeleton packages; the `internal/` anchor is confirmed at module root; no files have moved yet
-**Depends on**: Nothing (first phase)
-**Requirements**: LAYOUT-01, LAYOUT-02
+### Phase 6: Core Foundation Types
+**Goal**: The core module contains all shared interfaces, builders, result types, and FFI safety infrastructure so that backend modules (JNA, Panama) can implement against stable contracts without any FFI dependency in core
+**Depends on**: Nothing (first phase of v0.5.0 milestone)
+**Requirements**: FOUND-01, FOUND-02, FOUND-03, FOUND-04, FOUND-05, FOUND-06
 **Success Criteria** (what must be TRUE):
-  1. `internal/runtime/` and `internal/library/` directories exist at the module root with valid `package` declarations
-  2. `go build ./...` succeeds with the skeleton in place alongside existing root files
-  3. The root facade import of `internal/runtime` compiles without "use of internal package not allowed" errors
-  4. No existing Go files have been relocated; the skeleton is additive only
-**Plans:** 1 plan
-Plans:
-- [x] 01-01-PLAN.md — Create skeleton packages and anchor validation test
+  1. `ServerConfigBuilder` produces YAML that matches Go's config.go format field-for-field; a golden test compares output against known-good YAML strings
+  2. `EmbeddedConfigBuilder` produces YAML for embedded startup; existing `startEmbedded(yaml)` callers can replace hand-written YAML with the builder
+  3. All result POJOs (BackupManifest, RebuildCollectionResult, CompactionResult, WALPruneResult) are defined in core and can be constructed and serialized without FFI
+  4. FFI serialization lock pattern and string ownership helpers (readOwnedString / readBorrowedString) are established and retrofitted into existing JNA and Panama call sites
+  5. `gradle :core:build` succeeds with zero JNA or Panama imports in the core module
+**Plans**: TBD
 
-### Phase 2: File Migration
-**Goal**: All Go implementation files live in `internal/library/` and `internal/runtime/`; the repo root contains no implementation logic; `go test ./internal/...` passes with race detector on
-**Depends on**: Phase 1
-**Requirements**: LAYOUT-03, LAYOUT-04
-**Success Criteria** (what must be TRUE):
-  1. All FFI globals (`libHandle`, `libOnce`, `ffiMu`, and all function pointers) exist exclusively in `internal/runtime`; the module root has zero `var` state declarations
-  2. Platform-specific files (`library_unix.go`, `library_windows.go`) are present in `internal/library/` with correct build tags verified via `go list`
-  3. `go test -race ./internal/...` passes with no data-race reports
-  4. Per-package test count in `internal/...` accounts for all tests that previously ran at root; no tests are orphaned
-**Plans:** 2 plans
 Plans:
-- [x] 02-01-PLAN.md — Move library files to internal/library/, export LoadLibrary, bridge chroma.go Init()
-- [x] 02-02-PLAN.md — Move runtime files and tests to internal/runtime/, fix imports, remove anchor test
+- [ ] 06-01: TBD
+- [ ] 06-02: TBD
 
-### Phase 3: Root Facade
-**Goal**: The repo root package re-exports every previously public symbol so that existing callers compile and behave identically without changing a single import statement
-**Depends on**: Phase 2
-**Requirements**: FACADE-01, FACADE-02, FACADE-03, FACADE-04, FACADE-05
+### Phase 7: Server Lifecycle
+**Goal**: Users can start a Chroma server from Java, retrieve its connection details, and cleanly shut it down using try-with-resources in both JNA and Panama backends
+**Depends on**: Phase 6
+**Requirements**: SRVR-01, SRVR-02, SRVR-03, SRVR-04
 **Success Criteria** (what must be TRUE):
-  1. Every exported type is re-exported via `type X = internal/runtime.X` (alias, not definition); `chroma.Server` and `runtime.Server` are the same type
-  2. Every exported function is delegated via `var F = runtime.F`; callers invoking `chroma.NewServer(...)` reach the implementation without wrapping overhead
-  3. Every exported constant, sentinel error, and package-level variable is forwarded at root; the root file contains zero logic, zero `var` state, and zero `init()` functions
-  4. `go test ./...` from the module root passes using the existing test suite with no changes to test files
-  5. The import path `github.com/amikos-tech/chroma-go-local` resolves to the facade package and the package name remains `chroma`
-**Plans:** 2 plans
-Plans:
-- [x] 03-01-PLAN.md — Create core facade files (doc.go, chroma.go, config.go, errors.go)
-- [x] 03-02-PLAN.md — Create feature facade files (embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go)
+  1. `ChromaRuntime.startServer(configYaml)` returns a `ServerSession` that is listening on the configured port in both JNA and Panama backends
+  2. `ServerSession.port()`, `address()`, and `url()` return correct connection details that match the startup configuration
+  3. `ServerSession.close()` performs two-step teardown (stop then free) and is idempotent -- calling close twice does not crash the JVM
+  4. Integration tests in both JNA and Panama verify server start, accessor values, stop, and close lifecycle
+**Plans**: TBD
 
-### Phase 4: Build and Test
-**Goal**: All `make` targets pass, the CI matrix stays green, lint is clean, and the test layout reflects the new package structure including a root-level compatibility gate
-**Depends on**: Phase 3
-**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, BUILD-01, BUILD-02, BUILD-03, BUILD-04
-**Success Criteria** (what must be TRUE):
-  1. `make test`, `make test-release`, `make lint`, and `make test-all` all pass locally without modification by the caller
-  2. `golangci-lint run ./...` reports zero issues; the stale `gci` prefix in `.golangci.yml` is corrected to `github.com/amikos-tech/chroma-go-local/`
-  3. Cross-compile succeeds: `GOOS=linux go build ./...`, `GOOS=darwin go build ./...`, `GOOS=windows go build ./...` all complete without error
-  4. `compat_test.go` exists at repo root in `package chroma_test` and references every exported symbol; it compiles successfully as a compile-time API surface gate
-  5. CI workflows (`.github/workflows/ci.yml`) run without modification to the OS matrix or job structure
-**Plans:** 3 plans
 Plans:
-- [x] 04-01-PLAN.md — Fix lint config (gci prefix) and deprecated type nolint directives
-- [x] 04-02-PLAN.md — Create compat_test.go with compile-time API surface gate and behavioral smoke tests
-- [x] 04-03-PLAN.md — Full verification pass (make test, make lint, cross-compile, CI inspection)
+- [ ] 07-01: TBD
 
-### Phase 5: Compatibility and Docs
-**Goal**: Machine-verified API compatibility against the v0.3.4 baseline is confirmed, documentation reflects the new layout, and the release is ready to merge
-**Depends on**: Phase 4
-**Requirements**: DOCS-01, DOCS-02, DOCS-03, DOCS-04, COMPAT-01, COMPAT-02, COMPAT-03
+### Phase 8: Embedded Maintenance
+**Goal**: Users can perform rebuild, compaction, and WAL prune operations on an embedded Chroma instance through EmbeddedSession in both JNA and Panama backends
+**Depends on**: Phase 6
+**Requirements**: EMNT-01, EMNT-02, EMNT-03, EMNT-04, EMNT-05
 **Success Criteria** (what must be TRUE):
-  1. `go-apidiff` run against the v0.3.4 tag reports zero incompatible changes
-  2. README.md and CLAUDE.md accurately describe the new `internal/runtime/` and `internal/library/` layout; no file paths point to the old root-level implementation files
-  3. GO_API_SURFACE.md references are updated to reflect new file locations
-  4. A compatibility checklist is completed and attached to the PR confirming: import path unchanged, no public API removals, no type definition breakages, race detector clean
-  5. Release notes include a refactor summary and an explicit compatibility statement for existing users
-**Plans:** 2 plans
+  1. `EmbeddedSession.rebuildCollection(name, options)` returns a typed RebuildCollectionResult in both backends
+  2. `EmbeddedSession.compactCollection(request)` and `compactAll(request)` return CompactionResult in both backends
+  3. `EmbeddedSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` return WALPruneResult in both backends
+  4. Option builders (RebuildOptions, WALPruneOptions) reject invalid inputs at build time with clear error messages
+  5. Integration tests verify each maintenance operation produces valid results against a real embedded instance in both backends
+**Plans**: TBD
+
 Plans:
-- [x] 05-01-PLAN.md — API compatibility verification (apidiff vs v0.3.4) and CI apidiff job
-- [x] 05-02-PLAN.md — Documentation refresh (README, CLAUDE.md, GO_API_SURFACE.md) and CHANGELOG.md
+- [ ] 08-01: TBD
+
+### Phase 9: Backup API
+**Goal**: Users can back up Chroma data from both embedded and server modes, producing a directory with a manifest file that records backup metadata
+**Depends on**: Phase 7, Phase 8
+**Requirements**: BKUP-01, BKUP-02, BKUP-03, BKUP-04
+**Success Criteria** (what must be TRUE):
+  1. `EmbeddedSession.backup(options)` creates a backup directory at the specified destination and returns a BackupManifest with correct metadata
+  2. `ServerSession.backup(options)` performs a stop-backup-restart cycle and returns a BackupManifest without corrupting the running server state
+  3. `BackupOptions` builder supports destination, includeMetadata, and leaveClosed/leaveStopped flags with validation at build time
+  4. Integration tests verify backup creates a valid output directory with expected contents in both JNA and Panama backends
+**Plans**: TBD
+
+Plans:
+- [ ] 09-01: TBD
+
+### Phase 10: Server Maintenance
+**Goal**: Users can perform rebuild, compaction, and WAL prune operations on a server-mode Chroma instance, with the server automatically stopping and restarting around each maintenance operation
+**Depends on**: Phase 7, Phase 8
+**Requirements**: SMNT-01, SMNT-02, SMNT-03, SMNT-04
+**Success Criteria** (what must be TRUE):
+  1. `ServerSession.rebuildCollection(name, options)` stops the server, runs rebuild via a temporary embedded session, and restarts the server transparently
+  2. `ServerSession.compactCollection(request)` and `compactAll(request)` use the stop-embed-op-restart pattern and return CompactionResult
+  3. `ServerSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` use the stop-embed-op-restart pattern and return WALPruneResult
+  4. Integration tests verify each server maintenance operation completes and the server is accessible again afterward in both backends
+**Plans**: TBD
+
+Plans:
+- [ ] 10-01: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in strict sequential order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
+(Phases 7 and 8 can execute in parallel after Phase 6; Phases 9 and 10 depend on both 7 and 8.)
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Layout Design | 1/1 | Complete | 2026-03-20 |
-| 2. File Migration | 2/2 | Complete | 2026-03-20 |
-| 3. Root Facade | 0/2 | Not started | - |
-| 4. Build and Test | 0/3 | Not started | - |
-| 5. Compatibility and Docs | 0/2 | Not started | - |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Layout Design | v0.4.0 | 1/1 | Complete | 2026-03-20 |
+| 2. File Migration | v0.4.0 | 2/2 | Complete | 2026-03-20 |
+| 3. Root Facade | v0.4.0 | 2/2 | Complete | - |
+| 4. Build and Test | v0.4.0 | 3/3 | Complete | - |
+| 5. Compatibility and Docs | v0.4.0 | 2/2 | Complete | - |
+| 6. Core Foundation Types | v0.5.0 | 0/? | Not started | - |
+| 7. Server Lifecycle | v0.5.0 | 0/? | Not started | - |
+| 8. Embedded Maintenance | v0.5.0 | 0/? | Not started | - |
+| 9. Backup API | v0.5.0 | 0/? | Not started | - |
+| 10. Server Maintenance | v0.5.0 | 0/? | Not started | - |
