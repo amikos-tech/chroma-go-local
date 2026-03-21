@@ -192,7 +192,7 @@ func TestNewServer(t *testing.T) {
 	server, err := chroma.NewServer(chroma.WithPort(9999))
 	require.NoError(t, err)
 	require.NotNil(t, server)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 }
 
 func TestDefaultEmbeddedConfig(t *testing.T) {
