@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-03-21T13:42:16.240Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-03-21T13:42:45.510Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -54,6 +54,7 @@ Plan: 2 of 2
 | Phase 04 P02 | 2min | 1 tasks | 1 files |
 | Phase 04 P03 | 2min | 2 tasks | 1 files |
 | Phase 05 P02 | 2min | 2 tasks | 4 files |
+| Phase 05 P01 | 3min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase 05]: README Architecture section describes facade pattern per D-05
 - [Phase 05]: CHANGELOG uses Keep a Changelog format with UNRELEASED date per D-12/D-14
 - [Phase 05]: GO_API_SURFACE.md gets top-level note rather than inline path changes per D-06
+- [Phase 05]: apidiff reports 90 false positives (56 type-alias + 34 function-signature) vs v0.3.4 -- all from internal/ refactor, zero genuine breaking changes
+- [Phase 05]: api-compat CI job uses ::warning annotation (not failure) due to expected type-alias false positives from internal/ refactor
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T13:42:16.237Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-03-21T13:42:45.507Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
