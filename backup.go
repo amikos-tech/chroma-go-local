@@ -4,8 +4,8 @@ import "github.com/amikos-tech/chroma-go-local/internal/runtime"
 
 type BackupMode = runtime.BackupMode
 type BackupOptions = runtime.BackupOptions
-type ServerBackupOptions = runtime.ServerBackupOptions
-type EmbeddedBackupOptions = runtime.EmbeddedBackupOptions
+type ServerBackupOptions = runtime.ServerBackupOptions     //nolint:staticcheck // re-export deprecated type for backward compatibility
+type EmbeddedBackupOptions = runtime.EmbeddedBackupOptions //nolint:staticcheck // re-export deprecated type for backward compatibility
 type BackupOption = runtime.BackupOption
 type BackupFileMetadata = runtime.BackupFileMetadata
 type BackupManifest = runtime.BackupManifest
