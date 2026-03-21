@@ -296,3 +296,37 @@ jobs:
             java/panama/build/test-results/test/**
             java/panama/build/reports/tests/test/**
           if-no-files-found: warn
+
+  api-compat:
+    name: API Compatibility Check
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run API compatibility check
+        run: |
+          go install golang.org/x/exp/cmd/apidiff@latest
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No release tags found -- skipping apidiff"
+            exit 0
+          fi
+          echo "Comparing against: $LATEST_TAG"
+          OLD_DIR=$(go mod download -json "github.com/amikos-tech/chroma-go-local@${LATEST_TAG}" | jq -r .Dir)
+          cd "$OLD_DIR" && apidiff -w /tmp/old.txt github.com/amikos-tech/chroma-go-local
+          cd "$GITHUB_WORKSPACE" && apidiff -w /tmp/new.txt github.com/amikos-tech/chroma-go-local
+          echo "## API Diff (vs $LATEST_TAG)" >> "$GITHUB_STEP_SUMMARY"
+          if apidiff -incompatible /tmp/old.txt /tmp/new.txt > /tmp/diff.txt 2>&1; then
+            echo "No incompatible changes detected." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::API changes detected vs $LATEST_TAG - review step summary"
+          fi
