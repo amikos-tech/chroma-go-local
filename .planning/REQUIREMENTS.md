@@ -37,15 +37,15 @@
 ### Docs & Verification
 
 - [ ] **DOCS-01**: `go-apidiff` run against v0.3.4 tag confirms zero breaking changes
-- [ ] **DOCS-02**: README.md updated with new directory layout and build instructions
-- [ ] **DOCS-03**: CLAUDE.md updated to reflect new architecture
-- [ ] **DOCS-04**: GO_API_SURFACE.md references updated for new file locations
+- [x] **DOCS-02**: README.md updated with new directory layout and build instructions
+- [x] **DOCS-03**: CLAUDE.md updated to reflect new architecture
+- [x] **DOCS-04**: GO_API_SURFACE.md references updated for new file locations
 
 ### Compatibility Gate
 
 - [ ] **COMPAT-01**: Explicit compatibility checklist completed before merge
 - [ ] **COMPAT-02**: No import-path break for current users verified
-- [ ] **COMPAT-03**: Release notes include refactor summary and compatibility statement
+- [x] **COMPAT-03**: Release notes include refactor summary and compatibility statement
 
 ## v2 Requirements
 
@@ -86,12 +86,12 @@
 | BUILD-03 | Phase 4 | Complete |
 | BUILD-04 | Phase 4 | Complete |
 | DOCS-01 | Phase 5 | Pending |
-| DOCS-02 | Phase 5 | Pending |
-| DOCS-03 | Phase 5 | Pending |
-| DOCS-04 | Phase 5 | Pending |
+| DOCS-02 | Phase 5 | Complete |
+| DOCS-03 | Phase 5 | Complete |
+| DOCS-04 | Phase 5 | Complete |
 | COMPAT-01 | Phase 5 | Pending |
 | COMPAT-02 | Phase 5 | Pending |
-| COMPAT-03 | Phase 5 | Pending |
+| COMPAT-03 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 24 total

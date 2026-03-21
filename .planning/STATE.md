@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 5 context gathered
-last_updated: "2026-03-21T12:15:27.050Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-03-21T13:42:16.240Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** Public Go import path and API surface must remain 100% backward-compatible
-**Current focus:** Phase 04 — build-and-test
+**Current focus:** Phase 05 — compatibility-and-docs
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (compatibility-and-docs) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Plan: Not started
 | Phase 04 P01 | 2min | 2 tasks | 3 files |
 | Phase 04 P02 | 2min | 1 tasks | 1 files |
 | Phase 04 P03 | 2min | 2 tasks | 1 files |
+| Phase 05 P02 | 2min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Recent decisions affecting current work:
 - [Phase 04]: All 110 exported symbols referenced via var _ declarations for compile-time regression gate
 - [Phase 04]: Option builder tests (backup, rebuild, WAL prune) do not require Init -- pure Go code with no FFI dependency
 - [Phase 04]: No Makefile or CI changes needed -- go test ./... already traverses internal/ packages
+- [Phase 05]: README Architecture section describes facade pattern per D-05
+- [Phase 05]: CHANGELOG uses Keep a Changelog format with UNRELEASED date per D-12/D-14
+- [Phase 05]: GO_API_SURFACE.md gets top-level note rather than inline path changes per D-06
 
 ### Pending Todos
 
@@ -89,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T12:15:27.047Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-compatibility-and-docs/05-CONTEXT.md
+Last session: 2026-03-21T13:42:16.237Z
+Stopped at: Completed 05-02-PLAN.md
+Resume file: None

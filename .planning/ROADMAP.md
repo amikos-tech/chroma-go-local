@@ -90,8 +90,8 @@ Plans:
   5. Release notes include a refactor summary and an explicit compatibility statement for existing users
 **Plans:** 2 plans
 Plans:
-- [ ] 05-01-PLAN.md — API compatibility verification (apidiff vs v0.3.4) and CI apidiff job
-- [ ] 05-02-PLAN.md — Documentation refresh (README, CLAUDE.md, GO_API_SURFACE.md) and CHANGELOG.md
+- [x] 05-01-PLAN.md — API compatibility verification (apidiff vs v0.3.4) and CI apidiff job
+- [x] 05-02-PLAN.md — Documentation refresh (README, CLAUDE.md, GO_API_SURFACE.md) and CHANGELOG.md
 
 ## Progress
 
