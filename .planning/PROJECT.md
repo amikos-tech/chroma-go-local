@@ -1,12 +1,25 @@
-# chroma-go-local v0.4.0: Go Subtree Reorganization
+# chroma-go-local: Local Chroma Runtime Bindings
 
 ## What This Is
 
-A structural refactor of the chroma-go-local repository that moves Go implementation code out of the repo root into a dedicated `go/` subtree. This preserves the current public import path (`github.com/amikos-tech/chroma-go-local`) and all API behavior while making Go/Java/Rust ownership boundaries explicit for long-term maintenance.
+A multi-language local Chroma runtime package providing Go and Java APIs for running ChromaDB in-process or as a managed server. Go uses purego (no cgo) for FFI, Java offers dual JNA (Java 17+) and Panama (Java 22+) backends. All languages share a common Rust FFI shim.
 
 ## Core Value
 
-The public Go import path and API surface must remain 100% backward-compatible — existing users must not need to change any code.
+Java and Go APIs must provide equivalent access to all Chroma runtime capabilities — server lifecycle, embedded mode, backup, rebuild, compaction, and WAL maintenance — through idiomatic language-specific interfaces backed by the same FFI symbols.
+
+## Current Milestone: v0.5.0 Java API Surface
+
+**Goal:** Expand the Java bindings from scaffold (version + embedded start/close) to full API parity with the Go surface — server mode, builder configuration, backup, rebuild, compaction, and WAL prune — in both JNA and Panama backends.
+
+**Target features:**
+- Server lifecycle (start, stop, port, address, URL) with Java builder pattern
+- Embedded mode extensions (backup, rebuild, compaction, WAL prune on sessions)
+- Backup API with option builder
+- Collection rebuild API with option builder
+- Compaction API (per-collection and all)
+- WAL prune API (per-collection and all) with option builder
+- Full test coverage for both JNA and Panama backends
 
 ## Requirements
 
@@ -21,58 +34,69 @@ The public Go import path and API surface must remain 100% backward-compatible �
 - ✓ Cross-platform support (Linux, macOS, Windows) — existing
 - ✓ WAL prune maintenance APIs — v0.4.0 (#26)
 - ✓ Collection rebuild maintenance API — v0.4.0 (#25)
+- ✓ Go subtree reorganization with facade pattern — v0.4.0
 
 ### Active
 
-- ✓ Add thin root facade to preserve import compatibility — Validated in Phase 3
-- ✓ Reorganize tests for subtree layout + API compatibility coverage — Validated in Phase 4
-- ✓ Update Make/CI for relocated Go package layout — Validated in Phase 4
-- ✓ Refresh docs/examples after Go subtree move — Validated in Phase 5
-- ✓ Add compatibility gate checklist for root cleanup refactor — Validated in Phase 5
-
-### Validated in Phase 2: File Migration
-
-- ✓ Move Go implementation into `internal/` subtree without breaking imports — all files in `internal/runtime/` and `internal/library/`
+- [ ] Java server lifecycle API (start/stop/port/address/URL)
+- [ ] Java builder pattern for server configuration
+- [ ] Java backup API with option builder
+- [ ] Java rebuild API with option builder
+- [ ] Java compaction API (per-collection and all)
+- [ ] Java WAL prune API with option builder
+- [ ] JNA and Panama implementations kept in sync
+- [ ] Java integration tests for all new APIs
 
 ### Out of Scope
 
-- New features or API additions — this is purely structural
-- Java binding changes — layout remains unchanged
-- Rust shim changes — shim stays in `shim/`
+- New Go API additions — Go surface is stable
+- Rust shim changes — Java reuses existing chroma_* FFI symbols
 - Go module path change — must remain `github.com/amikos-tech/chroma-go-local`
+- New Chroma features — this is API parity, not new functionality
+- Java publishing to Maven Central — separate milestone
 
 ## Context
 
-The current repo has Go implementation files (chroma.go, config.go, embedded.go, errors.go, library.go, backup.go, rebuild.go, compaction.go, wal_prune.go) mixed at the repo root alongside Rust and Java code. This makes long-term maintenance and Java binding expansion harder. The v0.4.0 milestone moves Go implementation into a clean subtree while the root package becomes a thin facade.
+The Java scaffold (v0.3.x) provides basic `ChromaRuntime` interface with `version()` and `startEmbedded()`. The Go side has full server mode, embedded mode, and maintenance APIs (backup, rebuild, compaction, WAL prune). The v0.5.0 milestone bridges this gap by implementing the full Go API surface in Java, reusing the same `chroma_*` FFI symbols that Go calls via purego.
 
-GitHub milestone: v0.4.0 (amikos-tech/chroma-go-local milestone #4)
-Umbrella issue: #45
-Individual issues: #39, #40, #41, #42, #43, #44
+Existing Java architecture: `core` module defines `ChromaRuntime` interface + `EmbeddedSession`, `jna` module implements via JNA, `panama` module implements via Foreign Function & Memory API. Both backends must stay in sync.
+
+GitHub milestone: v0.5.0
 
 ## Constraints
 
-- **Import compatibility**: Root module path `github.com/amikos-tech/chroma-go-local` must remain valid
-- **API stability**: No public API signature changes allowed
-- **Build system**: `make test`, `make lint`, `make test-all` must pass throughout
-- **CI**: GitHub Actions workflows must remain green across OS matrix
-- **No circular deps**: New package layout must not introduce circular dependencies
+- **FFI symbols**: Java must call the same `chroma_*` symbols Go uses — no new Rust shim exports
+- **Dual backend**: Every new API must be implemented in both JNA and Panama
+- **Java versions**: JNA path requires Java 17+, Panama path requires Java 22+
+- **Build system**: `make test-java`, `make test-all` must pass throughout
+- **CI**: GitHub Actions must remain green across OS matrix
+- **Idiomatic Java**: Builder pattern for configuration, AutoCloseable for lifecycle, checked exceptions where appropriate
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Sequential phases (one issue per phase) | Refactoring has strict dependency chain; each step must be stable before next | — Pending |
-| Subtree under `go/` directory | Keeps Go/Java/Rust separation explicit at repo root level | — Pending |
-| Root becomes thin facade | Preserves import path without requiring Go module replace directives | — Pending |
-| Proposed layout: `go/internal/runtime/`, `go/internal/library/`, etc. | Internal packages prevent unintended external imports | — Pending |
+| Reuse existing chroma_* FFI symbols | No Rust shim changes needed; Go and Java share same native interface | — Pending |
+| Java builder pattern for config | Idiomatic Java; Go uses functional options which don't translate well | — Pending |
+| Both JNA and Panama in sync | Maintains Java 17+ support via JNA while offering Panama for Java 22+ | — Pending |
+| Full API mirror in one milestone | Shipping partial Java API creates confusing mixed coverage | — Pending |
 
-## Current State
+## Evolution
 
-- Phase 1 (Layout Design) complete — skeleton packages created
-- Phase 2 (File Migration) complete — all Go implementation (8 files) and test files (11 files) moved to `internal/runtime/`, library FFI loading (4 files) moved to `internal/library/`. Zero .go files remain at repo root. Race-instrumented compilation and cross-compile pass.
-- Phase 3 (Root Facade) complete — 9 facade files at repo root (doc.go, chroma.go, config.go, errors.go, embedded.go, backup.go, rebuild.go, compaction.go, wal_prune.go) re-export 54 type aliases and ~37 wrapper functions from internal/runtime. Full public API surface restored. `go build ./...` passes including examples.
-- Phase 4 (Build and Test) complete — lint clean (gci prefix fixed, SA1019 suppressed), `compat_test.go` created with 110-symbol compile gate + 9 behavioral smoke tests, all make targets pass, cross-compile verified for 3 OS.
-- Phase 5 (Compatibility & Docs) complete — apidiff verified zero genuine breaking changes (90 false positives documented), CI api-compat job added, README/CLAUDE.md/GO_API_SURFACE.md updated for internal/ layout, CHANGELOG.md created with v0.4.0 entry.
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ---
-*Last updated: 2026-03-21 after Phase 5 completion*
+*Last updated: 2026-03-21 after v0.5.0 milestone start*
