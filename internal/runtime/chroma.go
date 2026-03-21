@@ -9,9 +9,10 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/amikos-tech/chroma-go-local/internal/library"
 	"github.com/ebitengine/purego"
 	"github.com/pkg/errors"
+
+	"github.com/amikos-tech/chroma-go-local/internal/library"
 )
 
 var (
