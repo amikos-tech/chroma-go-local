@@ -22,17 +22,17 @@
 
 ### Test Reorganization
 
-- [ ] **TEST-01**: Implementation-focused tests moved alongside new internal packages
+- [x] **TEST-01**: Implementation-focused tests moved alongside new internal packages
 - [x] **TEST-02**: Public API compatibility tests remain at root level
 - [x] **TEST-03**: `compat_test.go` added at root as compile-time API surface gate
-- [ ] **TEST-04**: `make test` passes with reorganized test layout
+- [x] **TEST-04**: `make test` passes with reorganized test layout
 
 ### Build & CI
 
-- [ ] **BUILD-01**: Makefile targets updated for new package paths (`make test`, `make lint`, `make test-all`)
-- [ ] **BUILD-02**: CI workflows (`.github/workflows/ci.yml`) updated for new structure
+- [x] **BUILD-01**: Makefile targets updated for new package paths (`make test`, `make lint`, `make test-all`)
+- [x] **BUILD-02**: CI workflows (`.github/workflows/ci.yml`) updated for new structure
 - [x] **BUILD-03**: Stale `gci` prefix in `.golangci.yml` corrected to `github.com/amikos-tech/chroma-go-local/`
-- [ ] **BUILD-04**: Cross-compile verification passes for `GOOS=windows`, `GOOS=linux`, `GOOS=darwin`
+- [x] **BUILD-04**: Cross-compile verification passes for `GOOS=windows`, `GOOS=linux`, `GOOS=darwin`
 
 ### Docs & Verification
 
@@ -77,14 +77,14 @@
 | FACADE-03 | Phase 3 | Complete |
 | FACADE-04 | Phase 3 | Complete |
 | FACADE-05 | Phase 3 | Complete |
-| TEST-01 | Phase 4 | Pending |
+| TEST-01 | Phase 4 | Complete |
 | TEST-02 | Phase 4 | Complete |
 | TEST-03 | Phase 4 | Complete |
-| TEST-04 | Phase 4 | Pending |
-| BUILD-01 | Phase 4 | Pending |
-| BUILD-02 | Phase 4 | Pending |
+| TEST-04 | Phase 4 | Complete |
+| BUILD-01 | Phase 4 | Complete |
+| BUILD-02 | Phase 4 | Complete |
 | BUILD-03 | Phase 4 | Complete |
-| BUILD-04 | Phase 4 | Pending |
+| BUILD-04 | Phase 4 | Complete |
 | DOCS-01 | Phase 5 | Pending |
 | DOCS-02 | Phase 5 | Pending |
 | DOCS-03 | Phase 5 | Pending |
