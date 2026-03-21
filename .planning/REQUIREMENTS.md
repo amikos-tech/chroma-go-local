@@ -1,103 +1,102 @@
-# Requirements: chroma-go-local v0.4.0
+# Requirements: chroma-go-local v0.5.0
 
-**Defined:** 2026-03-20
-**Core Value:** Public Go import path and API surface must remain 100% backward-compatible
+**Defined:** 2026-03-21
+**Core Value:** Java and Go APIs must provide equivalent access to all Chroma runtime capabilities
 
 ## v1 Requirements
 
-### Layout Migration
+### Foundation
 
-- [x] **LAYOUT-01**: All Go implementation files moved from repo root into `internal/` subtree at module root
-- [x] **LAYOUT-02**: Implementation organized into `internal/runtime/` (server, embedded, config, errors) and `internal/library/` (FFI loading, platform shims)
-- [x] **LAYOUT-03**: All FFI globals and `sync.Once` initialization moved atomically to implementation package (no split state)
-- [x] **LAYOUT-04**: Platform-specific files (`library_unix.go`, `library_windows.go`) retain correct build tags after move
+- [ ] **FOUND-01**: Core module contains all shared interfaces, builders, and result types with no FFI dependencies
+- [ ] **FOUND-02**: `ServerConfigBuilder` produces valid YAML for server startup with fluent API (port, listenAddress, persistPath, allowReset, etc.)
+- [ ] **FOUND-03**: `EmbeddedConfigBuilder` produces valid YAML for embedded startup with fluent API (persistPath, sqliteFilename, allowReset)
+- [ ] **FOUND-04**: Result POJOs defined for all maintenance operations (BackupManifest, RebuildCollectionResult, CompactionResult, WALPruneResult)
+- [ ] **FOUND-05**: FFI serialization lock pattern established to protect global error slot
+- [ ] **FOUND-06**: String ownership helpers distinguish owned vs borrowed native pointers
 
-### Import Facade
+### Server Lifecycle
 
-- [x] **FACADE-01**: Root package exposes all current public types via type aliases (`type X = impl.X`)
-- [x] **FACADE-02**: Root package re-exports all public functions via variable assignments or wrapper calls
-- [x] **FACADE-03**: Root package re-exports all constants, variables, and error types
-- [x] **FACADE-04**: Root package contains zero implementation logic (pure forwarding only)
-- [x] **FACADE-05**: Import path `github.com/amikos-tech/chroma-go-local` remains valid and unchanged
+- [ ] **SRVR-01**: `ChromaRuntime.startServer(configYaml)` returns `ServerSession` in both JNA and Panama
+- [ ] **SRVR-02**: `ServerSession` implements AutoCloseable with idempotent close and two-step teardown (stop + free)
+- [ ] **SRVR-03**: `ServerSession.port()`, `address()`, `url()` return server connection details
+- [ ] **SRVR-04**: Integration tests verify server start, accessor values, stop, and close in both backends
 
-### Test Reorganization
+### Embedded Maintenance
 
-- [x] **TEST-01**: Implementation-focused tests moved alongside new internal packages
-- [x] **TEST-02**: Public API compatibility tests remain at root level
-- [x] **TEST-03**: `compat_test.go` added at root as compile-time API surface gate
-- [x] **TEST-04**: `make test` passes with reorganized test layout
+- [ ] **EMNT-01**: `EmbeddedSession.rebuildCollection(name, options)` returns RebuildCollectionResult in both backends
+- [ ] **EMNT-02**: `EmbeddedSession.compactCollection(request)` and `compactAll(request)` return CompactionResult in both backends
+- [ ] **EMNT-03**: `EmbeddedSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` return WALPruneResult in both backends
+- [ ] **EMNT-04**: Option builders (RebuildOptions, WALPruneOptions) validate inputs at build time
+- [ ] **EMNT-05**: Integration tests verify each embedded maintenance operation in both backends
 
-### Build & CI
+### Backup
 
-- [x] **BUILD-01**: Makefile targets updated for new package paths (`make test`, `make lint`, `make test-all`)
-- [x] **BUILD-02**: CI workflows (`.github/workflows/ci.yml`) updated for new structure
-- [x] **BUILD-03**: Stale `gci` prefix in `.golangci.yml` corrected to `github.com/amikos-tech/chroma-go-local/`
-- [x] **BUILD-04**: Cross-compile verification passes for `GOOS=windows`, `GOOS=linux`, `GOOS=darwin`
+- [ ] **BKUP-01**: `EmbeddedSession.backup(options)` performs directory copy with manifest and returns BackupManifest
+- [ ] **BKUP-02**: `ServerSession.backup(options)` performs stop-backup-restart cycle and returns BackupManifest
+- [ ] **BKUP-03**: `BackupOptions` builder supports destination, includeMetadata, leaveClosed/leaveStopped
+- [ ] **BKUP-04**: Integration tests verify backup creates valid output directory in both backends
 
-### Docs & Verification
+### Server Maintenance
 
-- [x] **DOCS-01**: `go-apidiff` run against v0.3.4 tag confirms zero breaking changes
-- [x] **DOCS-02**: README.md updated with new directory layout and build instructions
-- [x] **DOCS-03**: CLAUDE.md updated to reflect new architecture
-- [x] **DOCS-04**: GO_API_SURFACE.md references updated for new file locations
-
-### Compatibility Gate
-
-- [x] **COMPAT-01**: Explicit compatibility checklist completed before merge
-- [x] **COMPAT-02**: No import-path break for current users verified
-- [x] **COMPAT-03**: Release notes include refactor summary and compatibility statement
+- [ ] **SMNT-01**: `ServerSession.rebuildCollection(name, options)` uses stop-embed-op-restart pattern
+- [ ] **SMNT-02**: `ServerSession.compactCollection(request)` and `compactAll(request)` use stop-embed-op-restart pattern
+- [ ] **SMNT-03**: `ServerSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` use stop-embed-op-restart pattern
+- [ ] **SMNT-04**: Integration tests verify server maintenance operations in both backends
 
 ## v2 Requirements
 
-### Future Improvements
+### Post-Parity Improvements
 
-- **FUTURE-01**: Verify `pkg.go.dev` rendering of type aliases to internal paths
-- **FUTURE-02**: Evaluate `go-apidiff` as permanent CI gate for future releases
+- **FUTURE-01**: `ChromaErrorCode` enum on `ChromaException` for programmatic error handling
+- **FUTURE-02**: `BackupEngine`-style backup management (list, purge old, restore)
+- **FUTURE-03**: Embedded data operations (CRUD for collections, documents, queries)
+- **FUTURE-04**: Java-native OpenTelemetry integration through config builder
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| New API features or methods | This is purely structural; new features belong to future milestones |
-| Java binding layout changes | Java layout stays in `java/`; not part of this refactor |
-| Rust shim changes | Shim stays in `shim/`; no code changes needed |
-| Go module path change | Must remain `github.com/amikos-tech/chroma-go-local` |
-| Second `go.mod` under `go/` | Creates separate module requiring `replace` directives; breaks published module |
+| JDBC/DataSource interface | ChromaDB is not relational; JDBC model does not map to vector operations |
+| Async/CompletableFuture API | All FFI calls serialize through global lock; async would be misleading |
+| Connection pooling | Embedded mode is single in-process runtime; pooling has no benefit |
+| Auto-reconnect on server crash | Invalid native handle cannot be reconnected; must restart explicitly |
+| Checked exceptions | ChromaException is already unchecked; changing would break existing users |
+| New Rust shim exports | Java reuses existing chroma_* FFI symbols; no shim changes allowed |
+| Maven Central publishing | Separate milestone after API stabilizes |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LAYOUT-01 | Phase 1 | Complete |
-| LAYOUT-02 | Phase 1 | Complete |
-| LAYOUT-03 | Phase 2 | Complete |
-| LAYOUT-04 | Phase 2 | Complete |
-| FACADE-01 | Phase 3 | Complete |
-| FACADE-02 | Phase 3 | Complete |
-| FACADE-03 | Phase 3 | Complete |
-| FACADE-04 | Phase 3 | Complete |
-| FACADE-05 | Phase 3 | Complete |
-| TEST-01 | Phase 4 | Complete |
-| TEST-02 | Phase 4 | Complete |
-| TEST-03 | Phase 4 | Complete |
-| TEST-04 | Phase 4 | Complete |
-| BUILD-01 | Phase 4 | Complete |
-| BUILD-02 | Phase 4 | Complete |
-| BUILD-03 | Phase 4 | Complete |
-| BUILD-04 | Phase 4 | Complete |
-| DOCS-01 | Phase 5 | Complete |
-| DOCS-02 | Phase 5 | Complete |
-| DOCS-03 | Phase 5 | Complete |
-| DOCS-04 | Phase 5 | Complete |
-| COMPAT-01 | Phase 5 | Complete |
-| COMPAT-02 | Phase 5 | Complete |
-| COMPAT-03 | Phase 5 | Complete |
+| FOUND-01 | Pending | Pending |
+| FOUND-02 | Pending | Pending |
+| FOUND-03 | Pending | Pending |
+| FOUND-04 | Pending | Pending |
+| FOUND-05 | Pending | Pending |
+| FOUND-06 | Pending | Pending |
+| SRVR-01 | Pending | Pending |
+| SRVR-02 | Pending | Pending |
+| SRVR-03 | Pending | Pending |
+| SRVR-04 | Pending | Pending |
+| EMNT-01 | Pending | Pending |
+| EMNT-02 | Pending | Pending |
+| EMNT-03 | Pending | Pending |
+| EMNT-04 | Pending | Pending |
+| EMNT-05 | Pending | Pending |
+| BKUP-01 | Pending | Pending |
+| BKUP-02 | Pending | Pending |
+| BKUP-03 | Pending | Pending |
+| BKUP-04 | Pending | Pending |
+| SMNT-01 | Pending | Pending |
+| SMNT-02 | Pending | Pending |
+| SMNT-03 | Pending | Pending |
+| SMNT-04 | Pending | Pending |
 
 **Coverage:**
-- v1 requirements: 24 total
-- Mapped to phases: 24
-- Unmapped: 0
+- v1 requirements: 23 total
+- Mapped to phases: 0
+- Unmapped: 23 ⚠️
 
 ---
-*Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after roadmap creation*
+*Requirements defined: 2026-03-21*
+*Last updated: 2026-03-21 after initial definition*
