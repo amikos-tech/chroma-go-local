@@ -88,12 +88,15 @@ Plans:
   3. GO_API_SURFACE.md references are updated to reflect new file locations
   4. A compatibility checklist is completed and attached to the PR confirming: import path unchanged, no public API removals, no type definition breakages, race detector clean
   5. Release notes include a refactor summary and an explicit compatibility statement for existing users
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 05-01-PLAN.md — API compatibility verification (apidiff vs v0.3.4) and CI apidiff job
+- [ ] 05-02-PLAN.md — Documentation refresh (README, CLAUDE.md, GO_API_SURFACE.md) and CHANGELOG.md
 
 ## Progress
 
 **Execution Order:**
-Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
+Phases execute in strict sequential order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -101,4 +104,4 @@ Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
 | 2. File Migration | 2/2 | Complete | 2026-03-20 |
 | 3. Root Facade | 0/2 | Not started | - |
 | 4. Build and Test | 0/3 | Not started | - |
-| 5. Compatibility and Docs | 0/TBD | Not started | - |
+| 5. Compatibility and Docs | 0/2 | Not started | - |
