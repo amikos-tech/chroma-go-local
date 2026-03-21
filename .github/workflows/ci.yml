@@ -330,3 +330,4 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "::warning::API changes detected vs $LATEST_TAG - review step summary"
           fi
+          exit 0
