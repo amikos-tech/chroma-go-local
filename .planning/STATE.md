@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 4 context gathered
-last_updated: "2026-03-21T09:10:40.396Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-03-21T09:54:58.811Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** Public Go import path and API surface must remain 100% backward-compatible
-**Current focus:** Phase 03 — root-facade
+**Current focus:** Phase 04 — build-and-test
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (build-and-test) — EXECUTING
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -50,6 +50,8 @@ Plan: Not started
 | Phase 02 P02 | 28min | 2 tasks | 21 files |
 | Phase 03 P01 | 1min | 1 tasks | 4 files |
 | Phase 03 P02 | 3min | 2 tasks | 5 files |
+| Phase 04 P01 | 2min | 2 tasks | 3 files |
+| Phase 04 P02 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -70,6 +72,9 @@ Recent decisions affecting current work:
 - [Phase 03]: Zero logic in facade files: thin wrappers and type aliases only (D-04)
 - [Phase 03]: compaction.go has zero functions -- methods auto-forward via type alias
 - [Phase 03]: wal_prune.go imports both time and internal/runtime for WithWALPruneMaxAge(time.Duration)
+- [Phase 04]: gci import reordering in chroma.go applied automatically as consequence of prefix fix
+- [Phase 04]: All 110 exported symbols referenced via var _ declarations for compile-time regression gate
+- [Phase 04]: Option builder tests (backup, rebuild, WAL prune) do not require Init -- pure Go code with no FFI dependency
 
 ### Pending Todos
 
@@ -82,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T09:10:40.392Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-build-and-test/04-CONTEXT.md
+Last session: 2026-03-21T09:54:58.809Z
+Stopped at: Completed 04-02-PLAN.md
+Resume file: None

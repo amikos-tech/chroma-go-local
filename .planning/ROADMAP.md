@@ -74,8 +74,8 @@ Plans:
   5. CI workflows (`.github/workflows/ci.yml`) run without modification to the OS matrix or job structure
 **Plans:** 3 plans
 Plans:
-- [ ] 04-01-PLAN.md — Fix lint config (gci prefix) and deprecated type nolint directives
-- [ ] 04-02-PLAN.md — Create compat_test.go with compile-time API surface gate and behavioral smoke tests
+- [x] 04-01-PLAN.md — Fix lint config (gci prefix) and deprecated type nolint directives
+- [x] 04-02-PLAN.md — Create compat_test.go with compile-time API surface gate and behavioral smoke tests
 - [ ] 04-03-PLAN.md — Full verification pass (make test, make lint, cross-compile, CI inspection)
 
 ### Phase 5: Compatibility and Docs
