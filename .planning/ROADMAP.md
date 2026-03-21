@@ -72,7 +72,11 @@ Plans:
   3. Cross-compile succeeds: `GOOS=linux go build ./...`, `GOOS=darwin go build ./...`, `GOOS=windows go build ./...` all complete without error
   4. `compat_test.go` exists at repo root in `package chroma_test` and references every exported symbol; it compiles successfully as a compile-time API surface gate
   5. CI workflows (`.github/workflows/ci.yml`) run without modification to the OS matrix or job structure
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 04-01-PLAN.md — Fix lint config (gci prefix) and deprecated type nolint directives
+- [ ] 04-02-PLAN.md — Create compat_test.go with compile-time API surface gate and behavioral smoke tests
+- [ ] 04-03-PLAN.md — Full verification pass (make test, make lint, cross-compile, CI inspection)
 
 ### Phase 5: Compatibility and Docs
 **Goal**: Machine-verified API compatibility against the v0.3.4 baseline is confirmed, documentation reflects the new layout, and the release is ready to merge
@@ -96,5 +100,5 @@ Phases execute in strict sequential order: 1 → 2 → 3 → 4 → 5
 | 1. Layout Design | 1/1 | Complete | 2026-03-20 |
 | 2. File Migration | 2/2 | Complete | 2026-03-20 |
 | 3. Root Facade | 0/2 | Not started | - |
-| 4. Build and Test | 0/TBD | Not started | - |
+| 4. Build and Test | 0/3 | Not started | - |
 | 5. Compatibility and Docs | 0/TBD | Not started | - |
