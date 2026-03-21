@@ -1,5 +1,7 @@
 # Go API Surface (Current)
 
+> **Note:** All types and functions below are defined in `internal/runtime/` and `internal/library/`, re-exported at the root package (`github.com/amikos-tech/chroma-go-local`). Import the root package -- never import internal packages directly.
+
 This document summarizes the Go API surface currently implemented in this repository for both server and embedded modes, with practical examples.
 
 ## 1. Initialization
