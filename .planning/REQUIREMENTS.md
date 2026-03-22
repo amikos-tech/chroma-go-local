@@ -8,8 +8,8 @@
 ### Foundation
 
 - [x] **FOUND-01**: Core module contains all shared interfaces, builders, and result types with no FFI dependencies
-- [ ] **FOUND-02**: `ServerConfigBuilder` produces valid YAML for server startup with fluent API (port, listenAddress, persistPath, allowReset, etc.)
-- [ ] **FOUND-03**: `EmbeddedConfigBuilder` produces valid YAML for embedded startup with fluent API (persistPath, sqliteFilename, allowReset)
+- [x] **FOUND-02**: `ServerConfigBuilder` produces valid YAML for server startup with fluent API (port, listenAddress, persistPath, allowReset, etc.)
+- [x] **FOUND-03**: `EmbeddedConfigBuilder` produces valid YAML for embedded startup with fluent API (persistPath, sqliteFilename, allowReset)
 - [x] **FOUND-04**: Result POJOs defined for all maintenance operations (BackupManifest, RebuildCollectionResult, CompactionResult, WALPruneResult)
 - [x] **FOUND-05**: FFI serialization lock pattern established to protect global error slot
 - [x] **FOUND-06**: String ownership helpers distinguish owned vs borrowed native pointers
@@ -69,8 +69,8 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | FOUND-01 | Phase 6 | Complete |
-| FOUND-02 | Phase 6 | Pending |
-| FOUND-03 | Phase 6 | Pending |
+| FOUND-02 | Phase 6 | Complete |
+| FOUND-03 | Phase 6 | Complete |
 | FOUND-04 | Phase 6 | Complete |
 | FOUND-05 | Phase 6 | Complete |
 | FOUND-06 | Phase 6 | Complete |
