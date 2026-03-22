@@ -44,11 +44,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All result POJOs (BackupManifest, RebuildCollectionResult, CompactionResult, WALPruneResult) are defined in core and can be constructed and serialized without FFI
   4. FFI serialization lock pattern and string ownership helpers (readOwnedString / readBorrowedString) are established and retrofitted into existing JNA and Panama call sites
   5. `gradle :core:build` succeeds with zero JNA or Panama imports in the core module
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01-PLAN.md -- Build deps (Gson + SnakeYAML), JsonUtil, and all result POJOs
+- [ ] 06-02-PLAN.md -- Option/request types with Builders and config builders with YAML output
+- [ ] 06-03-PLAN.md -- AbstractChromaRuntime FFI safety, ServerSession, ChromaRuntime extension
 
 ### Phase 7: Server Lifecycle
 **Goal**: Users can start a Chroma server from Java, retrieve its connection details, and cleanly shut it down using try-with-resources in both JNA and Panama backends
@@ -120,7 +121,7 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 3. Root Facade | v0.4.0 | 2/2 | Complete | - |
 | 4. Build and Test | v0.4.0 | 3/3 | Complete | - |
 | 5. Compatibility and Docs | v0.4.0 | 2/2 | Complete | - |
-| 6. Core Foundation Types | v0.5.0 | 0/? | Not started | - |
+| 6. Core Foundation Types | v0.5.0 | 0/3 | Not started | - |
 | 7. Server Lifecycle | v0.5.0 | 0/? | Not started | - |
 | 8. Embedded Maintenance | v0.5.0 | 0/? | Not started | - |
 | 9. Backup API | v0.5.0 | 0/? | Not started | - |
