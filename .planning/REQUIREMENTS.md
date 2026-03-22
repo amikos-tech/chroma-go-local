@@ -11,8 +11,8 @@
 - [ ] **FOUND-02**: `ServerConfigBuilder` produces valid YAML for server startup with fluent API (port, listenAddress, persistPath, allowReset, etc.)
 - [ ] **FOUND-03**: `EmbeddedConfigBuilder` produces valid YAML for embedded startup with fluent API (persistPath, sqliteFilename, allowReset)
 - [x] **FOUND-04**: Result POJOs defined for all maintenance operations (BackupManifest, RebuildCollectionResult, CompactionResult, WALPruneResult)
-- [ ] **FOUND-05**: FFI serialization lock pattern established to protect global error slot
-- [ ] **FOUND-06**: String ownership helpers distinguish owned vs borrowed native pointers
+- [x] **FOUND-05**: FFI serialization lock pattern established to protect global error slot
+- [x] **FOUND-06**: String ownership helpers distinguish owned vs borrowed native pointers
 
 ### Server Lifecycle
 
@@ -72,8 +72,8 @@
 | FOUND-02 | Phase 6 | Pending |
 | FOUND-03 | Phase 6 | Pending |
 | FOUND-04 | Phase 6 | Complete |
-| FOUND-05 | Phase 6 | Pending |
-| FOUND-06 | Phase 6 | Pending |
+| FOUND-05 | Phase 6 | Complete |
+| FOUND-06 | Phase 6 | Complete |
 | SRVR-01 | Phase 7 | Pending |
 | SRVR-02 | Phase 7 | Pending |
 | SRVR-03 | Phase 7 | Pending |

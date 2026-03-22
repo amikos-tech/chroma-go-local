@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 06-01-PLAN.md -- Build deps (Gson + SnakeYAML), JsonUtil, and all result POJOs
 - [ ] 06-02-PLAN.md -- Option/request types with Builders and config builders with YAML output
-- [ ] 06-03-PLAN.md -- AbstractChromaRuntime FFI safety, ServerSession, ChromaRuntime extension
+- [x] 06-03-PLAN.md -- AbstractChromaRuntime FFI safety, ServerSession, ChromaRuntime extension
 
 ### Phase 7: Server Lifecycle
 **Goal**: Users can start a Chroma server from Java, retrieve its connection details, and cleanly shut it down using try-with-resources in both JNA and Panama backends
