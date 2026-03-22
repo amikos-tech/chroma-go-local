@@ -1,6 +1,7 @@
 package chroma_test
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -189,10 +190,19 @@ func TestDefaultServerConfig(t *testing.T) {
 func TestNewServer(t *testing.T) {
 	err := chroma.Init("")
 	require.NoError(t, err)
-	server, err := chroma.NewServer(chroma.WithPort(9999))
+	port := freePort(t)
+	server, err := chroma.NewServer(chroma.WithPort(port))
 	require.NoError(t, err)
 	require.NotNil(t, server)
 	defer func() { _ = server.Stop() }()
+}
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = l.Close() }()
+	return l.Addr().(*net.TCPAddr).Port
 }
 
 func TestDefaultEmbeddedConfig(t *testing.T) {
