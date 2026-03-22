@@ -52,7 +52,7 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/chaoslabs-bg/tclr-v2/)
+        - prefix(github.com/amikos-tech/chroma-go-local/)
         - blank
         - dot
       custom-order: true

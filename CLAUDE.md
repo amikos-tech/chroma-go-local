@@ -46,17 +46,32 @@ Java smoke tests are available via:
 ## Architecture
 
 ```
-Go Package (root)              Rust Shim (shim/)               Java scaffold (java/)
-├── chroma.go      ─────────►  src/lib.rs (FFI exports)   ◄───┬── core (shared API models)
-├── config.go                  (chroma_* symbols)             ├── jna (Java 17 fallback)
-├── library.go                                                    └── panama (Java 22 primary)
-└── errors.go
+Go Package (root)                   Internal Implementation
+├── chroma.go     ─── facade ───►   internal/runtime/
+├── config.go         (type         ├── chroma.go      (server lifecycle)
+├── embedded.go        aliases      ├── config.go      (builder options)
+├── errors.go          + thin       ├── embedded.go    (embedded mode)
+├── backup.go          wrappers)    ├── errors.go      (error types)
+├── rebuild.go                      ├── backup.go      (backup API)
+├── compaction.go                   ├── rebuild.go     (rebuild API)
+├── wal_prune.go                    ├── compaction.go  (compaction API)
+└── doc.go                          └── wal_prune.go   (WAL prune API)
+                                    internal/library/
+Rust Shim (shim/)                   ├── library.go     (FFI loading)
+└── src/lib.rs ◄────────────────    ├── library_unix.go
+    (chroma_* symbols)              └── library_windows.go
+
+Java scaffold (java/)
+├── core   (shared API models)
+├── jna    (Java 17 fallback)
+└── panama (Java 22 primary)
 ```
 
 - **No cgo**: Uses purego for pure Go FFI
 - **Runtime artifact name**: `chroma_shim` (`libchroma_shim.so`, `libchroma_shim.dylib`, `chroma_shim.dll`)
 - **Configuration**: YAML-based embedded startup config
 - **Resource cleanup**: explicit close semantics in Go and Java runtime/session wrappers, with Go finalizers as a fallback safety net
+- **Facade pattern**: Root package re-exports all symbols via type aliases (`type X = runtime.X`) and thin wrapper functions; zero implementation logic at root
 
 ## Key Patterns
 
@@ -74,6 +89,19 @@ server, err := chroma.StartServer(chroma.StartServerConfig{
     ConfigString: yamlString,
 })
 ```
+
+Facade pattern (root package):
+```go
+// Type aliases forward types from internal/runtime
+type Server = runtime.Server
+type ServerOption = runtime.ServerOption
+
+// Thin wrappers forward functions
+var NewServer = runtime.NewServer
+var StartServer = runtime.StartServer
+```
+
+The root package contains zero logic -- all implementation lives in `internal/runtime/` and `internal/library/`.
 
 ## Linting
 

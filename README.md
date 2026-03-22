@@ -48,6 +48,10 @@ make build
 make build-release
 ```
 
+## Architecture
+
+The root package (`github.com/amikos-tech/chroma-go-local`) is a thin facade that re-exports all public symbols from internal implementation packages via type aliases and wrapper functions. Implementation lives in `internal/runtime/` (server lifecycle, embedded mode, config, errors, backup, rebuild, compaction, WAL prune) and `internal/library/` (FFI loading via purego, platform-specific shims). The root package contains zero implementation logic.
+
 ## Java Scaffold
 
 Java bindings are scaffolded under `java/`:
@@ -665,26 +669,24 @@ make bench         # Run both benchmark suites
 
 ```
 .
-├── chroma.go       # Main Go wrapper
-├── config.go       # Server config builder with WithXXX options
-├── embedded.go     # Embedded (in-process) API
-├── library.go      # Library loading via purego
-├── errors.go       # Error codes and handling
-├── chroma_test.go  # Tests
-├── embedded_test.go # Embedded integration test
-├── Makefile        # Build orchestration
-├── java/           # Java scaffold modules (core, jna, panama)
-├── JAVA_API_SURFACE.md # Java scaffold surface and status
-├── scripts/
-│   ├── dev-windows.ps1 # Windows build/test/lint helper
-│   └── backfill-r2.sh  # Trigger R2 backfill for existing tags
-├── examples/
-│   ├── go/basic/   # Go example usage
-│   └── java/basic/ # Java scaffold usage
-└── shim/
-    ├── Cargo.toml  # Rust dependencies
-    └── src/
-        └── lib.rs  # Rust FFI shim
+├── chroma.go        # Root facade: type aliases + thin wrappers
+├── config.go        # Facade: ServerConfig, ServerOption
+├── embedded.go      # Facade: Embedded, EmbeddedOption, request/response types
+├── errors.go        # Facade: error types and sentinel errors
+├── backup.go        # Facade: BackupOption, BackupManifest
+├── rebuild.go       # Facade: RebuildCollectionOption, RebuildCollectionResult
+├── compaction.go    # Facade: CompactCollectionRequest (methods via type alias)
+├── wal_prune.go     # Facade: WALPruneOption, WALPruneResult
+├── doc.go           # Package documentation
+├── compat_test.go   # Compile-time API surface gate (110 symbols + 9 behavioral)
+├── internal/
+│   ├── runtime/     # Server, embedded, config, backup, rebuild, compaction, WAL prune
+│   └── library/     # FFI loading via purego (platform-specific)
+├── java/            # Java scaffold modules (core, jna, panama)
+├── shim/            # Rust FFI shim
+├── examples/        # Go and Java usage examples
+├── scripts/         # Dev helpers (Windows, backfill)
+└── Makefile         # Build orchestration
 ```
 
 ## License
