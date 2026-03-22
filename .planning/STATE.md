@@ -1,14 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.5.0
-milestone_name: java-api-surface
-status: ready-to-plan
-last_updated: "2026-03-21"
+milestone_name: Java API Surface
+status: planning
+stopped_at: Phase 6 context gathered
+last_updated: "2026-03-22T17:40:07.438Z"
+last_activity: 2026-03-21 -- Roadmap created for v0.5.0 milestone
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -53,6 +56,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21
-Stopped at: Roadmap created for v0.5.0 milestone (Phases 6-10)
-Resume file: None
+Last session: 2026-03-22T17:40:07.436Z
+Stopped at: Phase 6 context gathered
+Resume file: .planning/phases/06-core-foundation-types/06-CONTEXT.md
