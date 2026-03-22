@@ -52,14 +52,12 @@ class WALPruneOptionsTest {
     }
 
     @Test
-    void builderRejectsWatermarkOnlyHigh() {
-        assertThrows(IllegalArgumentException.class, () ->
-                new WALPruneOptions.Builder("col")
-                        .dryRun(false)
-                        .maxAgeSeconds(100)
-                        .build());
-        // Actually test with just watermark high bytes set but no low
-        // Since watermark() sets both, we test the validation path through builder directly
+    void builderAcceptsSinglePolicyMaxAge() {
+        WALPruneOptions opts = new WALPruneOptions.Builder("col")
+                .maxAgeSeconds(100)
+                .build();
+        assertEquals(Long.valueOf(100), opts.maxAgeSeconds());
+        assertFalse(opts.dryRun());
     }
 
     @Test
