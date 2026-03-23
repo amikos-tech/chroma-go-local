@@ -107,6 +107,30 @@ class WALPruneOptionsTest {
     }
 
     @Test
+    void builderRejectsNegativeMaxAgeSeconds() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new WALPruneOptions.Builder("col")
+                        .maxAgeSeconds(-5)
+                        .build());
+    }
+
+    @Test
+    void builderRejectsNegativeMaxBytes() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new WALPruneOptions.Builder("col")
+                        .maxBytes(-100)
+                        .build());
+    }
+
+    @Test
+    void builderRejectsZeroMaxBytes() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new WALPruneOptions.Builder("col")
+                        .maxBytes(0)
+                        .build());
+    }
+
+    @Test
     void builderRejectsShortDatabaseName() {
         assertThrows(IllegalArgumentException.class, () ->
                 new WALPruneOptions.Builder("col")

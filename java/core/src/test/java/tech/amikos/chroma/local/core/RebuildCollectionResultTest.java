@@ -77,6 +77,20 @@ class RebuildCollectionResultTest {
     }
 
     @Test
+    void warnings_returnsUnmodifiableList() {
+        String json = """
+                {
+                  "collection_id": "abc-123", "name": "n", "tenant_id": "t", "database_name": "d",
+                  "precheck": false, "would_rebuild": false, "rebuilt": false,
+                  "records_scanned": 0, "vectors_reindexed": 0, "duration_ms": 0,
+                  "warnings": ["warn1"]
+                }
+                """;
+        RebuildCollectionResult r = JsonUtil.fromJson(json, RebuildCollectionResult.class);
+        assertThrows(UnsupportedOperationException.class, () -> r.warnings().add("new"));
+    }
+
+    @Test
     void recordsScannedReturnsLong() {
         String json = """
                 {"collection_id": "x", "name": "n", "tenant_id": "t", "database_name": "d",

@@ -34,6 +34,9 @@ public final class CompactAllRequest {
         }
 
         public CompactAllRequest build() {
+            if (tenantId != null && tenantId.length() < 3) {
+                throw new IllegalArgumentException("tenant_id must be at least 3 characters");
+            }
             if (databaseName != null && databaseName.length() < 3) {
                 throw new IllegalArgumentException("database_name must be at least 3 characters");
             }

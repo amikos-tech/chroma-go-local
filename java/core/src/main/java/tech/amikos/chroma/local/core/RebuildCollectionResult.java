@@ -1,5 +1,6 @@
 package tech.amikos.chroma.local.core;
 
+import java.util.Collections;
 import java.util.List;
 
 public final class RebuildCollectionResult {
@@ -42,5 +43,5 @@ public final class RebuildCollectionResult {
     public long vectorsReindexed() { return vectorsReindexed; }
     public long durationMs() { return durationMs; }
     public String backupPath() { return backupPath; }
-    public List<String> warnings() { return warnings; }
+    public List<String> warnings() { return warnings == null ? null : Collections.unmodifiableList(warnings); }
 }

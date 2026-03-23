@@ -88,6 +88,26 @@ class CompactionResultTest {
     }
 
     @Test
+    void collections_returnsUnmodifiableList() {
+        String json = """
+                {
+                  "collection_count": 1,
+                  "duration_ms": 0,
+                  "pending_ops_before_total": 0,
+                  "pending_ops_after_total": 0,
+                  "collections": [
+                    {
+                      "collection_id": "coll-1", "name": "first",
+                      "tenant_id": "t1", "database_name": "db1"
+                    }
+                  ]
+                }
+                """;
+        CompactionResult r = JsonUtil.fromJson(json, CompactionResult.class);
+        assertThrows(UnsupportedOperationException.class, () -> r.collections().add(null));
+    }
+
+    @Test
     void collectionCountReturnsInt() {
         String json = """
                 {

@@ -72,6 +72,9 @@ public final class ServerConfigBuilder {
 
     public String build() {
         if (rawYaml != null) {
+            if (rawYaml.isBlank()) {
+                throw new IllegalArgumentException("rawYaml must not be blank");
+            }
             return rawYaml;
         }
         validate();

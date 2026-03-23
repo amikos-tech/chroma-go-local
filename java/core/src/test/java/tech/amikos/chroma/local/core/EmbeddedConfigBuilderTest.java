@@ -56,6 +56,12 @@ class EmbeddedConfigBuilderTest {
     }
 
     @Test
+    void builderRejectsBlankRawYaml() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new EmbeddedConfigBuilder().rawYaml("").build());
+    }
+
+    @Test
     void defaultBuildContainsOnlyThreeKeys() {
         String yaml = new EmbeddedConfigBuilder().build();
         Map<String, Object> map = parseYaml(yaml);

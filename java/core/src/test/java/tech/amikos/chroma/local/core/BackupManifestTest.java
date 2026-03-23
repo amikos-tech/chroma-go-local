@@ -109,6 +109,29 @@ class BackupManifestTest {
     }
 
     @Test
+    void files_returnsUnmodifiableList() {
+        String json = """
+                {
+                  "schema_version": "v1", "mode": "server",
+                  "created_at": "2026-03-22T10:30:00Z", "wrapper_version": "0.4.0",
+                  "source_paths": ["/data/chroma"],
+                  "destination_path": "/backups/x", "snapshot_path": "/backups/x/persist",
+                  "manifest_path": "/backups/x/manifest.json",
+                  "include_metadata": false, "file_count": 1, "total_bytes": 100,
+                  "files": [
+                    {
+                      "path": "data.bin", "size_bytes": 100, "mode": "0644",
+                      "sha256": "abc", "modified_at": "2026-01-01T00:00:00Z"
+                    }
+                  ]
+                }
+                """;
+        BackupManifest m = JsonUtil.fromJson(json, BackupManifest.class);
+        assertThrows(UnsupportedOperationException.class, () -> m.files().add(null));
+        assertThrows(UnsupportedOperationException.class, () -> m.sourcePaths().add("new"));
+    }
+
+    @Test
     void fileCountReturnsIntAndTotalBytesReturnsLong() {
         String json = """
                 {

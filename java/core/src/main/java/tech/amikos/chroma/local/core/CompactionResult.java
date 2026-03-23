@@ -1,7 +1,9 @@
 package tech.amikos.chroma.local.core;
 
+import java.util.Collections;
 import java.util.List;
 
+// Numeric fields correspond to Go uint64; values exceeding Long.MAX_VALUE will appear negative.
 public final class CompactionResult {
     private final int collectionCount;
     private final long durationMs;
@@ -21,5 +23,5 @@ public final class CompactionResult {
     public long durationMs() { return durationMs; }
     public long pendingOpsBeforeTotal() { return pendingOpsBeforeTotal; }
     public long pendingOpsAfterTotal() { return pendingOpsAfterTotal; }
-    public List<CompactionCollectionResult> collections() { return collections; }
+    public List<CompactionCollectionResult> collections() { return collections == null ? null : Collections.unmodifiableList(collections); }
 }

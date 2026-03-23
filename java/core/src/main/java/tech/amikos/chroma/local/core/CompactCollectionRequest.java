@@ -43,6 +43,9 @@ public final class CompactCollectionRequest {
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("name is required");
             }
+            if (tenantId != null && tenantId.length() < 3) {
+                throw new IllegalArgumentException("tenant_id must be at least 3 characters");
+            }
             if (databaseName != null && databaseName.length() < 3) {
                 throw new IllegalArgumentException("database_name must be at least 3 characters");
             }

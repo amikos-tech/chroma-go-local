@@ -87,6 +87,28 @@ class WALPruneResultTest {
     }
 
     @Test
+    void collections_returnsUnmodifiableList() {
+        String json = """
+                {
+                  "collection_count": 1, "duration_ms": 0,
+                  "dry_run": false, "vacuum_requested": false, "vacuum_executed": false,
+                  "candidate_count_total": 0, "candidate_bytes_total": 0,
+                  "pruned_count_total": 0, "pruned_bytes_total": 0,
+                  "collections": [
+                    {
+                      "collection_id": "wal-1", "name": "events",
+                      "tenant_id": "t1", "database_name": "db1",
+                      "candidate_count": 0, "candidate_bytes": 0,
+                      "pruned_count": 0, "pruned_bytes": 0
+                    }
+                  ]
+                }
+                """;
+        WALPruneResult r = JsonUtil.fromJson(json, WALPruneResult.class);
+        assertThrows(UnsupportedOperationException.class, () -> r.collections().add(null));
+    }
+
+    @Test
     void dryRunMapsFromSnakeCase() {
         String json = """
                 {

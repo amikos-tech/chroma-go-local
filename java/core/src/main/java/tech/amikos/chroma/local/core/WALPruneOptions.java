@@ -104,8 +104,11 @@ public final class WALPruneOptions {
             if (tenantId != null && tenantId.length() < 3) {
                 throw new IllegalArgumentException("tenant_id must be at least 3 characters");
             }
-            if (maxAgeSeconds != null && maxAgeSeconds == 0) {
+            if (maxAgeSeconds != null && maxAgeSeconds <= 0) {
                 throw new IllegalArgumentException("max_age_seconds must be greater than 0");
+            }
+            if (maxBytes != null && maxBytes <= 0) {
+                throw new IllegalArgumentException("maxBytes must be greater than 0");
             }
             if ((watermarkHighBytes == null) != (watermarkLowBytes == null)) {
                 throw new IllegalArgumentException("wal prune watermark requires both high and low bytes");

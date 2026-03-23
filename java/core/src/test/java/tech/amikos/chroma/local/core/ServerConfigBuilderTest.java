@@ -106,6 +106,56 @@ class ServerConfigBuilderTest {
     }
 
     @Test
+    void builderRejectsNullListenAddress() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().listenAddress(null).build());
+    }
+
+    @Test
+    void builderRejectsBlankListenAddress() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().listenAddress("").build());
+    }
+
+    @Test
+    void builderRejectsBlankRawYaml() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().rawYaml("").build());
+    }
+
+    @Test
+    void builderRejectsWhitespaceRawYaml() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().rawYaml("   ").build());
+    }
+
+    @Test
+    void portBoundary_zero_rejected() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().port(0).build());
+    }
+
+    @Test
+    void portBoundary_one_accepted() {
+        String yaml = new ServerConfigBuilder().port(1).build();
+        Map<String, Object> map = parseYaml(yaml);
+        assertEquals(1, map.get("port"));
+    }
+
+    @Test
+    void portBoundary_65535_accepted() {
+        String yaml = new ServerConfigBuilder().port(65535).build();
+        Map<String, Object> map = parseYaml(yaml);
+        assertEquals(65535, map.get("port"));
+    }
+
+    @Test
+    void portBoundary_65536_rejected() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().port(65536).build());
+    }
+
+    @Test
     void defaultBuildContainsAllRequiredKeys() {
         String yaml = new ServerConfigBuilder().build();
         Map<String, Object> map = parseYaml(yaml);

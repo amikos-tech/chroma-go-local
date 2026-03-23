@@ -35,6 +35,9 @@ public final class EmbeddedConfigBuilder {
 
     public String build() {
         if (rawYaml != null) {
+            if (rawYaml.isBlank()) {
+                throw new IllegalArgumentException("rawYaml must not be blank");
+            }
             return rawYaml;
         }
         validate();

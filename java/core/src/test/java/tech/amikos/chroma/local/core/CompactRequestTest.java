@@ -61,6 +61,24 @@ class CompactRequestTest {
     }
 
     @Test
+    void compactCollectionRequestBuilderRejectsTooShortTenantId() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new CompactCollectionRequest.Builder("coll").tenantId("ab").build());
+    }
+
+    @Test
+    void compactAllRequestBuilderRejectsTooShortTenantId() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new CompactAllRequest.Builder().tenantId("ab").build());
+    }
+
+    @Test
+    void compactCollectionRequestBuilderRejectsNullName() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new CompactCollectionRequest.Builder(null).build());
+    }
+
+    @Test
     void compactCollectionRequestMinimalJson() {
         CompactCollectionRequest req = new CompactCollectionRequest.Builder("col").build();
         String json = req.toJson();
