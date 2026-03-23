@@ -44,15 +44,24 @@ public final class ServerSession implements AutoCloseable {
 
     public String persistPath() { ensureOpen(); return persistPathAccessor.apply(handle); }
 
-    public String url() { ensureOpen(); return "http://" + address() + ":" + port(); }
+    public String url() {
+        ensureOpen();
+        return "http://" + addressAccessor.apply(handle) + ":" + portAccessor.applyAsInt(handle);
+    }
 
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
             try {
                 stopAction.accept(handle);
-            } finally {
+            } catch (RuntimeException | Error e) {
+                closed.set(false);
+                throw e;
+            }
+            try {
                 freeAction.accept(handle);
+            } catch (RuntimeException | Error e) {
+                throw e;
             }
         }
     }

@@ -102,6 +102,49 @@ class AbstractChromaRuntimeTest {
     }
 
     @Test
+    void callFfiVoid_throwsOnLastError() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.lastErrorValue = "void operation failed";
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiVoid(() -> {}));
+        assertTrue(ex.getMessage().contains("void operation failed"));
+    }
+
+    @Test
+    void callFfiVoid_succeedsWhenNoError() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.lastErrorValue = null;
+        runtime.callFfiVoid(() -> {});
+    }
+
+    @Test
+    void callFfiJson_throwsOnNullJson() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        // pointer 300 maps to no entry, so readOwnedString returns null
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiJson(() -> 300L, RebuildCollectionResult.class));
+        assertTrue(ex.getMessage().contains("null/empty response"));
+    }
+
+    @Test
+    void callFfiJson_throwsOnEmptyJson() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.stringStore.put(301L, "");
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiJson(() -> 301L, RebuildCollectionResult.class));
+        assertTrue(ex.getMessage().contains("null/empty response"));
+    }
+
+    @Test
+    void callFfiJson_throwsOnMalformedJson() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.stringStore.put(302L, "{not valid json!!!");
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiJson(() -> 302L, RebuildCollectionResult.class));
+        assertTrue(ex.getMessage().contains("Failed to deserialize"));
+    }
+
+    @Test
     void callFfiBorrowedString_returnsString() {
         TestChromaRuntime runtime = new TestChromaRuntime();
         runtime.stringStore.put(200L, "borrowed-value");

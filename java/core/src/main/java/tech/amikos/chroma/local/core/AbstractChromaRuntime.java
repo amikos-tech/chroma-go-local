@@ -36,7 +36,18 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
                 throw new ChromaException(error != null ? error : "FFI call returned null pointer");
             }
             String json = readOwnedString(ptr);
-            return JsonUtil.fromJson(json, type);
+            if (json == null || json.isEmpty()) {
+                throw new ChromaException("FFI call returned null/empty response for " + type.getSimpleName());
+            }
+            try {
+                T result = JsonUtil.fromJson(json, type);
+                if (result == null) {
+                    throw new ChromaException("Deserialization returned null for " + type.getSimpleName());
+                }
+                return result;
+            } catch (com.google.gson.JsonParseException e) {
+                throw new ChromaException("Failed to deserialize as " + type.getSimpleName() + ": " + e.getMessage());
+            }
         } finally {
             FFI_LOCK.unlock();
         }
@@ -46,6 +57,10 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
         FFI_LOCK.lock();
         try {
             ffiCall.run();
+            String error = readLastError();
+            if (error != null && !error.isEmpty()) {
+                throw new ChromaException("FFI call failed: " + error);
+            }
         } finally {
             FFI_LOCK.unlock();
         }
