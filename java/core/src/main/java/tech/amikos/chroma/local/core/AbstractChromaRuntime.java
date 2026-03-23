@@ -28,6 +28,7 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
     }
 
     protected <T> T callFfiJson(LongSupplier ffiCall, Class<T> type) {
+        String json;
         FFI_LOCK.lock();
         try {
             long ptr = ffiCall.getAsLong();
@@ -35,21 +36,21 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
                 String error = readLastError();
                 throw new ChromaException(error != null ? error : "FFI call returned null pointer");
             }
-            String json = readOwnedString(ptr);
-            if (json == null || json.isEmpty()) {
-                throw new ChromaException("FFI call returned null/empty response for " + type.getSimpleName());
-            }
-            try {
-                T result = JsonUtil.fromJson(json, type);
-                if (result == null) {
-                    throw new ChromaException("Deserialization returned null for " + type.getSimpleName());
-                }
-                return result;
-            } catch (com.google.gson.JsonParseException e) {
-                throw new ChromaException("Failed to deserialize as " + type.getSimpleName() + ": " + e.getMessage(), e);
-            }
+            json = readOwnedString(ptr);
         } finally {
             FFI_LOCK.unlock();
+        }
+        if (json == null || json.isEmpty()) {
+            throw new ChromaException("FFI call returned null/empty response for " + type.getSimpleName());
+        }
+        try {
+            T result = JsonUtil.fromJson(json, type);
+            if (result == null) {
+                throw new ChromaException("Deserialization returned null for " + type.getSimpleName());
+            }
+            return result;
+        } catch (com.google.gson.JsonParseException e) {
+            throw new ChromaException("Failed to deserialize as " + type.getSimpleName() + ": " + e.getMessage(), e);
         }
     }
 
