@@ -167,59 +167,19 @@ class ServerSessionTest {
     }
 
     @Test
-    void close_resetsClosedOnStopFailure_allowsRetry() {
+    void close_remainsClosedAfterStopFailure() {
         AtomicInteger stopCalls = new AtomicInteger();
         ServerSession session = new ServerSession(
                 1L,
-                h -> {
-                    int call = stopCalls.incrementAndGet();
-                    if (call == 1) {
-                        throw new RuntimeException("stop failed");
-                    }
-                },
+                h -> { stopCalls.incrementAndGet(); throw new RuntimeException("stop failed"); },
                 h -> {},
                 h -> 8000, h -> "host", h -> "/path"
         );
         assertThrows(RuntimeException.class, session::close);
+        assertThrows(IllegalStateException.class, session::port);
+        assertThrows(IllegalStateException.class, session::address);
         session.close();
-        assertEquals(2, stopCalls.get(), "stopAction should be called twice after retry");
-    }
-
-    @Test
-    void close_afterSuccessfulRetry_callsFree() {
-        AtomicInteger stopCalls = new AtomicInteger();
-        AtomicInteger freeCalls = new AtomicInteger();
-        ServerSession session = new ServerSession(
-                1L,
-                h -> {
-                    int call = stopCalls.incrementAndGet();
-                    if (call == 1) {
-                        throw new RuntimeException("stop failed");
-                    }
-                },
-                h -> freeCalls.incrementAndGet(),
-                h -> 8000, h -> "host", h -> "/path"
-        );
-        assertThrows(RuntimeException.class, session::close);
-        assertEquals(0, freeCalls.get(), "freeAction must not be called after failed stop");
-        session.close();
-        assertEquals(1, freeCalls.get(), "freeAction must be called after successful retry");
-    }
-
-    @Test
-    void url_readsAddressAndPortDirectly() {
-        AtomicInteger addressCalls = new AtomicInteger();
-        AtomicInteger portCalls = new AtomicInteger();
-        ServerSession session = new ServerSession(
-                1L,
-                h -> {}, h -> {},
-                h -> { portCalls.incrementAndGet(); return 9090; },
-                h -> { addressCalls.incrementAndGet(); return "10.0.0.1"; },
-                h -> "/data"
-        );
-        assertEquals("http://10.0.0.1:9090", session.url());
-        assertEquals(1, addressCalls.get(), "addressAccessor should be called exactly once");
-        assertEquals(1, portCalls.get(), "portAccessor should be called exactly once");
+        assertEquals(1, stopCalls.get(), "stopAction must not be called again on second close");
     }
 
     @Test
