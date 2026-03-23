@@ -1,8 +1,12 @@
 package tech.amikos.chroma.local.core;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.google.gson.JsonParseException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -111,13 +115,6 @@ class AbstractChromaRuntimeTest {
     }
 
     @Test
-    void callFfiVoid_succeedsWhenNoError() {
-        TestChromaRuntime runtime = new TestChromaRuntime();
-        runtime.lastErrorValue = null;
-        runtime.callFfiVoid(() -> {});
-    }
-
-    @Test
     void callFfiJson_throwsOnNullJson() {
         TestChromaRuntime runtime = new TestChromaRuntime();
         // pointer 300 maps to no entry, so readOwnedString returns null
@@ -161,6 +158,43 @@ class AbstractChromaRuntimeTest {
         ChromaException ex = assertThrows(ChromaException.class,
                 () -> runtime.callFfiBorrowedString(() -> 0L));
         assertEquals("borrowed error", ex.getMessage());
+    }
+
+    @Test
+    void callFfiVoid_succeedsWithEmptyStringError() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.lastErrorValue = "";
+        assertDoesNotThrow(() -> runtime.callFfiVoid(() -> {}));
+    }
+
+    @Test
+    void callFfiJson_throwsOnLiteralNullJson() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.stringStore.put(400L, "null");
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiJson(() -> 400L, RebuildCollectionResult.class));
+        assertTrue(ex.getMessage().contains("null"));
+    }
+
+    @Test
+    void callFfiHandle_drainsStaleError() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.lastErrorValue = "stale error from previous call";
+        // callFfiHandle succeeds (non-zero) and should drain the stale error
+        long handle = runtime.callFfiHandle(() -> 99L);
+        assertEquals(99L, handle);
+        // callFfiVoid should NOT throw because the stale error was drained
+        assertDoesNotThrow(() -> runtime.callFfiVoid(() -> {}));
+    }
+
+    @Test
+    void callFfiJson_preservesExceptionCause() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.stringStore.put(500L, "{not valid json!!!");
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiJson(() -> 500L, RebuildCollectionResult.class));
+        assertTrue(ex.getMessage().contains("Failed to deserialize"));
+        assertInstanceOf(JsonParseException.class, ex.getCause());
     }
 
     @Test
