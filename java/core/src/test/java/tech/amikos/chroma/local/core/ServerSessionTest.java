@@ -154,7 +154,7 @@ class ServerSessionTest {
     }
 
     @Test
-    void close_doesNotFreeIfStopFails() {
+    void close_freesEvenIfStopFails() {
         AtomicInteger freeCalls = new AtomicInteger();
         ServerSession session = new ServerSession(
                 1L,
@@ -163,7 +163,7 @@ class ServerSessionTest {
                 h -> 8000, h -> "host", h -> "/path"
         );
         assertThrows(RuntimeException.class, session::close);
-        assertEquals(0, freeCalls.get(), "freeAction must not be called if stopAction throws");
+        assertEquals(1, freeCalls.get(), "freeAction must run even if stopAction throws");
     }
 
     @Test
@@ -180,6 +180,18 @@ class ServerSessionTest {
         assertThrows(IllegalStateException.class, session::address);
         session.close();
         assertEquals(1, stopCalls.get(), "stopAction must not be called again on second close");
+    }
+
+    @Test
+    void close_freeRunsEvenWhenBothFail() {
+        ServerSession session = new ServerSession(
+                1L,
+                h -> { throw new RuntimeException("stop failed"); },
+                h -> { throw new RuntimeException("free failed"); },
+                h -> 8000, h -> "host", h -> "/path"
+        );
+        RuntimeException ex = assertThrows(RuntimeException.class, session::close);
+        assertEquals("free failed", ex.getMessage(), "finally-block exception propagates");
     }
 
     @Test

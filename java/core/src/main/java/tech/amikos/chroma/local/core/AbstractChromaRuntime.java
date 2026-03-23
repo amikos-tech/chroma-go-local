@@ -21,7 +21,6 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
                 String error = readLastError();
                 throw new ChromaException(error != null ? error : "FFI call returned null handle");
             }
-            readLastError(); // drain stale errors
             return result;
         } finally {
             FFI_LOCK.unlock();
@@ -36,7 +35,6 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
                 String error = readLastError();
                 throw new ChromaException(error != null ? error : "FFI call returned null pointer");
             }
-            readLastError(); // drain stale errors
             String json = readOwnedString(ptr);
             if (json == null || json.isEmpty()) {
                 throw new ChromaException("FFI call returned null/empty response for " + type.getSimpleName());
@@ -76,7 +74,6 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
                 String error = readLastError();
                 throw new ChromaException(error != null ? error : "FFI call returned null pointer");
             }
-            readLastError(); // drain stale errors
             return readBorrowedString(ptr);
         } finally {
             FFI_LOCK.unlock();

@@ -177,13 +177,12 @@ class AbstractChromaRuntimeTest {
     }
 
     @Test
-    void callFfiHandle_drainsStaleError() {
+    void callFfiVoid_notAffectedByStaleError_whenProtocolFollowed() {
         TestChromaRuntime runtime = new TestChromaRuntime();
-        runtime.lastErrorValue = "stale error from previous call";
-        // callFfiHandle succeeds (non-zero) and should drain the stale error
-        long handle = runtime.callFfiHandle(() -> 99L);
-        assertEquals(99L, handle);
-        // callFfiVoid should NOT throw because the stale error was drained
+        // Simulate: a previous call failed and drained the error via readLastError
+        runtime.lastErrorValue = "old error";
+        assertThrows(ChromaException.class, () -> runtime.callFfiHandle(() -> 0L));
+        // Error was consumed by the failure path. Next void call should succeed.
         assertDoesNotThrow(() -> runtime.callFfiVoid(() -> {}));
     }
 

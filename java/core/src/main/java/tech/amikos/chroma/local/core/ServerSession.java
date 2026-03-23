@@ -51,8 +51,11 @@ public final class ServerSession implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            stopAction.accept(handle);
-            freeAction.accept(handle);
+            try {
+                stopAction.accept(handle);
+            } finally {
+                freeAction.accept(handle);
+            }
         }
     }
 
