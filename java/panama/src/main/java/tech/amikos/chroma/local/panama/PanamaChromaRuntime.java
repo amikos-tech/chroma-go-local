@@ -210,7 +210,7 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
     private void serverStop(long handleAddress) {
         if (handleAddress == 0L) return;
         try {
-            chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
+            int ignored = (int) chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
         } catch (Throwable t) {
             if (t instanceof Error error) {
                 throw error;

@@ -44,6 +44,7 @@ public final class ServerSession implements AutoCloseable {
 
     public String persistPath() { ensureOpen(); return persistPathAccessor.apply(handle); }
 
+    // TLS not yet supported — plain HTTP only (see issue tracker for self-signed cert support)
     public String url() {
         return "http://" + address() + ":" + port();
     }

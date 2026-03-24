@@ -139,7 +139,10 @@ public final class JnaChromaRuntime implements ChromaRuntime {
     private void serverStop(long handle) {
         if (handle == 0L) return;
         try {
-            bindings.chroma_server_stop(new Pointer(handle));
+            int rc = bindings.chroma_server_stop(new Pointer(handle));
+            if (rc != 0) {
+                throw new ChromaException(lastError("server stop failed (rc=" + rc + ")"));
+            }
         } catch (Throwable t) {
             if (t instanceof UnsatisfiedLinkError e) {
                 throw new ChromaException("failed to stop server", e);
