@@ -93,20 +93,20 @@ fn set_last_error(msg: &str) {
 }
 
 fn last_error_cstring() -> Option<CString> {
-    let slot = match LAST_ERROR.lock() {
+    let mut slot = match LAST_ERROR.lock() {
         Ok(slot) => slot,
         Err(poisoned) => poisoned.into_inner(),
     };
-    let msg = slot.as_ref()?;
+    let msg = slot.take()?;
     CString::new(msg.as_str()).ok()
 }
 
 fn last_error_message() -> Option<String> {
-    let slot = match LAST_ERROR.lock() {
+    let mut slot = match LAST_ERROR.lock() {
         Ok(slot) => slot,
         Err(poisoned) => poisoned.into_inner(),
     };
-    slot.clone()
+    slot.take()
 }
 
 fn panic_payload_message(payload: Box<dyn Any + Send>) -> String {

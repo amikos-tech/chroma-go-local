@@ -147,4 +147,20 @@ class WALPruneOptionsTest {
                         .tenantId("ab")
                         .build());
     }
+
+    @Test
+    void builderRejectsBlankName() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new WALPruneOptions.Builder("   ")
+                        .dryRun(true)
+                        .build());
+    }
+
+    @Test
+    void builderRejectsEmptyName() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new WALPruneOptions.Builder("")
+                        .dryRun(true)
+                        .build());
+    }
 }
