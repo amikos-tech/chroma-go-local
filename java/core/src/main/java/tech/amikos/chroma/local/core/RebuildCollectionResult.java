@@ -43,5 +43,5 @@ public final class RebuildCollectionResult {
     public long vectorsReindexed() { return vectorsReindexed; }
     public long durationMs() { return durationMs; }
     public String backupPath() { return backupPath; }
-    public List<String> warnings() { return warnings == null ? null : Collections.unmodifiableList(warnings); }
+    public List<String> warnings() { return warnings == null ? Collections.emptyList() : Collections.unmodifiableList(warnings); }
 }

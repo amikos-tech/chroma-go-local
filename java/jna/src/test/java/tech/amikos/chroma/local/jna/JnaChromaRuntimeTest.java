@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.EmbeddedSession;
+import tech.amikos.chroma.local.core.ServerSession;
 
 class JnaChromaRuntimeTest {
     @Test
@@ -44,6 +46,21 @@ class JnaChromaRuntimeTest {
     }
 
     @Test
+    void serverLifecycleSmokeTest(@TempDir Path persistDir) throws Exception {
+        String libPath = System.getenv("CHROMA_LIB_PATH");
+        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+
+        String yaml = serverYaml(persistDir);
+
+        try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
+             ServerSession session = runtime.startServer(yaml)) {
+            assertTrue(session.port() > 0);
+            assertNotNull(session.address());
+            assertNotNull(session.persistPath());
+        }
+    }
+
+    @Test
     void startEmbeddedRejectsMissingYaml() {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
@@ -72,6 +89,15 @@ class JnaChromaRuntimeTest {
     private static String embeddedYaml(Path persistDir) {
         String escapedPath = persistDir.toAbsolutePath().toString().replace("\\", "\\\\");
         return "persist_path: \"" + escapedPath + "\"\n"
+                + "sqlite_filename: \"chroma.sqlite3\"\n"
+                + "allow_reset: true\n";
+    }
+
+    private static String serverYaml(Path persistDir) {
+        String escapedPath = persistDir.toAbsolutePath().toString().replace("\\", "\\\\");
+        return "port: 0\n"
+                + "listen_address: \"127.0.0.1\"\n"
+                + "persist_path: \"" + escapedPath + "\"\n"
                 + "sqlite_filename: \"chroma.sqlite3\"\n"
                 + "allow_reset: true\n";
     }

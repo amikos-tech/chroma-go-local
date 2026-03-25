@@ -40,5 +40,5 @@ public final class WALPruneResult {
     public long candidateBytesTotal() { return candidateBytesTotal; }
     public long prunedCountTotal() { return prunedCountTotal; }
     public long prunedBytesTotal() { return prunedBytesTotal; }
-    public List<WALPruneCollectionResult> collections() { return collections == null ? null : Collections.unmodifiableList(collections); }
+    public List<WALPruneCollectionResult> collections() { return collections == null ? Collections.emptyList() : Collections.unmodifiableList(collections); }
 }

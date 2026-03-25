@@ -36,12 +36,12 @@ public final class BackupManifest {
     public String mode() { return mode; }
     public String createdAt() { return createdAt; }
     public String wrapperVersion() { return wrapperVersion; }
-    public List<String> sourcePaths() { return sourcePaths == null ? null : Collections.unmodifiableList(sourcePaths); }
+    public List<String> sourcePaths() { return sourcePaths == null ? Collections.emptyList() : Collections.unmodifiableList(sourcePaths); }
     public String destinationPath() { return destinationPath; }
     public String snapshotPath() { return snapshotPath; }
     public String manifestPath() { return manifestPath; }
     public boolean includeMetadata() { return includeMetadata; }
     public int fileCount() { return fileCount; }
     public long totalBytes() { return totalBytes; }
-    public List<BackupFileMetadata> files() { return files == null ? null : Collections.unmodifiableList(files); }
+    public List<BackupFileMetadata> files() { return files == null ? Collections.emptyList() : Collections.unmodifiableList(files); }
 }

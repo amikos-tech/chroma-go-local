@@ -155,12 +155,4 @@ class WALPruneOptionsTest {
                         .dryRun(true)
                         .build());
     }
-
-    @Test
-    void builderRejectsEmptyName() {
-        assertThrows(IllegalArgumentException.class, () ->
-                new WALPruneOptions.Builder("")
-                        .dryRun(true)
-                        .build());
-    }
 }

@@ -40,9 +40,7 @@ public final class CompactCollectionRequest {
         }
 
         public CompactCollectionRequest build() {
-            if (name == null || name.isBlank()) {
-                throw new IllegalArgumentException("name is required");
-            }
+            Validation.validateRequiredName(name);
             Validation.validateTenantId(tenantId);
             Validation.validateDatabaseName(databaseName);
             return new CompactCollectionRequest(this);

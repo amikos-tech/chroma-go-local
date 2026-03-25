@@ -15,4 +15,16 @@ final class Validation {
             throw new IllegalArgumentException("database_name must be at least 3 characters");
         }
     }
+
+    static void validateRequiredName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name is required");
+        }
+    }
+
+    static void validateOptionalName(String name) {
+        if (name != null && name.isBlank()) {
+            throw new IllegalArgumentException("name must not be blank");
+        }
+    }
 }

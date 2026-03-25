@@ -15,6 +15,8 @@ import tech.amikos.chroma.local.core.ChromaRuntime;
 import tech.amikos.chroma.local.core.EmbeddedSession;
 import tech.amikos.chroma.local.core.ServerSession;
 
+// Not thread-safe: FFI calls are not serialized. Use from a single thread until Phase 8
+// wires AbstractChromaRuntime's FFI lock.
 public final class PanamaChromaRuntime implements ChromaRuntime {
     private static final long MAX_C_STRING_LEN = 1L << 20;
     private static final boolean WINDOWS_OS = System.getProperty("os.name", "")
@@ -210,7 +212,12 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
     private void serverStop(long handleAddress) {
         if (handleAddress == 0L) return;
         try {
-            int ignored = (int) chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
+            int rc = (int) chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
+            if (rc != 0) {
+                throw new ChromaException(lastError("server stop failed (rc=" + rc + ")"));
+            }
+        } catch (ChromaException e) {
+            throw e;
         } catch (Throwable t) {
             if (t instanceof Error error) {
                 throw error;
@@ -233,7 +240,13 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
 
     private int serverPort(long handleAddress) {
         try {
-            return (int) chromaServerPort.invokeExact(MemorySegment.ofAddress(handleAddress));
+            int port = (int) chromaServerPort.invokeExact(MemorySegment.ofAddress(handleAddress));
+            if (port < 0) {
+                throw new ChromaException(lastError("chroma_server_port returned " + port));
+            }
+            return port;
+        } catch (ChromaException e) {
+            throw e;
         } catch (Throwable t) {
             if (t instanceof Error error) {
                 throw error;

@@ -48,6 +48,9 @@ public final class EmbeddedConfigBuilder {
         if (persistPath == null || persistPath.isBlank()) {
             throw new IllegalArgumentException("persistPath must be set");
         }
+        if (sqliteFilename == null || sqliteFilename.isBlank()) {
+            throw new IllegalArgumentException("sqliteFilename must be set");
+        }
     }
 
     private String toYaml() {

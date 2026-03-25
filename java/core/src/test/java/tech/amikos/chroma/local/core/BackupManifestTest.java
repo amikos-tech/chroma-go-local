@@ -86,7 +86,7 @@ class BackupManifestTest {
         assertFalse(m.includeMetadata());
         assertEquals(0, m.fileCount());
         assertEquals(0L, m.totalBytes());
-        assertNull(m.files());
+        assertTrue(m.files().isEmpty());
     }
 
     @Test

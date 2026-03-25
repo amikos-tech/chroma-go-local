@@ -155,6 +155,46 @@ class ServerConfigBuilderTest {
                 new ServerConfigBuilder().port(65536).build());
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void otelEndpointWithoutServiceName() {
+        String yaml = new ServerConfigBuilder()
+                .otelEndpoint("http://otel:4317")
+                .build();
+        Map<String, Object> map = parseYaml(yaml);
+        Map<String, Object> otel = (Map<String, Object>) map.get("open_telemetry");
+        assertNotNull(otel);
+        assertEquals("http://otel:4317", otel.get("endpoint"));
+        assertNull(otel.get("service_name"));
+    }
+
+    @Test
+    void emptyCorsAllowOriginsOmitted() {
+        String yaml = new ServerConfigBuilder()
+                .corsAllowOrigins(List.of())
+                .build();
+        Map<String, Object> map = parseYaml(yaml);
+        assertNull(map.get("cors_allow_origins"));
+    }
+
+    @Test
+    void builderRejectsNullSqliteFilename() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().sqliteFilename(null).build());
+    }
+
+    @Test
+    void builderRejectsZeroMaxPayload() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().maxPayloadSizeBytes(0).build());
+    }
+
+    @Test
+    void builderRejectsNegativeMaxPayload() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new ServerConfigBuilder().maxPayloadSizeBytes(-1).build());
+    }
+
     @Test
     void defaultBuildContainsAllRequiredKeys() {
         String yaml = new ServerConfigBuilder().build();

@@ -62,7 +62,7 @@ class RebuildCollectionResultTest {
         assertFalse(r.wouldRebuild());
         assertEquals(100L, r.recordsScanned());
         assertNull(r.backupPath());
-        assertNull(r.warnings());
+        assertTrue(r.warnings().isEmpty());
     }
 
     @Test

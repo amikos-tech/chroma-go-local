@@ -51,7 +51,7 @@ public final class ServerConfigBuilder {
     }
 
     public ServerConfigBuilder corsAllowOrigins(List<String> corsAllowOrigins) {
-        this.corsAllowOrigins = corsAllowOrigins;
+        this.corsAllowOrigins = corsAllowOrigins == null ? null : List.copyOf(corsAllowOrigins);
         return this;
     }
 
@@ -90,6 +90,12 @@ public final class ServerConfigBuilder {
         }
         if (listenAddress == null || listenAddress.isBlank()) {
             throw new IllegalArgumentException("listenAddress must be set");
+        }
+        if (sqliteFilename == null || sqliteFilename.isBlank()) {
+            throw new IllegalArgumentException("sqliteFilename must be set");
+        }
+        if (maxPayloadSizeBytes < 1) {
+            throw new IllegalArgumentException("maxPayloadSizeBytes must be positive");
         }
     }
 

@@ -191,7 +191,9 @@ class ServerSessionTest {
                 h -> 8000, h -> "host", h -> "/path"
         );
         RuntimeException ex = assertThrows(RuntimeException.class, session::close);
-        assertEquals("free failed", ex.getMessage(), "finally-block exception propagates");
+        assertEquals("stop failed", ex.getMessage(), "stop exception propagates as primary");
+        assertEquals(1, ex.getSuppressed().length, "free exception is suppressed");
+        assertEquals("free failed", ex.getSuppressed()[0].getMessage());
     }
 
     @Test

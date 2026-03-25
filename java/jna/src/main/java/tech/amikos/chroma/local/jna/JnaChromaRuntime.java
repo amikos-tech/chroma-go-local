@@ -10,6 +10,8 @@ import tech.amikos.chroma.local.core.ChromaRuntime;
 import tech.amikos.chroma.local.core.EmbeddedSession;
 import tech.amikos.chroma.local.core.ServerSession;
 
+// Not thread-safe: FFI calls are not serialized. Use from a single thread until Phase 8
+// wires AbstractChromaRuntime's FFI lock.
 public final class JnaChromaRuntime implements ChromaRuntime {
     private final JnaBindings bindings;
     private final AtomicBoolean closed;
@@ -143,6 +145,8 @@ public final class JnaChromaRuntime implements ChromaRuntime {
             if (rc != 0) {
                 throw new ChromaException(lastError("server stop failed (rc=" + rc + ")"));
             }
+        } catch (ChromaException e) {
+            throw e;
         } catch (Throwable t) {
             if (t instanceof UnsatisfiedLinkError e) {
                 throw new ChromaException("failed to stop server", e);
@@ -171,7 +175,13 @@ public final class JnaChromaRuntime implements ChromaRuntime {
 
     private int serverPort(long handle) {
         try {
-            return bindings.chroma_server_port(new Pointer(handle));
+            int port = bindings.chroma_server_port(new Pointer(handle));
+            if (port < 0) {
+                throw new ChromaException(lastError("chroma_server_port returned " + port));
+            }
+            return port;
+        } catch (ChromaException e) {
+            throw e;
         } catch (Throwable t) {
             if (t instanceof UnsatisfiedLinkError e) {
                 throw new ChromaException("failed to read server port", e);

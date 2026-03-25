@@ -98,9 +98,7 @@ public final class WALPruneOptions {
         }
 
         public WALPruneOptions build() {
-            if (name != null && name.isBlank()) {
-                throw new IllegalArgumentException("name must not be blank");
-            }
+            Validation.validateOptionalName(name);
             Validation.validateDatabaseName(databaseName);
             Validation.validateTenantId(tenantId);
             if (maxAgeSeconds != null && maxAgeSeconds <= 0) {

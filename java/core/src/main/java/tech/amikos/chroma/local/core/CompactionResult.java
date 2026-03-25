@@ -23,5 +23,5 @@ public final class CompactionResult {
     public long durationMs() { return durationMs; }
     public long pendingOpsBeforeTotal() { return pendingOpsBeforeTotal; }
     public long pendingOpsAfterTotal() { return pendingOpsAfterTotal; }
-    public List<CompactionCollectionResult> collections() { return collections == null ? null : Collections.unmodifiableList(collections); }
+    public List<CompactionCollectionResult> collections() { return collections == null ? Collections.emptyList() : Collections.unmodifiableList(collections); }
 }

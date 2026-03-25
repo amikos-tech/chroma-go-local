@@ -2848,6 +2848,7 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
 pub unsafe extern "C" fn chroma_server_port(handle: *mut c_void) -> i32 {
     ffi_guard_minus_one!({
         if handle.is_null() {
+            set_last_error("handle is null");
             return -1;
         }
         let server = &*(handle as *const ServerHandle);

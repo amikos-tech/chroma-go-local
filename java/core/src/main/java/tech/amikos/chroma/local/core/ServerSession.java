@@ -36,7 +36,7 @@ public final class ServerSession implements AutoCloseable {
         if (closed.get()) throw new IllegalStateException("session is closed");
     }
 
-    public long handle() { ensureOpen(); return handle; }
+    long handle() { ensureOpen(); return handle; }
 
     public int port() { ensureOpen(); return portAccessor.applyAsInt(handle); }
 
@@ -52,12 +52,30 @@ public final class ServerSession implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
+            Throwable stopError = null;
             try {
                 stopAction.accept(handle);
-            } finally {
+            } catch (Throwable t) {
+                stopError = t;
+            }
+            try {
                 freeAction.accept(handle);
+            } catch (Throwable t) {
+                if (stopError != null) {
+                    stopError.addSuppressed(t);
+                    throw rethrow(stopError);
+                }
+                throw rethrow(t);
+            }
+            if (stopError != null) {
+                throw rethrow(stopError);
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> RuntimeException rethrow(Throwable t) throws T {
+        throw (T) t;
     }
 
     public RebuildCollectionResult rebuildCollection(String name, RebuildOptions options) {

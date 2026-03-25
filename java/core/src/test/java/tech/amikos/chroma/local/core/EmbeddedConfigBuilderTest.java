@@ -62,6 +62,18 @@ class EmbeddedConfigBuilderTest {
     }
 
     @Test
+    void builderRejectsNullSqliteFilename() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new EmbeddedConfigBuilder().sqliteFilename(null).build());
+    }
+
+    @Test
+    void builderRejectsBlankSqliteFilename() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new EmbeddedConfigBuilder().sqliteFilename("").build());
+    }
+
+    @Test
     void defaultBuildContainsOnlyThreeKeys() {
         String yaml = new EmbeddedConfigBuilder().build();
         Map<String, Object> map = parseYaml(yaml);
