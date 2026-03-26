@@ -38,8 +38,8 @@ Java and Go APIs must provide equivalent access to all Chroma runtime capabiliti
 
 ### Active
 
-- [ ] Java server lifecycle API (start/stop/port/address/URL)
-- [ ] Java builder pattern for server configuration
+- [x] Java server lifecycle API (start/stop/port/address/URL) — Validated in Phase 7
+- [x] Java builder pattern for server configuration — Validated in Phase 6
 - [ ] Java backup API with option builder
 - [ ] Java rebuild API with option builder
 - [ ] Java compaction API (per-collection and all)
@@ -60,6 +60,8 @@ Java and Go APIs must provide equivalent access to all Chroma runtime capabiliti
 The Java scaffold (v0.3.x) provides basic `ChromaRuntime` interface with `version()` and `startEmbedded()`. The Go side has full server mode, embedded mode, and maintenance APIs (backup, rebuild, compaction, WAL prune). The v0.5.0 milestone bridges this gap by implementing the full Go API surface in Java, reusing the same `chroma_*` FFI symbols that Go calls via purego.
 
 Phase 6 complete — core module now contains all shared types (7 result POJOs, 6 option/request builders, 2 config builders), FFI safety infrastructure (`AbstractChromaRuntime` with global lock), and `ServerSession` with callback slots. Backend modules (JNA, Panama) can now implement against these stable contracts.
+
+Phase 7 complete — both JNA and Panama backends retrofitted to extend `AbstractChromaRuntime`, replacing inline FFI patterns with lock-protected template methods. Server lifecycle (start/stop/close) wired through `ServerSession` with method-reference callbacks. Integration tests verify full error matrix in both backends.
 
 Existing Java architecture: `core` module defines `ChromaRuntime` interface + `EmbeddedSession`, `jna` module implements via JNA, `panama` module implements via Foreign Function & Memory API. Both backends must stay in sync.
 
@@ -101,4 +103,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-22 after Phase 6 completion*
+*Last updated: 2026-03-26 after Phase 7 completion*
