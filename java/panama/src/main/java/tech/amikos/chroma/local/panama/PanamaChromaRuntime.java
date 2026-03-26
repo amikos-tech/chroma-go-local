@@ -10,14 +10,12 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.ChromaException;
-import tech.amikos.chroma.local.core.ChromaRuntime;
 import tech.amikos.chroma.local.core.EmbeddedSession;
 import tech.amikos.chroma.local.core.ServerSession;
 
-// Not thread-safe: FFI calls are not serialized. Use from a single thread until Phase 8
-// wires AbstractChromaRuntime's FFI lock.
-public final class PanamaChromaRuntime implements ChromaRuntime {
+public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     private static final long MAX_C_STRING_LEN = 1L << 20;
     private static final boolean WINDOWS_OS = System.getProperty("os.name", "")
             .toLowerCase(Locale.ROOT)
@@ -136,24 +134,52 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
     }
 
     @Override
+    protected String readBorrowedString(long address) {
+        return MemorySegment.ofAddress(address).reinterpret(MAX_C_STRING_LEN).getString(0);
+    }
+
+    @Override
+    protected String readOwnedString(long address) {
+        MemorySegment ptr = MemorySegment.ofAddress(address);
+        try {
+            return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
+        } finally {
+            try {
+                chromaStringFree.invokeExact(ptr);
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+            }
+        }
+    }
+
+    @Override
+    protected String readLastError() {
+        try {
+            MemorySegment ptr = (MemorySegment) chromaGetLastError.invokeExact();
+            if (ptr.equals(MemorySegment.NULL)) return null;
+            try {
+                return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
+            } finally {
+                chromaStringFree.invokeExact(ptr);
+            }
+        } catch (Throwable t) {
+            if (t instanceof Error error) throw error;
+            return null;
+        }
+    }
+
+    @Override
     public String version() {
         ensureOpen();
-        try {
-            // chroma_version returns a pointer to static read-only data in the shared library.
-            // Do not call chroma_string_free on this pointer.
-            MemorySegment ptr = (MemorySegment) chromaVersion.invokeExact();
-            if (ptr.equals(MemorySegment.NULL)) {
-                throw new ChromaException("chroma_version returned NULL");
+        return callFfiBorrowedString(() -> {
+            try {
+                MemorySegment ptr = (MemorySegment) chromaVersion.invokeExact();
+                return ptr.address();
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to read chroma_version", t);
             }
-            return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to read chroma_version", t);
-        }
+        });
     }
 
     @Override
@@ -162,22 +188,17 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         if (configYaml == null || configYaml.isBlank()) {
             throw new IllegalArgumentException("configYaml must be set");
         }
-
-        try (Arena callArena = Arena.ofConfined()) {
-            MemorySegment yaml = callArena.allocateFrom(configYaml);
-            MemorySegment handle = (MemorySegment) chromaEmbeddedStartFromString.invokeExact(yaml);
-            if (handle.equals(MemorySegment.NULL)) {
-                throw new ChromaException(lastError("embedded startup failed"));
+        long handle = callFfiHandle(() -> {
+            try (Arena callArena = Arena.ofConfined()) {
+                MemorySegment yaml = callArena.allocateFrom(configYaml);
+                MemorySegment h = (MemorySegment) chromaEmbeddedStartFromString.invokeExact(yaml);
+                return h.address();
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to start embedded runtime", t);
             }
-            return new EmbeddedSession(handle.address(), this::embeddedFree);
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to start embedded runtime", t);
-        }
+        });
+        return new EmbeddedSession(handle, this::embeddedFree);
     }
 
     @Override
@@ -186,44 +207,40 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         if (configYaml == null || configYaml.isBlank()) {
             throw new IllegalArgumentException("configYaml must be set");
         }
-        try (Arena callArena = Arena.ofConfined()) {
-            MemorySegment yaml = callArena.allocateFrom(configYaml);
-            MemorySegment handle = (MemorySegment) chromaServerStartFromString.invokeExact(yaml);
-            if (handle.equals(MemorySegment.NULL)) {
-                throw new ChromaException(lastError("server startup failed"));
+        long handle = callFfiHandle(() -> {
+            try (Arena callArena = Arena.ofConfined()) {
+                MemorySegment yaml = callArena.allocateFrom(configYaml);
+                MemorySegment h = (MemorySegment) chromaServerStartFromString.invokeExact(yaml);
+                return h.address();
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to start server runtime", t);
             }
-            return new ServerSession(
-                    handle.address(),
-                    this::serverStop,
-                    this::serverFree,
-                    this::serverPort,
-                    this::serverAddress,
-                    this::serverPersistPath);
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to start server runtime", t);
-        }
+        });
+        return new ServerSession(
+                handle,
+                this::serverStop,
+                this::serverFree,
+                this::serverPort,
+                this::serverAddress,
+                this::serverPersistPath);
     }
 
     private void serverStop(long handleAddress) {
         if (handleAddress == 0L) return;
-        try {
-            int rc = (int) chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
-            if (rc != 0) {
-                throw new ChromaException(lastError("server stop failed (rc=" + rc + ")"));
+        callFfiVoid(() -> {
+            try {
+                int rc = (int) chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
+                if (rc != 0) {
+                    throw new ChromaException("server stop failed (rc=" + rc + ")");
+                }
+            } catch (ChromaException e) {
+                throw e;
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to stop server", t);
             }
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to stop server", t);
-        }
+        });
     }
 
     private void serverFree(long handleAddress) {
@@ -231,105 +248,57 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
         try {
             chromaServerFree.invokeExact(MemorySegment.ofAddress(handleAddress));
         } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
+            if (t instanceof Error error) throw error;
             throw new ChromaException("failed to free server handle", t);
         }
     }
 
     private int serverPort(long handleAddress) {
-        try {
-            int port = (int) chromaServerPort.invokeExact(MemorySegment.ofAddress(handleAddress));
-            if (port < 0) {
-                throw new ChromaException(lastError("chroma_server_port returned " + port));
+        return (int) callFfiHandle(() -> {
+            try {
+                int p = (int) chromaServerPort.invokeExact(MemorySegment.ofAddress(handleAddress));
+                if (p < 0) return 0L;
+                return (long) p;
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to read server port", t);
             }
-            return port;
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to read server port", t);
-        }
+        });
     }
 
     private String serverAddress(long handleAddress) {
-        try {
-            MemorySegment ptr = (MemorySegment) chromaServerAddress.invokeExact(
-                    MemorySegment.ofAddress(handleAddress));
-            if (ptr.equals(MemorySegment.NULL)) {
-                throw new ChromaException("chroma_server_address returned NULL");
+        return callFfiBorrowedString(() -> {
+            try {
+                MemorySegment ptr = (MemorySegment) chromaServerAddress.invokeExact(
+                        MemorySegment.ofAddress(handleAddress));
+                return ptr.address();
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to read server address", t);
             }
-            return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to read server address", t);
-        }
+        });
     }
 
     private String serverPersistPath(long handleAddress) {
-        try {
-            MemorySegment ptr = (MemorySegment) chromaServerPersistPath.invokeExact(
-                    MemorySegment.ofAddress(handleAddress));
-            if (ptr.equals(MemorySegment.NULL)) {
-                throw new ChromaException("chroma_server_persist_path returned NULL");
+        return callFfiBorrowedString(() -> {
+            try {
+                MemorySegment ptr = (MemorySegment) chromaServerPersistPath.invokeExact(
+                        MemorySegment.ofAddress(handleAddress));
+                return ptr.address();
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to read server persist path", t);
             }
-            return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
-        } catch (ChromaException e) {
-            throw e;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            throw new ChromaException("failed to read server persist path", t);
-        }
+        });
     }
 
     private void embeddedFree(long handleAddress) {
-        if (handleAddress == 0L) {
-            return;
-        }
+        if (handleAddress == 0L) return;
         try {
             chromaEmbeddedFree.invokeExact(MemorySegment.ofAddress(handleAddress));
         } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
+            if (t instanceof Error error) throw error;
             throw new ChromaException("failed to free embedded handle", t);
-        }
-    }
-
-    private String lastError(String fallback) {
-        try {
-            MemorySegment ptr = (MemorySegment) chromaGetLastError.invokeExact();
-            if (ptr.equals(MemorySegment.NULL)) {
-                return fallback;
-            }
-            String message;
-            try {
-                message = ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
-            } finally {
-                chromaStringFree.invokeExact(ptr);
-            }
-            if (message == null || message.isBlank()) {
-                return fallback;
-            }
-            return message;
-        } catch (Throwable t) {
-            if (t instanceof Error error) {
-                throw error;
-            }
-            String detail = t.getMessage();
-            if (detail == null || detail.isBlank()) {
-                return fallback + " (failed to retrieve native error details)";
-            }
-            return fallback + " (failed to retrieve native error details: " + detail + ")";
         }
     }
 
@@ -342,9 +311,6 @@ public final class PanamaChromaRuntime implements ChromaRuntime {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            // Workaround for unstable JVM crashes seen when unloading the Panama-linked DLL on
-            // windows-latest CI runners (Temurin 22). The process exits shortly after tests, so
-            // keeping the library loaded for process lifetime is acceptable.
             if (WINDOWS_OS) {
                 return;
             }

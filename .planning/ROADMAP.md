@@ -63,8 +63,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- Retrofit JNA and Panama backends to extend AbstractChromaRuntime
-- [ ] 07-02-PLAN.md -- Server lifecycle integration tests for both backends
+- [x] 07-01: Retrofit JNA and Panama backends to extend AbstractChromaRuntime
 
 ### Phase 8: Embedded Maintenance
 **Goal**: Users can perform rebuild, compaction, and WAL prune operations on an embedded Chroma instance through EmbeddedSession in both JNA and Panama backends
@@ -122,8 +121,8 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 3. Root Facade | v0.4.0 | 2/2 | Complete | - |
 | 4. Build and Test | v0.4.0 | 3/3 | Complete | - |
 | 5. Compatibility and Docs | v0.4.0 | 2/2 | Complete | - |
-| 6. Core Foundation Types | v0.5.0 | 0/3 | Not started | - |
-| 7. Server Lifecycle | v0.5.0 | 0/2 | Not started | - |
+| 6. Core Foundation Types | v0.5.0 | 3/3 | Complete | 2026-03-22 |
+| 7. Server Lifecycle | v0.5.0 | 1/2 | In progress | - |
 | 8. Embedded Maintenance | v0.5.0 | 0/? | Not started | - |
 | 9. Backup API | v0.5.0 | 0/? | Not started | - |
 | 10. Server Maintenance | v0.5.0 | 0/? | Not started | - |

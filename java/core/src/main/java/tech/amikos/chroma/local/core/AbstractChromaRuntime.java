@@ -3,7 +3,7 @@ package tech.amikos.chroma.local.core;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongSupplier;
 
-// Wired in Phase 8 — JNA/Panama runtimes will extend this to share FFI helpers.
+// Base class for JNA/Panama runtimes — provides lock-protected FFI call templates.
 public abstract class AbstractChromaRuntime implements ChromaRuntime {
 
     private static final ReentrantLock FFI_LOCK = new ReentrantLock();
