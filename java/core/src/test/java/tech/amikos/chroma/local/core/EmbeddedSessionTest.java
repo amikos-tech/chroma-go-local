@@ -129,7 +129,7 @@ class EmbeddedSessionTest {
     @Test
     void compactCollectionRejectsNullRequest() {
         EmbeddedSession session = create(42L, ignored -> {});
-        assertThrows(IllegalArgumentException.class, () -> session.compactCollection(null));
+        assertThrows(IllegalArgumentException.class, () -> session.compactCollection((CompactCollectionRequest) null));
     }
 
     @Test

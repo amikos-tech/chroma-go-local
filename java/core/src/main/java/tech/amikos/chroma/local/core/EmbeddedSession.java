@@ -80,6 +80,10 @@ public final class EmbeddedSession implements AutoCloseable {
         return compactCollectionAction.apply(handle, request.toJson());
     }
 
+    public CompactionResult compactCollection(String name) {
+        return compactCollection(new CompactCollectionRequest.Builder(name).build());
+    }
+
     public CompactionResult compactAll(CompactAllRequest request) {
         ensureOpen();
         if (request == null) {
@@ -100,6 +104,7 @@ public final class EmbeddedSession implements AutoCloseable {
         return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
+    /** Prunes WAL rows for all collections. The {@code name} field in options is ignored. */
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
         ensureOpen();
         if (options == null) {

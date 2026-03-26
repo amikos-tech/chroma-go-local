@@ -15,7 +15,7 @@ class WALPruneResultTest {
                   "dry_run": true,
                   "vacuum_requested": false,
                   "vacuum_executed": false,
-                  "warning": "dry run only",
+                  "warnings": ["dry run only"],
                   "candidate_count_total": 500,
                   "candidate_bytes_total": 102400,
                   "pruned_count_total": 0,
@@ -45,7 +45,8 @@ class WALPruneResultTest {
         assertTrue(r.dryRun());
         assertFalse(r.vacuumRequested());
         assertFalse(r.vacuumExecuted());
-        assertEquals("dry run only", r.warning());
+        assertEquals(1, r.warnings().size());
+        assertEquals("dry run only", r.warnings().get(0));
         assertEquals(500L, r.candidateCountTotal());
         assertEquals(102400L, r.candidateBytesTotal());
         assertEquals(0L, r.prunedCountTotal());

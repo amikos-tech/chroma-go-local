@@ -31,12 +31,12 @@ type WALPruneCollectionResult struct {
 
 // WALPruneResult captures WAL prune execution metadata and totals.
 type WALPruneResult struct {
-	CollectionCount     uint32                     `json:"collection_count"`
+	CollectionCount     uint64                     `json:"collection_count"`
 	DurationMS          uint64                     `json:"duration_ms"`
 	DryRun              bool                       `json:"dry_run"`
 	VacuumRequested     bool                       `json:"vacuum_requested"`
 	VacuumExecuted      bool                       `json:"vacuum_executed"`
-	Warning             string                     `json:"warning,omitempty"`
+	Warnings            []string                   `json:"warnings,omitempty"`
 	CandidateCountTotal uint64                     `json:"candidate_count_total"`
 	CandidateBytesTotal uint64                     `json:"candidate_bytes_total"`
 	PrunedCountTotal    uint64                     `json:"pruned_count_total"`

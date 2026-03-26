@@ -89,12 +89,16 @@ public final class ServerSession implements AutoCloseable {
 
     public CompactionResult compactCollection(CompactCollectionRequest request) {
         ensureOpen();
-        throw new UnsupportedOperationException("compactCollection will be wired in Phase 8");
+        throw new UnsupportedOperationException("compactCollection will be wired in Phase 10");
+    }
+
+    public CompactionResult compactCollection(String name) {
+        return compactCollection(new CompactCollectionRequest.Builder(name).build());
     }
 
     public CompactionResult compactAll(CompactAllRequest request) {
         ensureOpen();
-        throw new UnsupportedOperationException("compactAll will be wired in Phase 8");
+        throw new UnsupportedOperationException("compactAll will be wired in Phase 10");
     }
 
     public WALPruneResult pruneCollectionWAL(WALPruneOptions options) {
@@ -106,9 +110,10 @@ public final class ServerSession implements AutoCloseable {
         return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
+    /** Prunes WAL rows for all collections. The {@code name} field in options is ignored. */
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("pruneAllWAL will be wired in Phase 8");
+        throw new UnsupportedOperationException("pruneAllWAL will be wired in Phase 10");
     }
 
     public BackupManifest backup(BackupOptions options) {

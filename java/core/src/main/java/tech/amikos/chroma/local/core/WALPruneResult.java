@@ -4,12 +4,12 @@ import java.util.Collections;
 import java.util.List;
 
 public final class WALPruneResult {
-    private final int collectionCount;
+    private final long collectionCount;
     private final long durationMs;
     private final boolean dryRun;
     private final boolean vacuumRequested;
     private final boolean vacuumExecuted;
-    private final String warning;
+    private final List<String> warnings;
     private final long candidateCountTotal;
     private final long candidateBytesTotal;
     private final long prunedCountTotal;
@@ -22,7 +22,7 @@ public final class WALPruneResult {
         this.dryRun = false;
         this.vacuumRequested = false;
         this.vacuumExecuted = false;
-        this.warning = null;
+        this.warnings = null;
         this.candidateCountTotal = 0;
         this.candidateBytesTotal = 0;
         this.prunedCountTotal = 0;
@@ -30,12 +30,12 @@ public final class WALPruneResult {
         this.collections = null;
     }
 
-    public int collectionCount() { return collectionCount; }
+    public long collectionCount() { return collectionCount; }
     public long durationMs() { return durationMs; }
     public boolean dryRun() { return dryRun; }
     public boolean vacuumRequested() { return vacuumRequested; }
     public boolean vacuumExecuted() { return vacuumExecuted; }
-    public String warning() { return warning; }
+    public List<String> warnings() { return warnings == null ? Collections.emptyList() : Collections.unmodifiableList(warnings); }
     public long candidateCountTotal() { return candidateCountTotal; }
     public long candidateBytesTotal() { return candidateBytesTotal; }
     public long prunedCountTotal() { return prunedCountTotal; }

@@ -53,7 +53,7 @@ func TestEmbeddedCompactionAPIs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, compactedOne)
-	require.Equal(t, uint32(1), compactedOne.CollectionCount)
+	require.Equal(t, uint64(1), compactedOne.CollectionCount)
 	require.Len(t, compactedOne.Collections, 1)
 	require.Equal(t, collectionA.ID, compactedOne.Collections[0].CollectionID)
 	require.Empty(t, compactedOne.Collections[0].Error)
@@ -80,7 +80,7 @@ func TestEmbeddedCompactionAPIs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, compactedAll)
-	require.GreaterOrEqual(t, compactedAll.CollectionCount, uint32(2))
+	require.GreaterOrEqual(t, compactedAll.CollectionCount, uint64(2))
 
 	found := map[string]bool{}
 	for _, entry := range compactedAll.Collections {
@@ -104,7 +104,7 @@ func TestEmbeddedCompactionAPIs(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, unscopedResult)
 	// The fixture creates two collections in the default tenant/database scope.
-	require.GreaterOrEqual(t, unscopedResult.CollectionCount, uint32(2))
+	require.GreaterOrEqual(t, unscopedResult.CollectionCount, uint64(2))
 }
 
 func TestServerCompactCollectionRestartsServer(t *testing.T) {
@@ -116,7 +116,7 @@ func TestServerCompactCollectionRestartsServer(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, uint32(1), result.CollectionCount)
+	require.Equal(t, uint64(1), result.CollectionCount)
 	require.Len(t, result.Collections, 1)
 	require.Equal(t, collectionName, result.Collections[0].Name)
 	requireServerHeartbeat(t, server.URL())
