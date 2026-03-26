@@ -41,9 +41,9 @@ Java and Go APIs must provide equivalent access to all Chroma runtime capabiliti
 - [x] Java server lifecycle API (start/stop/port/address/URL) — Validated in Phase 7
 - [x] Java builder pattern for server configuration — Validated in Phase 6
 - [ ] Java backup API with option builder
-- [ ] Java rebuild API with option builder
-- [ ] Java compaction API (per-collection and all)
-- [ ] Java WAL prune API with option builder
+- [x] Java rebuild API with option builder — Validated in Phase 8
+- [x] Java compaction API (per-collection and all) — Validated in Phase 8
+- [x] Java WAL prune API with option builder — Validated in Phase 8
 - [ ] JNA and Panama implementations kept in sync
 - [ ] Java integration tests for all new APIs
 
