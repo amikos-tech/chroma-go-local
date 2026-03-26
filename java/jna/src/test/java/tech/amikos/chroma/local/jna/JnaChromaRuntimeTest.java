@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -50,7 +52,8 @@ class JnaChromaRuntimeTest {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
-        String yaml = serverYaml(persistDir);
+        int port = findFreePort();
+        String yaml = serverYaml(persistDir, port);
 
         try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
              ServerSession session = runtime.startServer(yaml)) {
@@ -93,12 +96,18 @@ class JnaChromaRuntimeTest {
                 + "allow_reset: true\n";
     }
 
-    private static String serverYaml(Path persistDir) {
+    private static String serverYaml(Path persistDir, int port) {
         String escapedPath = persistDir.toAbsolutePath().toString().replace("\\", "\\\\");
-        return "port: 0\n"
+        return "port: " + port + "\n"
                 + "listen_address: \"127.0.0.1\"\n"
                 + "persist_path: \"" + escapedPath + "\"\n"
                 + "sqlite_filename: \"chroma.sqlite3\"\n"
                 + "allow_reset: true\n";
+    }
+
+    private static int findFreePort() throws IOException {
+        try (ServerSocket s = new ServerSocket(0)) {
+            return s.getLocalPort();
+        }
     }
 }
