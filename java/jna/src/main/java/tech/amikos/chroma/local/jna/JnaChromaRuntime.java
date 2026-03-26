@@ -105,12 +105,7 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
 
     private void serverStop(long handle) {
         if (handle == 0L) return;
-        callFfiVoid(() -> {
-            int rc = bindings.chroma_server_stop(new Pointer(handle));
-            if (rc != 0) {
-                throw new ChromaException("server stop failed (rc=" + rc + ")");
-            }
-        });
+        callFfiInt(() -> bindings.chroma_server_stop(new Pointer(handle)));
     }
 
     private void serverFree(long handle) {

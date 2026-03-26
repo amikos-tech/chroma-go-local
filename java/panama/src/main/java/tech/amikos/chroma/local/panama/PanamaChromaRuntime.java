@@ -194,14 +194,9 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
 
     private void serverStop(long handleAddress) {
         if (handleAddress == 0L) return;
-        callFfiVoid(() -> {
+        callFfiInt(() -> {
             try {
-                int rc = (int) ffi.serverStop().invokeExact(MemorySegment.ofAddress(handleAddress));
-                if (rc != 0) {
-                    throw new ChromaException("server stop failed (rc=" + rc + ")");
-                }
-            } catch (ChromaException e) {
-                throw e;
+                return (int) ffi.serverStop().invokeExact(MemorySegment.ofAddress(handleAddress));
             } catch (Throwable t) {
                 if (t instanceof Error error) throw error;
                 throw new ChromaException("failed to stop server", t);
