@@ -56,6 +56,38 @@ class PanamaEmbeddedMaintenanceTest {
     }
 
     @Test
+    void embeddedRebuildCollectionConvenienceOverloadSmoke(@TempDir Path persistDir) {
+        String libPath = System.getenv("CHROMA_LIB_PATH");
+        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+
+        String yaml = new EmbeddedConfigBuilder()
+                .persistPath(persistDir.toAbsolutePath().toString())
+                .allowReset(true)
+                .build();
+
+        try (PanamaChromaRuntime runtime = PanamaChromaRuntime.init(libPath);
+             EmbeddedSession session = runtime.startEmbedded(yaml)) {
+            assertThrows(ChromaException.class, () -> session.rebuildCollection("nonexistent"));
+        }
+    }
+
+    @Test
+    void embeddedCompactCollectionConvenienceOverloadSmoke(@TempDir Path persistDir) {
+        String libPath = System.getenv("CHROMA_LIB_PATH");
+        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+
+        String yaml = new EmbeddedConfigBuilder()
+                .persistPath(persistDir.toAbsolutePath().toString())
+                .allowReset(true)
+                .build();
+
+        try (PanamaChromaRuntime runtime = PanamaChromaRuntime.init(libPath);
+             EmbeddedSession session = runtime.startEmbedded(yaml)) {
+            assertThrows(ChromaException.class, () -> session.compactCollection("nonexistent"));
+        }
+    }
+
+    @Test
     void embeddedCompactAllSmoke(@TempDir Path persistDir) {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");

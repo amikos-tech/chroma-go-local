@@ -172,6 +172,26 @@ class EmbeddedSessionTest {
     }
 
     @Test
+    void compactCollectionConvenienceOverloadDelegates() {
+        AtomicLong capturedHandle = new AtomicLong();
+        AtomicReference<String> capturedJson = new AtomicReference<>();
+        CompactionResult fakeResult = new CompactionResult();
+
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> {},
+                STUB_REBUILD,
+                (h, json) -> { capturedHandle.set(h); capturedJson.set(json); return fakeResult; },
+                STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL);
+
+        CompactionResult result = session.compactCollection("myCollection");
+
+        assertEquals(fakeResult, result);
+        assertEquals(42L, capturedHandle.get());
+        assertNotNull(capturedJson.get());
+        assertTrue(capturedJson.get().contains("myCollection"));
+    }
+
+    @Test
     void pruneCollectionWalConvenienceOverloadDelegates() {
         AtomicLong capturedHandle = new AtomicLong();
         AtomicReference<String> capturedJson = new AtomicReference<>();
