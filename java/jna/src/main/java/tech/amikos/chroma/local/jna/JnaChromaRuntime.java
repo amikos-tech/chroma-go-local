@@ -4,7 +4,6 @@ import com.sun.jna.Library;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicBoolean;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -12,7 +11,6 @@ import tech.amikos.chroma.local.core.ServerSession;
 
 public final class JnaChromaRuntime extends AbstractChromaRuntime {
     private final JnaBindings bindings;
-    private final AtomicBoolean closed;
 
     private interface JnaBindings extends Library {
         Pointer chroma_version();
@@ -40,14 +38,10 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
 
     private JnaChromaRuntime(JnaBindings bindings) {
         this.bindings = bindings;
-        this.closed = new AtomicBoolean(false);
     }
 
     public static JnaChromaRuntime init(String libraryPath) {
-        if (libraryPath == null || libraryPath.trim().isEmpty()) {
-            throw new IllegalArgumentException("libraryPath must be set");
-        }
-        Path normalized = Path.of(libraryPath).toAbsolutePath().normalize();
+        Path normalized = validateLibraryPath(libraryPath);
         try {
             JnaBindings bindings = Native.load(normalized.toString(), JnaBindings.class);
             return new JnaChromaRuntime(bindings);
@@ -85,28 +79,19 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     }
 
     @Override
-    public String version() {
-        ensureOpen();
+    protected String doVersion() {
         return callFfiBorrowedString(() -> Pointer.nativeValue(bindings.chroma_version()));
     }
 
     @Override
-    public EmbeddedSession startEmbedded(String configYaml) {
-        ensureOpen();
-        if (configYaml == null || configYaml.isBlank()) {
-            throw new IllegalArgumentException("configYaml must be set");
-        }
+    protected EmbeddedSession doStartEmbedded(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_embedded_start_from_string(configYaml)));
         return new EmbeddedSession(handle, this::embeddedFree);
     }
 
     @Override
-    public ServerSession startServer(String configYaml) {
-        ensureOpen();
-        if (configYaml == null || configYaml.isBlank()) {
-            throw new IllegalArgumentException("configYaml must be set");
-        }
+    protected ServerSession doStartServer(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_server_start_from_string(configYaml)));
         return new ServerSession(
@@ -129,16 +114,11 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     }
 
     private void serverFree(long handle) {
-        if (handle == 0L) return;
-        bindings.chroma_server_free(new Pointer(handle));
+        callFfiFree(handle, () -> bindings.chroma_server_free(new Pointer(handle)));
     }
 
     private int serverPort(long handle) {
-        return (int) callFfiHandle(() -> {
-            int p = bindings.chroma_server_port(new Pointer(handle));
-            if (p < 0) return 0L;
-            return (long) p;
-        });
+        return callFfiInt(() -> bindings.chroma_server_port(new Pointer(handle)));
     }
 
     private String serverAddress(long handle) {
@@ -152,18 +132,6 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     }
 
     private void embeddedFree(long handle) {
-        if (handle == 0L) return;
-        bindings.chroma_embedded_free(new Pointer(handle));
-    }
-
-    @Override
-    public void close() {
-        closed.compareAndSet(false, true);
-    }
-
-    private void ensureOpen() {
-        if (closed.get()) {
-            throw new IllegalStateException("runtime is closed");
-        }
+        callFfiFree(handle, () -> bindings.chroma_embedded_free(new Pointer(handle)));
     }
 }

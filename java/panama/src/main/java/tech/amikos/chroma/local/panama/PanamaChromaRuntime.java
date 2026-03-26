@@ -9,7 +9,6 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
 import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -21,107 +20,71 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             .toLowerCase(Locale.ROOT)
             .contains("win");
 
-    private final Arena arena;
-    private final MethodHandle chromaVersion;
-    private final MethodHandle chromaGetLastError;
-    private final MethodHandle chromaStringFree;
-    private final MethodHandle chromaEmbeddedStartFromString;
-    private final MethodHandle chromaEmbeddedFree;
-    private final MethodHandle chromaServerStartFromString;
-    private final MethodHandle chromaServerStop;
-    private final MethodHandle chromaServerFree;
-    private final MethodHandle chromaServerPort;
-    private final MethodHandle chromaServerAddress;
-    private final MethodHandle chromaServerPersistPath;
-    private final AtomicBoolean closed;
+    private record Ffi(
+            MethodHandle version,
+            MethodHandle getLastError,
+            MethodHandle stringFree,
+            MethodHandle embeddedStart,
+            MethodHandle embeddedFree,
+            MethodHandle serverStart,
+            MethodHandle serverStop,
+            MethodHandle serverFree,
+            MethodHandle serverPort,
+            MethodHandle serverAddress,
+            MethodHandle serverPersistPath) {}
 
-    private PanamaChromaRuntime(
-            Arena arena,
-            MethodHandle chromaVersion,
-            MethodHandle chromaGetLastError,
-            MethodHandle chromaStringFree,
-            MethodHandle chromaEmbeddedStartFromString,
-            MethodHandle chromaEmbeddedFree,
-            MethodHandle chromaServerStartFromString,
-            MethodHandle chromaServerStop,
-            MethodHandle chromaServerFree,
-            MethodHandle chromaServerPort,
-            MethodHandle chromaServerAddress,
-            MethodHandle chromaServerPersistPath) {
+    private final Arena arena;
+    private final Ffi ffi;
+
+    private PanamaChromaRuntime(Arena arena, Ffi ffi) {
         this.arena = arena;
-        this.chromaVersion = chromaVersion;
-        this.chromaGetLastError = chromaGetLastError;
-        this.chromaStringFree = chromaStringFree;
-        this.chromaEmbeddedStartFromString = chromaEmbeddedStartFromString;
-        this.chromaEmbeddedFree = chromaEmbeddedFree;
-        this.chromaServerStartFromString = chromaServerStartFromString;
-        this.chromaServerStop = chromaServerStop;
-        this.chromaServerFree = chromaServerFree;
-        this.chromaServerPort = chromaServerPort;
-        this.chromaServerAddress = chromaServerAddress;
-        this.chromaServerPersistPath = chromaServerPersistPath;
-        this.closed = new AtomicBoolean(false);
+        this.ffi = ffi;
     }
 
     public static PanamaChromaRuntime init(String libraryPath) {
-        if (libraryPath == null || libraryPath.trim().isEmpty()) {
-            throw new IllegalArgumentException("libraryPath must be set");
-        }
-
-        Path normalized = Path.of(libraryPath).toAbsolutePath().normalize();
+        Path normalized = validateLibraryPath(libraryPath);
         Arena arena = Arena.ofShared();
         boolean initialized = false;
         try {
             Linker linker = Linker.nativeLinker();
             SymbolLookup library = SymbolLookup.libraryLookup(normalized, arena);
 
-            MethodHandle chromaVersion = linker.downcallHandle(
-                    requireSymbol(library, "chroma_version"),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS));
-            MethodHandle chromaGetLastError = linker.downcallHandle(
-                    requireSymbol(library, "chroma_get_last_error"),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS));
-            MethodHandle chromaStringFree = linker.downcallHandle(
-                    requireSymbol(library, "chroma_string_free"),
-                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
-            MethodHandle chromaEmbeddedStartFromString = linker.downcallHandle(
-                    requireSymbol(library, "chroma_embedded_start_from_string"),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-            MethodHandle chromaEmbeddedFree = linker.downcallHandle(
-                    requireSymbol(library, "chroma_embedded_free"),
-                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
-            MethodHandle chromaServerStartFromString = linker.downcallHandle(
-                    requireSymbol(library, "chroma_server_start_from_string"),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-            MethodHandle chromaServerStop = linker.downcallHandle(
-                    requireSymbol(library, "chroma_server_stop"),
-                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
-            MethodHandle chromaServerFree = linker.downcallHandle(
-                    requireSymbol(library, "chroma_server_free"),
-                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
-            MethodHandle chromaServerPort = linker.downcallHandle(
-                    requireSymbol(library, "chroma_server_port"),
-                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
-            MethodHandle chromaServerAddress = linker.downcallHandle(
-                    requireSymbol(library, "chroma_server_address"),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-            MethodHandle chromaServerPersistPath = linker.downcallHandle(
-                    requireSymbol(library, "chroma_server_persist_path"),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+            Ffi ffi = new Ffi(
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_version"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_get_last_error"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_string_free"),
+                            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_start_from_string"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_free"),
+                            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_start_from_string"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_stop"),
+                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_free"),
+                            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_port"),
+                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_address"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_persist_path"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)));
 
-            PanamaChromaRuntime runtime = new PanamaChromaRuntime(
-                    arena,
-                    chromaVersion,
-                    chromaGetLastError,
-                    chromaStringFree,
-                    chromaEmbeddedStartFromString,
-                    chromaEmbeddedFree,
-                    chromaServerStartFromString,
-                    chromaServerStop,
-                    chromaServerFree,
-                    chromaServerPort,
-                    chromaServerAddress,
-                    chromaServerPersistPath);
+            PanamaChromaRuntime runtime = new PanamaChromaRuntime(arena, ffi);
             initialized = true;
             return runtime;
         } catch (UnsatisfiedLinkError | RuntimeException e) {
@@ -141,13 +104,25 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     @Override
     protected String readOwnedString(long address) {
         MemorySegment ptr = MemorySegment.ofAddress(address);
+        Throwable readError = null;
         try {
             return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
+        } catch (Throwable t) {
+            readError = t;
+            throw t;
         } finally {
             try {
-                chromaStringFree.invokeExact(ptr);
+                ffi.stringFree().invokeExact(ptr);
             } catch (Throwable t) {
-                if (t instanceof Error error) throw error;
+                if (t instanceof Error error) {
+                    if (readError != null) error.addSuppressed(readError);
+                    throw error;
+                }
+                if (readError != null) {
+                    readError.addSuppressed(t);
+                } else {
+                    throw new ChromaException("failed to free native string", t);
+                }
             }
         }
     }
@@ -155,12 +130,12 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     @Override
     protected String readLastError() {
         try {
-            MemorySegment ptr = (MemorySegment) chromaGetLastError.invokeExact();
+            MemorySegment ptr = (MemorySegment) ffi.getLastError().invokeExact();
             if (ptr.equals(MemorySegment.NULL)) return null;
             try {
                 return ptr.reinterpret(MAX_C_STRING_LEN).getString(0);
             } finally {
-                chromaStringFree.invokeExact(ptr);
+                ffi.stringFree().invokeExact(ptr);
             }
         } catch (Throwable t) {
             if (t instanceof Error error) throw error;
@@ -169,11 +144,10 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     }
 
     @Override
-    public String version() {
-        ensureOpen();
+    protected String doVersion() {
         return callFfiBorrowedString(() -> {
             try {
-                MemorySegment ptr = (MemorySegment) chromaVersion.invokeExact();
+                MemorySegment ptr = (MemorySegment) ffi.version().invokeExact();
                 return ptr.address();
             } catch (Throwable t) {
                 if (t instanceof Error error) throw error;
@@ -183,15 +157,11 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     }
 
     @Override
-    public EmbeddedSession startEmbedded(String configYaml) {
-        ensureOpen();
-        if (configYaml == null || configYaml.isBlank()) {
-            throw new IllegalArgumentException("configYaml must be set");
-        }
+    protected EmbeddedSession doStartEmbedded(String configYaml) {
         long handle = callFfiHandle(() -> {
             try (Arena callArena = Arena.ofConfined()) {
                 MemorySegment yaml = callArena.allocateFrom(configYaml);
-                MemorySegment h = (MemorySegment) chromaEmbeddedStartFromString.invokeExact(yaml);
+                MemorySegment h = (MemorySegment) ffi.embeddedStart().invokeExact(yaml);
                 return h.address();
             } catch (Throwable t) {
                 if (t instanceof Error error) throw error;
@@ -202,15 +172,11 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     }
 
     @Override
-    public ServerSession startServer(String configYaml) {
-        ensureOpen();
-        if (configYaml == null || configYaml.isBlank()) {
-            throw new IllegalArgumentException("configYaml must be set");
-        }
+    protected ServerSession doStartServer(String configYaml) {
         long handle = callFfiHandle(() -> {
             try (Arena callArena = Arena.ofConfined()) {
                 MemorySegment yaml = callArena.allocateFrom(configYaml);
-                MemorySegment h = (MemorySegment) chromaServerStartFromString.invokeExact(yaml);
+                MemorySegment h = (MemorySegment) ffi.serverStart().invokeExact(yaml);
                 return h.address();
             } catch (Throwable t) {
                 if (t instanceof Error error) throw error;
@@ -230,7 +196,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
         if (handleAddress == 0L) return;
         callFfiVoid(() -> {
             try {
-                int rc = (int) chromaServerStop.invokeExact(MemorySegment.ofAddress(handleAddress));
+                int rc = (int) ffi.serverStop().invokeExact(MemorySegment.ofAddress(handleAddress));
                 if (rc != 0) {
                     throw new ChromaException("server stop failed (rc=" + rc + ")");
                 }
@@ -243,22 +209,25 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
         });
     }
 
+    // Cannot use callFfiFree: invokeExact is signature-polymorphic and
+    // generates incorrect bytecode when called inside a lambda body.
     private void serverFree(long handleAddress) {
         if (handleAddress == 0L) return;
+        ffiLock();
         try {
-            chromaServerFree.invokeExact(MemorySegment.ofAddress(handleAddress));
+            ffi.serverFree().invokeExact(MemorySegment.ofAddress(handleAddress));
         } catch (Throwable t) {
             if (t instanceof Error error) throw error;
             throw new ChromaException("failed to free server handle", t);
+        } finally {
+            ffiUnlock();
         }
     }
 
     private int serverPort(long handleAddress) {
-        return (int) callFfiHandle(() -> {
+        return callFfiInt(() -> {
             try {
-                int p = (int) chromaServerPort.invokeExact(MemorySegment.ofAddress(handleAddress));
-                if (p < 0) return 0L;
-                return (long) p;
+                return (int) ffi.serverPort().invokeExact(MemorySegment.ofAddress(handleAddress));
             } catch (Throwable t) {
                 if (t instanceof Error error) throw error;
                 throw new ChromaException("failed to read server port", t);
@@ -269,7 +238,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     private String serverAddress(long handleAddress) {
         return callFfiBorrowedString(() -> {
             try {
-                MemorySegment ptr = (MemorySegment) chromaServerAddress.invokeExact(
+                MemorySegment ptr = (MemorySegment) ffi.serverAddress().invokeExact(
                         MemorySegment.ofAddress(handleAddress));
                 return ptr.address();
             } catch (Throwable t) {
@@ -282,7 +251,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     private String serverPersistPath(long handleAddress) {
         return callFfiBorrowedString(() -> {
             try {
-                MemorySegment ptr = (MemorySegment) chromaServerPersistPath.invokeExact(
+                MemorySegment ptr = (MemorySegment) ffi.serverPersistPath().invokeExact(
                         MemorySegment.ofAddress(handleAddress));
                 return ptr.address();
             } catch (Throwable t) {
@@ -292,13 +261,17 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
         });
     }
 
+    // Same invokeExact constraint as serverFree — cannot use callFfiFree.
     private void embeddedFree(long handleAddress) {
         if (handleAddress == 0L) return;
+        ffiLock();
         try {
-            chromaEmbeddedFree.invokeExact(MemorySegment.ofAddress(handleAddress));
+            ffi.embeddedFree().invokeExact(MemorySegment.ofAddress(handleAddress));
         } catch (Throwable t) {
             if (t instanceof Error error) throw error;
             throw new ChromaException("failed to free embedded handle", t);
+        } finally {
+            ffiUnlock();
         }
     }
 
@@ -309,28 +282,14 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     }
 
     @Override
-    public void close() {
-        if (closed.compareAndSet(false, true)) {
-            if (WINDOWS_OS) {
-                return;
-            }
-            try {
-                arena.close();
-            } catch (IllegalStateException e) {
-                closed.set(false);
-                throw new ChromaException(
-                        "failed to close Panama runtime; ensure all EmbeddedSession instances are closed first",
-                        e);
-            } catch (RuntimeException | Error e) {
-                closed.set(false);
-                throw e;
-            }
-        }
-    }
-
-    private void ensureOpen() {
-        if (closed.get()) {
-            throw new IllegalStateException("runtime is closed");
+    protected void doClose() {
+        // Skip arena.close on Windows — JVM crashes when unloading Panama-linked DLLs on Temurin 22
+        if (WINDOWS_OS) return;
+        try {
+            arena.close();
+        } catch (IllegalStateException e) {
+            throw new ChromaException(
+                    "failed to close Panama runtime; ensure all sessions are closed first", e);
         }
     }
 }

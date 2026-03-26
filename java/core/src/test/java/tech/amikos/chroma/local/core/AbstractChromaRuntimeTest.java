@@ -20,6 +20,7 @@ class AbstractChromaRuntimeTest {
     static class TestChromaRuntime extends AbstractChromaRuntime {
         String lastErrorValue;
         final Map<Long, String> stringStore = new HashMap<>();
+        RuntimeException doCloseError;
 
         @Override
         protected String readBorrowedString(long address) {
@@ -39,22 +40,24 @@ class AbstractChromaRuntimeTest {
         }
 
         @Override
-        public String version() {
+        protected String doVersion() {
             return "test";
         }
 
         @Override
-        public EmbeddedSession startEmbedded(String configYaml) {
+        protected EmbeddedSession doStartEmbedded(String configYaml) {
             return null;
         }
 
         @Override
-        public ServerSession startServer(String configYaml) {
+        protected ServerSession doStartServer(String configYaml) {
             return null;
         }
 
         @Override
-        public void close() {}
+        protected void doClose() {
+            if (doCloseError != null) throw doCloseError;
+        }
     }
 
     @Test
@@ -77,6 +80,29 @@ class AbstractChromaRuntimeTest {
         TestChromaRuntime runtime = new TestChromaRuntime();
         ChromaException ex = assertThrows(ChromaException.class, () -> runtime.callFfiHandle(() -> 0L));
         assertEquals("FFI call returned null handle", ex.getMessage());
+    }
+
+    @Test
+    void callFfiInt_returnsValue_whenNonNegative() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        assertEquals(0, runtime.callFfiInt(() -> 0));
+        assertEquals(8000, runtime.callFfiInt(() -> 8000));
+        assertEquals(65535, runtime.callFfiInt(() -> 65535));
+    }
+
+    @Test
+    void callFfiInt_throwsWithNativeError_whenNegative() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.lastErrorValue = "port not bound";
+        ChromaException ex = assertThrows(ChromaException.class, () -> runtime.callFfiInt(() -> -1));
+        assertEquals("port not bound", ex.getMessage());
+    }
+
+    @Test
+    void callFfiInt_throwsWithDefaultMessage_whenNegativeAndNoError() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        ChromaException ex = assertThrows(ChromaException.class, () -> runtime.callFfiInt(() -> -42));
+        assertTrue(ex.getMessage().contains("-42"));
     }
 
     @Test
@@ -115,9 +141,16 @@ class AbstractChromaRuntimeTest {
     }
 
     @Test
+    void callFfiVoid_propagatesExceptionFromRunnable() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        ChromaException ex = assertThrows(ChromaException.class,
+                () -> runtime.callFfiVoid(() -> { throw new ChromaException("inner failure"); }));
+        assertEquals("inner failure", ex.getMessage());
+    }
+
+    @Test
     void callFfiJson_throwsOnNullJson() {
         TestChromaRuntime runtime = new TestChromaRuntime();
-        // pointer 300 maps to no entry, so readOwnedString returns null
         ChromaException ex = assertThrows(ChromaException.class,
                 () -> runtime.callFfiJson(() -> 300L, RebuildCollectionResult.class));
         assertTrue(ex.getMessage().contains("null/empty response"));
@@ -147,7 +180,6 @@ class AbstractChromaRuntimeTest {
         runtime.stringStore.put(200L, "borrowed-value");
         String result = runtime.callFfiBorrowedString(() -> 200L);
         assertEquals("borrowed-value", result);
-        // borrowed string is not removed from store
         assertEquals("borrowed-value", runtime.stringStore.get(200L));
     }
 
@@ -179,10 +211,8 @@ class AbstractChromaRuntimeTest {
     @Test
     void callFfiVoid_notAffectedByStaleError_whenProtocolFollowed() {
         TestChromaRuntime runtime = new TestChromaRuntime();
-        // Simulate: a previous call failed and drained the error via readLastError
         runtime.lastErrorValue = "old error";
         assertThrows(ChromaException.class, () -> runtime.callFfiHandle(() -> 0L));
-        // Error was consumed by the failure path. Next void call should succeed.
         assertDoesNotThrow(() -> runtime.callFfiVoid(() -> {}));
     }
 
@@ -194,6 +224,51 @@ class AbstractChromaRuntimeTest {
                 () -> runtime.callFfiJson(() -> 500L, RebuildCollectionResult.class));
         assertTrue(ex.getMessage().contains("Failed to deserialize"));
         assertInstanceOf(JsonParseException.class, ex.getCause());
+    }
+
+    // --- Lifecycle tests ---
+
+    @Test
+    void ensureOpen_throwsAfterClose() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.close();
+        assertThrows(IllegalStateException.class, runtime::version);
+    }
+
+    @Test
+    void close_isIdempotent() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.close();
+        assertDoesNotThrow(runtime::close);
+    }
+
+    @Test
+    void close_rollsBackOnDoCloseFailure() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.doCloseError = new ChromaException("arena still in use");
+        assertThrows(ChromaException.class, runtime::close);
+        // Rolled back — runtime is still open
+        assertDoesNotThrow(runtime::version);
+    }
+
+    @Test
+    void close_succeedsAfterDoCloseErrorIsResolved() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.doCloseError = new ChromaException("arena still in use");
+        assertThrows(ChromaException.class, runtime::close);
+        // Fix the error
+        runtime.doCloseError = null;
+        assertDoesNotThrow(runtime::close);
+        assertThrows(IllegalStateException.class, runtime::version);
+    }
+
+    @Test
+    void close_rejectsAllOperationsAfterSuccess() {
+        TestChromaRuntime runtime = new TestChromaRuntime();
+        runtime.close();
+        assertThrows(IllegalStateException.class, runtime::version);
+        assertThrows(IllegalStateException.class, () -> runtime.startEmbedded("yaml"));
+        assertThrows(IllegalStateException.class, () -> runtime.startServer("yaml"));
     }
 
     @Test
@@ -225,7 +300,6 @@ class AbstractChromaRuntimeTest {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            // t1 should still be in the critical section at this point
             t2Result.set(runtime.callFfiHandle(() -> {
                 if (insideCriticalSection.get()) {
                     overlapDetected.set(true);
@@ -237,11 +311,8 @@ class AbstractChromaRuntimeTest {
         t1.start();
         t2.start();
 
-        // Wait for t1 to enter critical section
         started.await();
-        // Give t2 time to attempt lock acquisition
         Thread.sleep(50);
-        // Release t1
         proceed.countDown();
 
         t1.join(5000);

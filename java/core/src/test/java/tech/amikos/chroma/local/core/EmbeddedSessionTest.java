@@ -29,19 +29,17 @@ class EmbeddedSessionTest {
     }
 
     @Test
-    void close_retriableAfterFailure() {
+    void close_staysClosedAfterFailure() {
         AtomicInteger closeCalls = new AtomicInteger();
         EmbeddedSession session = new EmbeddedSession(42L, ignored -> {
-            if (closeCalls.incrementAndGet() == 1) {
-                throw new RuntimeException("close failed");
-            }
+            closeCalls.incrementAndGet();
+            throw new RuntimeException("close failed");
         });
 
         assertThrows(RuntimeException.class, session::close);
-        assertEquals(42L, session.handle(), "handle accessible after failed close");
+        assertThrows(IllegalStateException.class, session::handle, "handle poisoned after failed close");
         session.close();
-        assertEquals(2, closeCalls.get(), "closeAction retried on second close");
-        assertThrows(IllegalStateException.class, session::handle);
+        assertEquals(1, closeCalls.get(), "closeAction must not be retried — native handle is in unknown state");
     }
 
     @Test

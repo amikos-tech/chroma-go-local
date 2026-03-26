@@ -30,12 +30,7 @@ public final class EmbeddedSession implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            try {
-                closeAction.accept(handle);
-            } catch (Throwable t) {
-                closed.set(false);
-                throw t;
-            }
+            closeAction.accept(handle);
         }
     }
 }

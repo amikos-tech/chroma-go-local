@@ -86,6 +86,7 @@ class PanamaChromaRuntimeTest {
 
         assertThrows(IllegalStateException.class, runtime::version);
         assertThrows(IllegalStateException.class, () -> runtime.startEmbedded(yaml));
+        assertThrows(IllegalStateException.class, () -> runtime.startServer(serverYaml(persistDir, 9999)));
         assertDoesNotThrow(runtime::close);
     }
 
