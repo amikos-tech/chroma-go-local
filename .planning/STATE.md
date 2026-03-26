@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
-status: Ready to plan
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-26T12:16:14.332Z"
+status: Executing
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-03-26T12:58:10.926Z"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Java and Go APIs must provide equivalent access to all Chroma runtime capabilities
-**Current focus:** Phase 07 — server-lifecycle
+**Current focus:** Phase 08 — embedded-maintenance
 
 ## Current Position
 
 Phase: 8
-Plan: Not started
+Plan: 01 complete
 
 ## Performance Metrics
 
@@ -35,6 +35,7 @@ Plan: Not started
 | Phase 06 P02 | 5min | 2 tasks | 13 files |
 | 07 | 01 | 3min | 2 | 3 |
 | 07 | 02 | 2min | 1 | 2 |
+| 08 | 01 | 3min | 2 | 4 |
 
 ## Accumulated Context
 
@@ -52,6 +53,8 @@ Plan: Not started
 - [Phase 07]: serverFree and embeddedFree bypass callFfiVoid to avoid FFI lock in finally blocks
 - [Phase 07]: Skipped port-already-bound and concurrent start tests -- flaky across OSes
 - [Phase 07]: Used ServerConfigBuilder in integration tests to validate builder output against real FFI
+- [Phase 08]: BiFunction<Long, String, T> callback slots for all 5 maintenance operations
+- [Phase 08]: EmbeddedSession constructor expanded from 2 to 7 parameters
 
 ### Pending Todos
 
@@ -63,6 +66,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T12:16:14.326Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-embedded-maintenance/08-CONTEXT.md
+Last session: 2026-03-26T12:57:08Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None

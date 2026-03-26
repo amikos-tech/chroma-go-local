@@ -79,7 +79,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- Expand EmbeddedSession with callback slots, wire JNA and Panama backends
+- [x] 08-01-PLAN.md -- Expand EmbeddedSession with callback slots, wire JNA and Panama backends
 - [ ] 08-02-PLAN.md -- Integration tests for embedded maintenance in both JNA and Panama backends
 
 ### Phase 9: Backup API
@@ -125,6 +125,6 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 5. Compatibility and Docs | v0.4.0 | 2/2 | Complete | - |
 | 6. Core Foundation Types | v0.5.0 | 0/3 | Not started | - |
 | 7. Server Lifecycle | v0.5.0 | 2/2 | Complete | 2026-03-26 |
-| 8. Embedded Maintenance | v0.5.0 | 0/2 | Not started | - |
+| 8. Embedded Maintenance | v0.5.0 | 1/2 | In progress | - |
 | 9. Backup API | v0.5.0 | 0/? | Not started | - |
 | 10. Server Maintenance | v0.5.0 | 0/? | Not started | - |

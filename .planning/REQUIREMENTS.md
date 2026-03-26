@@ -23,10 +23,10 @@
 
 ### Embedded Maintenance
 
-- [ ] **EMNT-01**: `EmbeddedSession.rebuildCollection(name, options)` returns RebuildCollectionResult in both backends
-- [ ] **EMNT-02**: `EmbeddedSession.compactCollection(request)` and `compactAll(request)` return CompactionResult in both backends
-- [ ] **EMNT-03**: `EmbeddedSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` return WALPruneResult in both backends
-- [ ] **EMNT-04**: Option builders (RebuildOptions, WALPruneOptions) validate inputs at build time
+- [x] **EMNT-01**: `EmbeddedSession.rebuildCollection(name, options)` returns RebuildCollectionResult in both backends
+- [x] **EMNT-02**: `EmbeddedSession.compactCollection(request)` and `compactAll(request)` return CompactionResult in both backends
+- [x] **EMNT-03**: `EmbeddedSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` return WALPruneResult in both backends
+- [x] **EMNT-04**: Option builders (RebuildOptions, WALPruneOptions) validate inputs at build time
 - [ ] **EMNT-05**: Integration tests verify each embedded maintenance operation in both backends
 
 ### Backup
@@ -78,10 +78,10 @@
 | SRVR-02 | Phase 7 | Pending |
 | SRVR-03 | Phase 7 | Pending |
 | SRVR-04 | Phase 7 | Pending |
-| EMNT-01 | Phase 8 | Pending |
-| EMNT-02 | Phase 8 | Pending |
-| EMNT-03 | Phase 8 | Pending |
-| EMNT-04 | Phase 8 | Pending |
+| EMNT-01 | Phase 8 | Complete |
+| EMNT-02 | Phase 8 | Complete |
+| EMNT-03 | Phase 8 | Complete |
+| EMNT-04 | Phase 8 | Complete |
 | EMNT-05 | Phase 8 | Pending |
 | BKUP-01 | Phase 9 | Pending |
 | BKUP-02 | Phase 9 | Pending |
