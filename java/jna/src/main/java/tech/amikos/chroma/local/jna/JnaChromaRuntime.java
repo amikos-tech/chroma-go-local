@@ -6,8 +6,11 @@ import com.sun.jna.Pointer;
 import java.nio.file.Path;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.ChromaException;
+import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
+import tech.amikos.chroma.local.core.RebuildCollectionResult;
 import tech.amikos.chroma.local.core.ServerSession;
+import tech.amikos.chroma.local.core.WALPruneResult;
 
 public final class JnaChromaRuntime extends AbstractChromaRuntime {
     private final JnaBindings bindings;
@@ -22,6 +25,16 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
         Pointer chroma_embedded_start_from_string(String configYaml);
 
         void chroma_embedded_free(Pointer handle);
+
+        Pointer chroma_embedded_rebuild_collection(Pointer handle, String requestJson);
+
+        Pointer chroma_embedded_compact_collection(Pointer handle, String requestJson);
+
+        Pointer chroma_embedded_compact_all(Pointer handle, String requestJson);
+
+        Pointer chroma_embedded_prune_wal_collection(Pointer handle, String requestJson);
+
+        Pointer chroma_embedded_prune_wal_all(Pointer handle, String requestJson);
 
         Pointer chroma_server_start_from_string(String configYaml);
 
@@ -87,7 +100,24 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     protected EmbeddedSession doStartEmbedded(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_embedded_start_from_string(configYaml)));
-        return new EmbeddedSession(handle, this::embeddedFree);
+        return new EmbeddedSession(
+                handle,
+                this::embeddedFree,
+                (h, json) -> callFfiJson(
+                        () -> Pointer.nativeValue(bindings.chroma_embedded_rebuild_collection(new Pointer(h), json)),
+                        RebuildCollectionResult.class),
+                (h, json) -> callFfiJson(
+                        () -> Pointer.nativeValue(bindings.chroma_embedded_compact_collection(new Pointer(h), json)),
+                        CompactionResult.class),
+                (h, json) -> callFfiJson(
+                        () -> Pointer.nativeValue(bindings.chroma_embedded_compact_all(new Pointer(h), json)),
+                        CompactionResult.class),
+                (h, json) -> callFfiJson(
+                        () -> Pointer.nativeValue(bindings.chroma_embedded_prune_wal_collection(new Pointer(h), json)),
+                        WALPruneResult.class),
+                (h, json) -> callFfiJson(
+                        () -> Pointer.nativeValue(bindings.chroma_embedded_prune_wal_all(new Pointer(h), json)),
+                        WALPruneResult.class));
     }
 
     @Override

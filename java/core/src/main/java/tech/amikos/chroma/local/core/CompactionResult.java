@@ -5,7 +5,7 @@ import java.util.List;
 
 // Numeric fields correspond to Go uint64; values exceeding Long.MAX_VALUE will appear negative.
 public final class CompactionResult {
-    private final int collectionCount;
+    private final long collectionCount;
     private final long durationMs;
     private final long pendingOpsBeforeTotal;
     private final long pendingOpsAfterTotal;
@@ -19,7 +19,7 @@ public final class CompactionResult {
         this.collections = null;
     }
 
-    public int collectionCount() { return collectionCount; }
+    public long collectionCount() { return collectionCount; }
     public long durationMs() { return durationMs; }
     public long pendingOpsBeforeTotal() { return pendingOpsBeforeTotal; }
     public long pendingOpsAfterTotal() { return pendingOpsAfterTotal; }

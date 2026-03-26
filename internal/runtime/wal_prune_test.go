@@ -35,7 +35,7 @@ func TestEmbeddedPruneCollectionWALDryRunNoMutation(t *testing.T) {
 	require.True(t, result.DryRun)
 	require.True(t, result.VacuumRequested)
 	require.False(t, result.VacuumExecuted)
-	require.Equal(t, uint32(1), result.CollectionCount)
+	require.Equal(t, uint64(1), result.CollectionCount)
 	require.Len(t, result.Collections, 1)
 	require.Equal(t, collectionName, result.Collections[0].Name)
 
@@ -69,7 +69,7 @@ func TestEmbeddedPruneCollectionWALExecutionPreservesQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, result.DryRun)
-	require.Equal(t, uint32(1), result.CollectionCount)
+	require.Equal(t, uint64(1), result.CollectionCount)
 	require.Len(t, result.Collections, 1)
 	require.Equal(t, collectionName, result.Collections[0].Name)
 
@@ -118,7 +118,7 @@ func TestEmbeddedPruneCollectionWALExecutionPrunesAndVacuums(t *testing.T) {
 	require.False(t, result.DryRun)
 	require.True(t, result.VacuumRequested)
 	if !result.VacuumExecuted {
-		require.NotEmpty(t, result.Warning, "vacuum failure should be surfaced as warning when prune succeeds")
+		require.NotEmpty(t, result.Warnings, "vacuum failure should be surfaced as warning when prune succeeds")
 	}
 	require.Greater(t, result.PrunedCountTotal, uint64(0), "expected prune execution to delete WAL rows")
 	require.Greater(t, result.Collections[0].PrunedCount, uint64(0))

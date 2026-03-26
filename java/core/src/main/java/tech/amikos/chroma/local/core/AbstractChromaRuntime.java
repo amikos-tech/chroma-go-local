@@ -161,7 +161,7 @@ public abstract class AbstractChromaRuntime implements ChromaRuntime {
                 throw new ChromaException("FFI call failed: " + error);
             }
         } catch (RuntimeException | Error e) {
-            try { readLastError(); } catch (RuntimeException | Error ignored) {}
+            try { readLastError(); } catch (RuntimeException | Error drain) { e.addSuppressed(drain); }
             throw e;
         } finally {
             FFI_LOCK.unlock();

@@ -221,14 +221,14 @@ class ServerSessionTest {
     void rebuildCollection_throwsUnsupportedOperationException() {
         ServerSession session = createSession(1L);
         assertThrows(UnsupportedOperationException.class,
-                () -> session.rebuildCollection("coll", RebuildOptions.defaults("coll")));
+                () -> session.rebuildCollection(RebuildOptions.defaults("coll")));
     }
 
     @Test
     void compactCollection_throwsUnsupportedOperationException() {
         ServerSession session = createSession(1L);
         assertThrows(UnsupportedOperationException.class,
-                () -> session.compactCollection(null));
+                () -> session.compactCollection((CompactCollectionRequest) null));
     }
 
     @Test
@@ -243,13 +243,13 @@ class ServerSessionTest {
         ServerSession session = createSession(1L);
         session.close();
         assertThrows(IllegalStateException.class,
-                () -> session.rebuildCollection("coll", RebuildOptions.defaults("coll")));
+                () -> session.rebuildCollection(RebuildOptions.defaults("coll")));
         assertThrows(IllegalStateException.class,
-                () -> session.compactCollection(null));
+                () -> session.compactCollection((CompactCollectionRequest) null));
         assertThrows(IllegalStateException.class,
                 () -> session.compactAll(null));
         assertThrows(IllegalStateException.class,
-                () -> session.pruneCollectionWAL("coll", null));
+                () -> session.pruneCollectionWAL(WALPruneOptions.defaults("coll")));
         assertThrows(IllegalStateException.class,
                 () -> session.pruneAllWAL(null));
         assertThrows(IllegalStateException.class,

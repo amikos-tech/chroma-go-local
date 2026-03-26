@@ -78,33 +78,42 @@ public final class ServerSession implements AutoCloseable {
         throw (T) t;
     }
 
-    public RebuildCollectionResult rebuildCollection(String name, RebuildOptions options) {
+    public RebuildCollectionResult rebuildCollection(RebuildOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("rebuildCollection will be wired in Phase 8");
+        throw new UnsupportedOperationException("rebuildCollection will be wired in Phase 10");
     }
 
     public RebuildCollectionResult rebuildCollection(String name) {
-        return rebuildCollection(name, RebuildOptions.defaults(name));
+        return rebuildCollection(RebuildOptions.defaults(name));
     }
 
     public CompactionResult compactCollection(CompactCollectionRequest request) {
         ensureOpen();
-        throw new UnsupportedOperationException("compactCollection will be wired in Phase 8");
+        throw new UnsupportedOperationException("compactCollection will be wired in Phase 10");
+    }
+
+    public CompactionResult compactCollection(String name) {
+        return compactCollection(new CompactCollectionRequest.Builder(name).build());
     }
 
     public CompactionResult compactAll(CompactAllRequest request) {
         ensureOpen();
-        throw new UnsupportedOperationException("compactAll will be wired in Phase 8");
+        throw new UnsupportedOperationException("compactAll will be wired in Phase 10");
     }
 
-    public WALPruneResult pruneCollectionWAL(String name, WALPruneOptions options) {
+    public WALPruneResult pruneCollectionWAL(WALPruneOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("pruneCollectionWAL will be wired in Phase 8");
+        throw new UnsupportedOperationException("pruneCollectionWAL will be wired in Phase 10");
     }
 
+    public WALPruneResult pruneCollectionWAL(String name) {
+        return pruneCollectionWAL(WALPruneOptions.defaults(name));
+    }
+
+    /** Prunes WAL rows for all collections. The {@code name} field in options is ignored. */
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("pruneAllWAL will be wired in Phase 8");
+        throw new UnsupportedOperationException("pruneAllWAL will be wired in Phase 10");
     }
 
     public BackupManifest backup(BackupOptions options) {

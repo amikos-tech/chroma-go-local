@@ -39,7 +39,7 @@ type CompactionCollectionResult struct {
 // CompactionResult captures explicit compaction execution metadata.
 type CompactionResult struct {
 	// CollectionCount is the number of collections attempted, including entries with per-collection errors.
-	CollectionCount       uint32                       `json:"collection_count"`
+	CollectionCount       uint64                       `json:"collection_count"`
 	DurationMS            uint64                       `json:"duration_ms"`
 	PendingOpsBeforeTotal uint64                       `json:"pending_ops_before_total"`
 	PendingOpsAfterTotal  uint64                       `json:"pending_ops_after_total"`

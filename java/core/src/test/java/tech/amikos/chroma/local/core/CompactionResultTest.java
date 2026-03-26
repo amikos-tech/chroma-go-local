@@ -108,7 +108,7 @@ class CompactionResultTest {
     }
 
     @Test
-    void collectionCountReturnsInt() {
+    void collectionCountReturnsLong() {
         String json = """
                 {
                   "collection_count": 3,

@@ -11,8 +11,11 @@ import java.nio.file.Path;
 import java.util.Locale;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.ChromaException;
+import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
+import tech.amikos.chroma.local.core.RebuildCollectionResult;
 import tech.amikos.chroma.local.core.ServerSession;
+import tech.amikos.chroma.local.core.WALPruneResult;
 
 public final class PanamaChromaRuntime extends AbstractChromaRuntime {
     private static final long MAX_C_STRING_LEN = 1L << 20;
@@ -26,6 +29,11 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             MethodHandle stringFree,
             MethodHandle embeddedStart,
             MethodHandle embeddedFree,
+            MethodHandle embeddedRebuildCollection,
+            MethodHandle embeddedCompactCollection,
+            MethodHandle embeddedCompactAll,
+            MethodHandle embeddedPruneWalCollection,
+            MethodHandle embeddedPruneWalAll,
             MethodHandle serverStart,
             MethodHandle serverStop,
             MethodHandle serverFree,
@@ -65,6 +73,21 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                     linker.downcallHandle(
                             requireSymbol(library, "chroma_embedded_free"),
                             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_rebuild_collection"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_compact_collection"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_compact_all"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_prune_wal_collection"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_prune_wal_all"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
                     linker.downcallHandle(
                             requireSymbol(library, "chroma_server_start_from_string"),
                             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
@@ -139,6 +162,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             }
         } catch (Throwable t) {
             if (t instanceof Error error) throw error;
+            System.err.println("readLastError failed: " + t.getMessage());
             return null;
         }
     }
@@ -168,7 +192,64 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to start embedded runtime", t);
             }
         });
-        return new EmbeddedSession(handle, this::embeddedFree);
+        return new EmbeddedSession(
+                handle,
+                this::embeddedFree,
+                (h, json) -> callFfiJson(() -> {
+                    try (Arena callArena = Arena.ofConfined()) {
+                        MemorySegment jsonSeg = callArena.allocateFrom(json);
+                        MemorySegment result = (MemorySegment) ffi.embeddedRebuildCollection()
+                                .invokeExact(MemorySegment.ofAddress(h), jsonSeg);
+                        return result.address();
+                    } catch (Throwable t) {
+                        if (t instanceof Error error) throw error;
+                        throw new ChromaException("failed to call embedded rebuild collection", t);
+                    }
+                }, RebuildCollectionResult.class),
+                (h, json) -> callFfiJson(() -> {
+                    try (Arena callArena = Arena.ofConfined()) {
+                        MemorySegment jsonSeg = callArena.allocateFrom(json);
+                        MemorySegment result = (MemorySegment) ffi.embeddedCompactCollection()
+                                .invokeExact(MemorySegment.ofAddress(h), jsonSeg);
+                        return result.address();
+                    } catch (Throwable t) {
+                        if (t instanceof Error error) throw error;
+                        throw new ChromaException("failed to call embedded compact collection", t);
+                    }
+                }, CompactionResult.class),
+                (h, json) -> callFfiJson(() -> {
+                    try (Arena callArena = Arena.ofConfined()) {
+                        MemorySegment jsonSeg = callArena.allocateFrom(json);
+                        MemorySegment result = (MemorySegment) ffi.embeddedCompactAll()
+                                .invokeExact(MemorySegment.ofAddress(h), jsonSeg);
+                        return result.address();
+                    } catch (Throwable t) {
+                        if (t instanceof Error error) throw error;
+                        throw new ChromaException("failed to call embedded compact all", t);
+                    }
+                }, CompactionResult.class),
+                (h, json) -> callFfiJson(() -> {
+                    try (Arena callArena = Arena.ofConfined()) {
+                        MemorySegment jsonSeg = callArena.allocateFrom(json);
+                        MemorySegment result = (MemorySegment) ffi.embeddedPruneWalCollection()
+                                .invokeExact(MemorySegment.ofAddress(h), jsonSeg);
+                        return result.address();
+                    } catch (Throwable t) {
+                        if (t instanceof Error error) throw error;
+                        throw new ChromaException("failed to call embedded prune wal collection", t);
+                    }
+                }, WALPruneResult.class),
+                (h, json) -> callFfiJson(() -> {
+                    try (Arena callArena = Arena.ofConfined()) {
+                        MemorySegment jsonSeg = callArena.allocateFrom(json);
+                        MemorySegment result = (MemorySegment) ffi.embeddedPruneWalAll()
+                                .invokeExact(MemorySegment.ofAddress(h), jsonSeg);
+                        return result.address();
+                    } catch (Throwable t) {
+                        if (t instanceof Error error) throw error;
+                        throw new ChromaException("failed to call embedded prune wal all", t);
+                    }
+                }, WALPruneResult.class));
     }
 
     @Override

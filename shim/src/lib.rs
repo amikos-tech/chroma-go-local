@@ -422,7 +422,7 @@ struct EmbeddedCompactionCollectionResult {
 
 #[derive(Debug, Serialize)]
 struct EmbeddedCompactionResponse {
-    collection_count: u32,
+    collection_count: u64,
     duration_ms: u64,
     pending_ops_before_total: u64,
     pending_ops_after_total: u64,
@@ -605,13 +605,13 @@ struct EmbeddedWalPruneCollectionResult {
 
 #[derive(Debug, Serialize)]
 struct EmbeddedWalPruneResponse {
-    collection_count: u32,
+    collection_count: u64,
     duration_ms: u64,
     dry_run: bool,
     vacuum_requested: bool,
     vacuum_executed: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    warning: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
     candidate_count_total: u64,
     candidate_bytes_total: u64,
     pruned_count_total: u64,
@@ -1501,7 +1501,7 @@ async fn run_explicit_compaction(
     }
 
     let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-    let collection_count = u32::try_from(collection_results.len()).unwrap_or(u32::MAX);
+    let collection_count = u64::try_from(collection_results.len()).unwrap_or(u64::MAX);
     Ok(EmbeddedCompactionResponse {
         collection_count,
         duration_ms,
@@ -1784,7 +1784,7 @@ async fn run_explicit_wal_prune(
             dry_run: options.dry_run,
             vacuum_requested: options.vacuum,
             vacuum_executed: false,
-            warning: None,
+            warnings: Vec::new(),
             candidate_count_total: 0,
             candidate_bytes_total: 0,
             pruned_count_total: 0,
@@ -1826,7 +1826,7 @@ async fn run_explicit_wal_prune(
     let mut candidate_bytes_total = 0u64;
     let mut pruned_count_total = 0u64;
     let mut pruned_bytes_total = 0u64;
-    let mut warning: Option<String> = None;
+    let mut warnings: Vec<String> = Vec::new();
     let mut collection_results: Vec<EmbeddedWalPruneCollectionResult> =
         Vec::with_capacity(targets.len());
 
@@ -2034,13 +2034,13 @@ async fn run_explicit_wal_prune(
                     vacuum_executed = true;
                 }
                 Err(e) => {
-                    warning = Some(format!(
+                    warnings.push(format!(
                         "wal prune completed, but sqlite VACUUM failed: {e}"
                     ));
                 }
             },
             Err(e) => {
-                warning = Some(format!(
+                warnings.push(format!(
                     "wal prune completed, but sqlite VACUUM was skipped because busy_timeout configuration failed: {e}"
                 ));
             }
@@ -2052,21 +2052,21 @@ async fn run_explicit_wal_prune(
                 .await;
         }
     } else if !options.dry_run && options.vacuum && pruned_count_total == 0 {
-        warning = Some(
+        warnings.push(
             "wal prune completed, but sqlite VACUUM was skipped because no rows were pruned"
                 .to_string(),
         );
     }
 
     let duration_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-    let collection_count = u32::try_from(collection_results.len()).unwrap_or(u32::MAX);
+    let collection_count = u64::try_from(collection_results.len()).unwrap_or(u64::MAX);
     Ok(EmbeddedWalPruneResponse {
         collection_count,
         duration_ms,
         dry_run: options.dry_run,
         vacuum_requested: options.vacuum,
         vacuum_executed,
-        warning,
+        warnings,
         candidate_count_total,
         candidate_bytes_total,
         pruned_count_total,
