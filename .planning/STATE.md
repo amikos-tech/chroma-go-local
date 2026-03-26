@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
 status: Executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-03-26T12:58:10.926Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-03-26T13:10:41Z"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 8
-Plan: 01 complete
+Plan: 02 complete (phase complete)
 
 ## Performance Metrics
 
@@ -36,6 +36,7 @@ Plan: 01 complete
 | 07 | 01 | 3min | 2 | 3 |
 | 07 | 02 | 2min | 1 | 2 |
 | 08 | 01 | 3min | 2 | 4 |
+| 08 | 02 | 9min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -55,6 +56,8 @@ Plan: 01 complete
 - [Phase 07]: Used ServerConfigBuilder in integration tests to validate builder output against real FFI
 - [Phase 08]: BiFunction<Long, String, T> callback slots for all 5 maintenance operations
 - [Phase 08]: EmbeddedSession constructor expanded from 2 to 7 parameters
+- [Phase 08]: Smoke tier tests only -- D-09 data-seeded tests deferred pending FUTURE-03 collection CRUD
+- [Phase 08]: EmbeddedConfigBuilder used for test YAML instead of hand-written strings
 
 ### Pending Todos
 
@@ -66,6 +69,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T12:57:08Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-03-26T13:10:41Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None

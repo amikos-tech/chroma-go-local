@@ -27,7 +27,7 @@
 - [x] **EMNT-02**: `EmbeddedSession.compactCollection(request)` and `compactAll(request)` return CompactionResult in both backends
 - [x] **EMNT-03**: `EmbeddedSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` return WALPruneResult in both backends
 - [x] **EMNT-04**: Option builders (RebuildOptions, WALPruneOptions) validate inputs at build time
-- [ ] **EMNT-05**: Integration tests verify each embedded maintenance operation in both backends
+- [x] **EMNT-05**: Integration tests verify each embedded maintenance operation in both backends
 
 ### Backup
 
@@ -82,7 +82,7 @@
 | EMNT-02 | Phase 8 | Complete |
 | EMNT-03 | Phase 8 | Complete |
 | EMNT-04 | Phase 8 | Complete |
-| EMNT-05 | Phase 8 | Pending |
+| EMNT-05 | Phase 8 | Complete |
 | BKUP-01 | Phase 9 | Pending |
 | BKUP-02 | Phase 9 | Pending |
 | BKUP-03 | Phase 9 | Pending |
