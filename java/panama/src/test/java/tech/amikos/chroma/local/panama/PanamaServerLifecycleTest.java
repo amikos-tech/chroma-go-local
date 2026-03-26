@@ -11,6 +11,7 @@ import java.net.ServerSocket;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.ServerConfigBuilder;
@@ -19,7 +20,7 @@ import tech.amikos.chroma.local.core.ServerSession;
 class PanamaServerLifecycleTest {
 
     @Test
-    void serverStartAccessorsStopClose(@TempDir Path persistDir) throws Exception {
+    void serverStartAccessorsStopClose(@TempDir(cleanup = CleanupMode.NEVER) Path persistDir) throws Exception {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
@@ -43,7 +44,7 @@ class PanamaServerLifecycleTest {
     }
 
     @Test
-    void doubleCloseIsIdempotent(@TempDir Path persistDir) throws Exception {
+    void doubleCloseIsIdempotent(@TempDir(cleanup = CleanupMode.NEVER) Path persistDir) throws Exception {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
@@ -63,7 +64,7 @@ class PanamaServerLifecycleTest {
     }
 
     @Test
-    void accessorsThrowAfterClose(@TempDir Path persistDir) throws Exception {
+    void accessorsThrowAfterClose(@TempDir(cleanup = CleanupMode.NEVER) Path persistDir) throws Exception {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 

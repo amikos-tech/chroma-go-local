@@ -11,6 +11,7 @@ import java.net.ServerSocket;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -48,7 +49,7 @@ class JnaChromaRuntimeTest {
     }
 
     @Test
-    void serverLifecycleSmokeTest(@TempDir Path persistDir) throws Exception {
+    void serverLifecycleSmokeTest(@TempDir(cleanup = CleanupMode.NEVER) Path persistDir) throws Exception {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
