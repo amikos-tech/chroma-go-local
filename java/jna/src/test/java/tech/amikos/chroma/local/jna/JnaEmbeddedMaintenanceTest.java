@@ -34,12 +34,12 @@ class JnaEmbeddedMaintenanceTest {
         try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
              EmbeddedSession session = runtime.startEmbedded(yaml)) {
             assertThrows(ChromaException.class,
-                    () -> session.rebuildCollection("nonexistent", RebuildOptions.defaults("nonexistent")));
+                    () -> session.rebuildCollection(RebuildOptions.defaults("nonexistent")));
         }
     }
 
     @Test
-    void embeddedRebuildNullNameThrows(@TempDir Path persistDir) {
+    void embeddedRebuildNullOptionsThrows(@TempDir Path persistDir) {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
@@ -51,7 +51,7 @@ class JnaEmbeddedMaintenanceTest {
         try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
              EmbeddedSession session = runtime.startEmbedded(yaml)) {
             assertThrows(IllegalArgumentException.class,
-                    () -> session.rebuildCollection(null, RebuildOptions.defaults("x")));
+                    () -> session.rebuildCollection((RebuildOptions) null));
         }
     }
 
@@ -122,7 +122,7 @@ class JnaEmbeddedMaintenanceTest {
         try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
              EmbeddedSession session = runtime.startEmbedded(yaml)) {
             assertThrows(ChromaException.class,
-                    () -> session.pruneCollectionWAL("nonexistent", WALPruneOptions.defaults("nonexistent")));
+                    () -> session.pruneCollectionWAL(WALPruneOptions.defaults("nonexistent")));
         }
     }
 
@@ -141,13 +141,13 @@ class JnaEmbeddedMaintenanceTest {
             session.close();
 
             assertThrows(IllegalStateException.class,
-                    () -> session.rebuildCollection("x", RebuildOptions.defaults("x")));
+                    () -> session.rebuildCollection(RebuildOptions.defaults("x")));
             assertThrows(IllegalStateException.class,
                     () -> session.compactCollection(new CompactCollectionRequest.Builder("x").build()));
             assertThrows(IllegalStateException.class,
                     () -> session.compactAll(new CompactAllRequest.Builder().build()));
             assertThrows(IllegalStateException.class,
-                    () -> session.pruneCollectionWAL("x", WALPruneOptions.defaults("x")));
+                    () -> session.pruneCollectionWAL(WALPruneOptions.defaults("x")));
             assertThrows(IllegalStateException.class,
                     () -> session.pruneAllWAL(new WALPruneOptions.Builder().dryRun(true).build()));
         }

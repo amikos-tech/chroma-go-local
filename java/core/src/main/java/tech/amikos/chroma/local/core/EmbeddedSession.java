@@ -60,11 +60,8 @@ public final class EmbeddedSession implements AutoCloseable {
         return handle;
     }
 
-    public RebuildCollectionResult rebuildCollection(String name, RebuildOptions options) {
+    public RebuildCollectionResult rebuildCollection(RebuildOptions options) {
         ensureOpen();
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("name is required");
-        }
         if (options == null) {
             throw new IllegalArgumentException("options is required");
         }
@@ -72,7 +69,7 @@ public final class EmbeddedSession implements AutoCloseable {
     }
 
     public RebuildCollectionResult rebuildCollection(String name) {
-        return rebuildCollection(name, RebuildOptions.defaults(name));
+        return rebuildCollection(RebuildOptions.defaults(name));
     }
 
     public CompactionResult compactCollection(CompactCollectionRequest request) {
@@ -91,15 +88,16 @@ public final class EmbeddedSession implements AutoCloseable {
         return compactAllAction.apply(handle, request.toJson());
     }
 
-    public WALPruneResult pruneCollectionWAL(String name, WALPruneOptions options) {
+    public WALPruneResult pruneCollectionWAL(WALPruneOptions options) {
         ensureOpen();
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("name is required");
-        }
         if (options == null) {
             throw new IllegalArgumentException("options is required");
         }
         return pruneWalCollectionAction.apply(handle, options.toJson());
+    }
+
+    public WALPruneResult pruneCollectionWAL(String name) {
+        return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {

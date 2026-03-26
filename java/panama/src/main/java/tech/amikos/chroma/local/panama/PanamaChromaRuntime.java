@@ -162,6 +162,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             }
         } catch (Throwable t) {
             if (t instanceof Error error) throw error;
+            System.err.println("readLastError failed: " + t.getMessage());
             return null;
         }
     }

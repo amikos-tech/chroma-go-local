@@ -78,13 +78,13 @@ public final class ServerSession implements AutoCloseable {
         throw (T) t;
     }
 
-    public RebuildCollectionResult rebuildCollection(String name, RebuildOptions options) {
+    public RebuildCollectionResult rebuildCollection(RebuildOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("rebuildCollection will be wired in Phase 8");
+        throw new UnsupportedOperationException("rebuildCollection will be wired in Phase 10");
     }
 
     public RebuildCollectionResult rebuildCollection(String name) {
-        return rebuildCollection(name, RebuildOptions.defaults(name));
+        return rebuildCollection(RebuildOptions.defaults(name));
     }
 
     public CompactionResult compactCollection(CompactCollectionRequest request) {
@@ -97,9 +97,13 @@ public final class ServerSession implements AutoCloseable {
         throw new UnsupportedOperationException("compactAll will be wired in Phase 8");
     }
 
-    public WALPruneResult pruneCollectionWAL(String name, WALPruneOptions options) {
+    public WALPruneResult pruneCollectionWAL(WALPruneOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("pruneCollectionWAL will be wired in Phase 8");
+        throw new UnsupportedOperationException("pruneCollectionWAL will be wired in Phase 10");
+    }
+
+    public WALPruneResult pruneCollectionWAL(String name) {
+        return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
