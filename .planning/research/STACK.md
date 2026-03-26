@@ -1,287 +1,347 @@
-# Technology Stack: Go Module Subtree Reorganization
+# Stack Research: Java API Surface (v0.5.0)
 
-**Project:** chroma-go-local v0.4.0 — Go Subtree Reorganization
-**Researched:** 2026-03-20
-**Scope:** Tools, patterns, and Go module features needed to reorganize Go implementation from repo root into `go/` subtree while preserving `github.com/amikos-tech/chroma-go-local` as the public import path.
+**Domain:** Java FFI bindings for Chroma local runtime (JNA + Panama dual backend)
+**Researched:** 2026-03-21
+**Confidence:** HIGH
 
----
+## Scope
 
-## Go Module Mechanics (No new go.mod needed)
-
-**Recommendation: Single-module approach — keep the existing go.mod at repo root.**
-
-Do NOT create a separate `go/go.mod`. The single-module pattern places `go.mod` at the repo root, with package subdirectories beneath it. Any package under `go/internal/` becomes importable only from within the same module (enforced by the compiler, not just convention).
-
-| Concern | Answer |
-|---------|--------|
-| Does `go/` subtree need its own go.mod? | No. All Go packages share the root `go.mod`. |
-| Does the module path change? | No. `module github.com/amikos-tech/chroma-go-local` stays in root `go.mod`. |
-| Do internal packages stay private? | Yes. `go/internal/...` is compiler-enforced: nothing outside the module can import it. |
-| Does `go test ./...` from repo root cover `go/`? | Yes. `./...` recurses into all subdirectories automatically. |
-
-**Confidence: HIGH** — Documented in [Organizing a Go module (go.dev/doc/modules/layout)](https://go.dev/doc/modules/layout). Single-module layout is the explicit official recommendation for this scenario.
+This research covers ONLY the technology additions and patterns needed to implement the v0.5.0 Java API surface: server lifecycle, builder configuration, backup, rebuild, compaction, and WAL prune. It does NOT re-evaluate Go, Rust, or the existing Java scaffold -- those are validated.
 
 ---
 
-## Root Package: Thin Facade (The Core Mechanism)
+## Recommended Stack
 
-The root package (`package chroma` at `github.com/amikos-tech/chroma-go-local`) becomes a thin facade that forwards every exported symbol to the implementation in `go/internal/runtime/` (or equivalent internal package).
+### Core Technologies (Already in Place -- No Version Changes)
 
-### Forwarding Rules by Symbol Kind
+| Technology | Version | Purpose | Status |
+|------------|---------|---------|--------|
+| JNA | 5.14.0 | FFI for Java 17+ backend | Keep current. 5.18.1 exists but 5.14.0 is stable and sufficient -- no features we need from newer versions. Upgrade is optional, not required. |
+| Panama FFM API | JDK 22 built-in | FFI for Java 22+ backend | Finalized in JEP 454 (JDK 22). No external dependency. Already configured with `--enable-native-access=ALL-UNNAMED` in tests. |
+| JUnit 5 | 5.11.4 (BOM) | Test framework | Keep current. 5.14.2 exists but 5.11.4 has everything we need (`@TempDir`, `Assumptions`, `@Nested`). Upgrade is optional. |
+| Gradle | 9+ (Kotlin DSL) | Build system | No changes needed. Existing multi-module setup (`core`, `jna`, `panama`) is correct. |
+| Java 17 | Toolchain (core, jna) | Minimum baseline | No change. |
+| Java 22 | Toolchain (panama) | Panama FFM availability | No change. |
 
-| Kind | Mechanism | Limitation |
-|------|-----------|------------|
-| `type T` | `type T = impl.T` (type alias) | None since Go 1.9. Generic aliases need Go 1.24. |
-| `func F()` | `func F() { impl.F() }` | None. Return type and signature must match exactly. |
-| `var V` | `var V = impl.V` (copy, not pointer) | `&V != &impl.V` — different addresses. Acceptable for exported config vars not used by address. |
-| `const C` | `const C = impl.C` | None. |
-| `error` vars | `var ErrFoo = impl.ErrFoo` | Address differs. `errors.Is` works because value is copied, but `err == impl.ErrFoo` works; `err == ErrFoo` also works if same value. |
+### New Libraries Required: Exactly One (Gson for JSON)
 
-**Type alias is the critical tool.** `type Server = impl.Server` means callers assigning `chroma.Server` to `impl.Server` work without conversion — they are the same type. A regular type definition (`type Server impl.Server`) would break interface satisfaction, struct field assignment, and type assertions.
+| Library | Version | Purpose | Why Recommended |
+|---------|---------|---------|-----------------|
+| Gson | 2.13.2 | JSON serialization/deserialization for FFI request/response strings | See detailed rationale below. |
 
-**Confidence: HIGH** — Documented in [What's in an (Alias) Name? (go.dev/blog/alias-names)](https://go.dev/blog/alias-names) and [Codebase Refactoring with Go (go.dev/talks/2016/refactor.article)](https://go.dev/talks/2016/refactor.article).
+**Why JSON at all?** The maintenance APIs (rebuild, compaction, WAL prune) pass structured requests and return structured responses through the FFI boundary as JSON strings. The Go side uses `encoding/json`. The Rust shim's `chroma_embedded_rebuild_collection`, `chroma_embedded_compact_collection`, `chroma_embedded_compact_all`, `chroma_embedded_prune_wal_collection`, and `chroma_embedded_prune_wal_all` all accept a JSON C string as input and return a JSON C string as output. Java must serialize request objects to JSON strings and deserialize response strings to Java objects.
 
-### Circular Import Constraint
+**Why Gson over Jackson?**
 
-The root facade package MUST NOT be imported by the internal implementation. If `go/internal/runtime/` imports `github.com/amikos-tech/chroma-go-local` (the root), there is a circular dependency and the build breaks. The dependency direction is strictly:
+| Criterion | Gson 2.13.2 | Jackson 2.21.1 |
+|-----------|-------------|----------------|
+| Jar size | ~300 KB (single jar) | ~1.8 MB (databind + core + annotations) |
+| Transitive deps | 0 | 2 (jackson-core, jackson-annotations) |
+| Setup complexity | `new Gson()` | `new ObjectMapper()` with module registration |
+| Performance at scale | Slower for very large payloads | Faster streaming parser |
+| Our payload sizes | Tiny JSON (<1 KB per request/response) | Overkill |
+| Annotation-free POJOs | Yes, works out of the box | Requires annotations for some features |
 
-```
-root (facade) → go/internal/runtime/ → go/internal/library/
-```
+**Decision: Use Gson.** The FFI payloads are tiny JSON blobs (rebuild request ~100 bytes, compaction result ~500 bytes). Gson adds one 300 KB jar with zero transitive dependencies. Jackson would add ~1.8 MB across 3 jars for the same functionality. At these payload sizes, performance is irrelevant. Simplicity wins.
 
-Never reverse. This rules out any design where internal packages share helpers with the root facade via imports.
+**Confidence: HIGH** -- Both libraries handle our use case trivially. Gson wins on footprint and simplicity for this specific scenario.
 
-**Confidence: HIGH** — Go compiler enforces this at build time.
+### Libraries NOT Needed
 
----
-
-## Internal Package Layout (Recommended)
-
-```
-github.com/amikos-tech/chroma-go-local/          ← root go.mod, package chroma (thin facade)
-  chroma.go         ← type aliases + func forwarders for Server, Embedded, options
-  config.go         ← type aliases + const/var forwarders for ServerConfig, EmbeddedConfig
-  errors.go         ← var forwarders for sentinel errors
-  library.go        ← func forwarder for Init, Version
-  backup.go         ← type aliases + func forwarders for BackupOption, BackupManifest
-  rebuild.go        ← type aliases + func forwarders
-  compaction.go     ← type aliases + func forwarders
-  wal_prune.go      ← type aliases + func forwarders
-  go/
-    internal/
-      runtime/
-        chroma.go       ← Server, Embedded implementation (moved from root)
-        config.go
-        errors.go
-        ...
-      library/
-        library.go      ← purego FFI wiring, Init(), Version()
-        library_unix.go
-        library_windows.go
-```
-
-The `go/internal/` path means: packages under `go/internal/` can be imported only by code whose import path starts with `github.com/amikos-tech/chroma-go-local/go/`. Since the root facade is at the root (not under `go/`), it can still import `go/internal/runtime/` because the root is part of the same module. The compiler allows modules to import their own internal packages without restriction on the subtree prefix — internal enforcement is per-module, not per-directory-prefix.
-
-Wait — this needs clarification. The Go spec on `internal` says: a package `a/b/c/internal/d/e/f` may be imported only by code in the tree rooted at `a/b/c/`. If the implementation lives at `go/internal/runtime/`, the full import path is `github.com/amikos-tech/chroma-go-local/go/internal/runtime/`. The tree root for this internal package is `github.com/amikos-tech/chroma-go-local/go/`. The root package at `github.com/amikos-tech/chroma-go-local` is OUTSIDE that subtree and therefore CANNOT import it.
-
-**This is a critical layout constraint.** The correct approach is to put `internal/` directly under the module root, not under `go/`:
-
-```
-github.com/amikos-tech/chroma-go-local/
-  go.mod
-  chroma.go         ← thin facade (package chroma)
-  config.go
-  errors.go
-  library.go
-  backup.go
-  rebuild.go
-  compaction.go
-  wal_prune.go
-  internal/
-    runtime/
-      chroma.go     ← implementation (package runtime)
-      config.go
-      embedded.go
-      errors.go
-      backup.go
-      rebuild.go
-      compaction.go
-      wal_prune.go
-    library/
-      library.go
-      library_unix.go
-      library_windows.go
-```
-
-This layout means:
-- `internal/runtime/` import path: `github.com/amikos-tech/chroma-go-local/internal/runtime`
-- Tree root: `github.com/amikos-tech/chroma-go-local/` — which includes the root facade. Root facade CAN import it.
-- External modules CANNOT import `internal/runtime` (enforced by compiler).
-
-**Confidence: HIGH** — Go specification on [internal packages](https://pkg.go.dev/cmd/go#hdr-Internal_Directories): "An import of a path containing the element 'internal' is disallowed if the importing code is outside the tree rooted at the parent of the 'internal' directory."
-
-If the project still wants `go/` subdirectory for non-Go-module organizational purposes (README segregation, etc.), the internal packages must live at `internal/` under the module root, not under `go/internal/`.
+| Library | Why Considered | Why Rejected |
+|---------|---------------|-------------|
+| SnakeYAML | YAML config builder serialization | The Java builder generates a YAML string directly via `StringBuilder`, exactly as the Go `config.toYAML()` does. No YAML library needed -- the configs are simple enough for hand-written string construction. |
+| Lombok | Builder pattern generation | Adds annotation processing, IDE plugin requirements, and bytecode manipulation for what amounts to 5-6 simple builder classes. Hand-rolled builders are trivial and match the project's "radically simple" philosophy. |
+| Immutables / AutoValue | Immutable value types for response objects | Response classes are simple data carriers with final fields. Records (Java 17+) or plain final-field classes are sufficient. No annotation processing overhead needed. |
+| AssertJ | Fluent test assertions | Adds a dependency for marginally nicer assertion syntax. JUnit 5's built-in assertions are fine for the test patterns here (mostly null checks, string comparisons, and lifecycle verification). Keep the test dependency tree minimal. |
+| Mockito | Mock testing | All Java tests are integration tests that call through to the real native library. Mocking the FFI layer would test nothing useful. `Assumptions.assumeTrue(libPath != null)` pattern for skipping when native lib unavailable is the correct approach. |
 
 ---
 
-## Platform-Specific File Handling
+## No YAML Library Needed -- Hand-Rolled YAML Generation
 
-The current codebase has `library_unix.go` and `library_windows.go` at root using filename-based build constraints (Go's automatic OS-based file selection: `_windows.go` suffix compiles only on Windows, `_unix.go` needs a `//go:build` tag).
+The Go side generates YAML config strings with `fmt.Fprintf(&b, "port: %d\n", c.Port)` in `ServerConfig.toYAML()` and `EmbeddedConfig.toYAML()`. The Java builders should do the same with `StringBuilder`:
 
-When moved to `internal/library/`, the same filename suffixes continue to work. No changes to build tag syntax required. File suffix `_windows.go` and `//go:build !windows` (or `_unix.go` with explicit tag) will be auto-selected by `go build` and `go test` correctly within the internal package.
-
-**Confidence: HIGH** — This is standard Go toolchain behavior, unchanged since Go 1.17 when `//go:build` replaced `// +build`.
-
----
-
-## API Compatibility Verification Tools
-
-### Primary: `golang.org/x/exp/apidiff` + `joelanford/go-apidiff`
-
-`go-apidiff` wraps `golang.org/x/exp/apidiff` and compares exported API between two git commits. Use it to verify the root facade exposes exactly the same surface before and after the reorganization.
-
-**Install:**
-```bash
-go install github.com/joelanford/go-apidiff@latest
+```java
+public String toYaml() {
+    StringBuilder b = new StringBuilder();
+    b.append("port: ").append(port).append('\n');
+    b.append("listen_address: \"").append(listenAddress).append("\"\n");
+    b.append("persist_path: \"").append(persistPath).append("\"\n");
+    // ...
+    return b.toString();
+}
 ```
 
-**Usage (compare current HEAD against a baseline tag):**
-```bash
-# Compare v0.3.4 (pre-refactor) against HEAD
-go-apidiff v0.3.4 HEAD --print-compatible --repo-path .
+This keeps Java output byte-identical to Go output, avoids a YAML library dependency, and is trivial to test. The YAML config format is controlled by the Chroma runtime and is a flat key-value structure -- no nested objects, no anchors, no multi-document streams. A YAML library adds complexity for zero benefit here.
+
+**Confidence: HIGH** -- Direct examination of the existing Go `config.go` confirms YAML generation is simple string formatting.
+
+---
+
+## Builder Pattern: Hand-Rolled (No Library)
+
+### Why Hand-Rolled
+
+The project needs approximately 5 builders:
+1. `ServerConfigBuilder` -- mirrors Go's `ServerConfig` with `WithPort`, `WithListenAddress`, etc.
+2. `EmbeddedConfigBuilder` -- mirrors Go's `EmbeddedConfig`
+3. `BackupOptionsBuilder` -- mirrors Go's `BackupOption` variadic pattern
+4. `RebuildOptionsBuilder` -- mirrors Go's `RebuildCollectionOption` variadic pattern
+5. `WALPruneOptionsBuilder` -- mirrors Go's `WALPruneOption` variadic pattern
+
+Each builder has 3-8 setter methods and a `build()` method. This is 100-200 lines of code total. Adding Lombok or Immutables for this is negative ROI: the annotation processor dependency, IDE plugin setup, and build configuration cost more than writing the builders by hand.
+
+### Pattern to Follow
+
+Use static inner `Builder` class on the config/options type. This is idiomatic Java and matches what consumers expect:
+
+```java
+public final class ServerConfig {
+    private final int port;
+    private final String listenAddress;
+    // ... fields
+
+    private ServerConfig(Builder builder) { /* copy from builder */ }
+
+    public static Builder builder() { return new Builder(); }
+
+    public String toYaml() { /* generate YAML string */ }
+
+    public static final class Builder {
+        private int port = 8000;
+        private String listenAddress = "127.0.0.1";
+        // ... defaults matching Go's DefaultServerConfig()
+
+        public Builder port(int port) { this.port = port; return this; }
+        public Builder listenAddress(String addr) { this.listenAddress = addr; return this; }
+        // ...
+        public ServerConfig build() { /* validate and construct */ }
+    }
+}
 ```
 
-If zero incompatible changes are reported, the public API surface is preserved.
+**Go's functional options (e.g. `WithPort(8000)`) do NOT translate idiomatically to Java.** Java has no first-class function composition like Go's `...ServerOption`. The Java builder pattern is the direct equivalent and is what Java developers expect.
 
-**What it checks:** Exported type definitions, function signatures, method sets, constant and variable types. It does NOT check behavioral changes — only compile-time compatibility.
+**Exception: Backup/Rebuild/WALPrune options.** For these, consider whether the Go variadic option pattern should map to a Java builder OR to a simple request object with setters. The Go pattern uses variadic options because Go lacks builder syntax; in Java, a mutable options object with setters is simpler than a builder when the output is a request JSON payload:
 
-**What it misses:** Sentinel error identity via address comparison (`&err`). Verify that separately if any exported `var ErrFoo = errors.New(...)` is moved — after a `var ErrFoo = impl.ErrFoo` forward, callers using `errors.Is` will still work, but callers using `== &chroma.ErrFoo` (extremely rare) would see a different address.
-
-**Confidence: MEDIUM** — Tool is actively maintained and used in the Go ecosystem; the `golang.org/x/exp/apidiff` package that underlies it is official, but the CLI wrapper's handling of cross-commit comparisons with mixed module support has a documented edge case caveat.
-
-### Secondary: `go build ./...` and `go vet ./...`
-
-Run after each phase:
-```bash
-go build ./...
-go vet ./...
+```java
+// Simple mutable options for maintenance APIs
+public final class WALPruneOptions {
+    private String tenantId;
+    private String databaseName;
+    private boolean dryRun;
+    // ... setters return this for chaining
+}
 ```
 
-`go vet` catches shadowed imports, unreachable code in forwarders, and misused type assertions. These are zero-dependency gates that should be in CI for each phase.
+**Decision: Builder for config types (ServerConfig, EmbeddedConfig) because they generate YAML. Simple chained-setter objects for maintenance API options because they serialize to JSON.** This avoids over-abstracting the maintenance API options with a builder when a POJO with setters is more direct.
 
-**Confidence: HIGH** — Standard Go toolchain.
-
-### Tertiary: Compile the existing test suite unchanged
-
-The most reliable compatibility signal for this project: the existing `*_test.go` files import `github.com/amikos-tech/chroma-go-local` and exercise every exported symbol. If all tests compile and pass after the reorganization, the public API is compatible. No test source changes should be needed.
-
-**Why this matters more than apidiff here:** The test suite already covers FFI calls, builder pattern options, server/embedded lifecycle, and error handling. A compile-time API diff is a weaker signal than "the actual test suite runs."
+**Confidence: HIGH** -- Standard Java pattern, direct examination of Go API surface confirms the mapping.
 
 ---
 
-## Build System Changes
+## FFI Symbol Mapping: What Java Must Bind
 
-### Makefile `go test ./...` pattern
+### Server Lifecycle Symbols (NEW for v0.5.0)
 
-Currently:
-```makefile
-RUN_GO_TEST_DEBUG := CHROMA_LIB_PATH=$(abspath $(SHIM_TARGET_DEBUG)) go test -v ./...
+| FFI Symbol | C Signature | JNA Mapping | Panama Mapping |
+|------------|-------------|-------------|----------------|
+| `chroma_server_start` | `void* (const char*)` | `Pointer chroma_server_start(String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+| `chroma_server_start_from_string` | `void* (const char*)` | `Pointer chroma_server_start_from_string(String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+| `chroma_server_port` | `int32 (void*)` | `int chroma_server_port(Pointer)` | `MethodHandle(ADDRESS) -> JAVA_INT` |
+| `chroma_server_address` | `const char* (void*)` | `Pointer chroma_server_address(Pointer)` | `MethodHandle(ADDRESS) -> ADDRESS` |
+| `chroma_server_persist_path` | `const char* (void*)` | `Pointer chroma_server_persist_path(Pointer)` | `MethodHandle(ADDRESS) -> ADDRESS` |
+| `chroma_server_stop` | `int32 (void*)` | `int chroma_server_stop(Pointer)` | `MethodHandle(ADDRESS) -> JAVA_INT` |
+| `chroma_server_free` | `void (void*)` | `void chroma_server_free(Pointer)` | `MethodHandle(ADDRESS) -> void` |
+
+### Maintenance Symbols (NEW for v0.5.0)
+
+| FFI Symbol | C Signature | JNA Mapping | Panama Mapping |
+|------------|-------------|-------------|----------------|
+| `chroma_embedded_rebuild_collection` | `char* (void*, const char*)` | `Pointer ...(Pointer, String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+| `chroma_embedded_compact_collection` | `char* (void*, const char*)` | `Pointer ...(Pointer, String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+| `chroma_embedded_compact_all` | `char* (void*, const char*)` | `Pointer ...(Pointer, String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+| `chroma_embedded_prune_wal_collection` | `char* (void*, const char*)` | `Pointer ...(Pointer, String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+| `chroma_embedded_prune_wal_all` | `char* (void*, const char*)` | `Pointer ...(Pointer, String)` | `MethodHandle(ADDRESS, ADDRESS) -> ADDRESS` |
+
+### Already Bound (No Changes)
+
+| FFI Symbol | Status |
+|------------|--------|
+| `chroma_version` | Bound in both JNA and Panama |
+| `chroma_get_last_error` | Bound in both JNA and Panama |
+| `chroma_string_free` | Bound in both JNA and Panama |
+| `chroma_embedded_start_from_string` | Bound in both JNA and Panama |
+| `chroma_embedded_free` | Bound in both JNA and Panama |
+
+### Key FFI Pattern: All Maintenance APIs Follow the Same Shape
+
+Every maintenance symbol takes `(handle: void*, request_json: const char*) -> char*` and returns an allocated JSON string that must be freed with `chroma_string_free`. This is the exact same pattern already used for `chroma_embedded_start_from_string` but with JSON instead of YAML. The existing `lastError()` helper pattern in both JNA and Panama implementations handles the null-return-with-error-detail flow correctly.
+
+**No struct mapping needed.** There are no C struct types crossing the FFI boundary. All structured data passes as JSON strings. This is intentional in the Rust shim design and eliminates the most complex part of JNA/Panama FFI work.
+
+**Confidence: HIGH** -- Direct examination of Rust shim source (`shim/src/lib.rs`) confirms all maintenance symbols use JSON string I/O.
+
+---
+
+## Response Type Mapping: JSON to Java
+
+The maintenance FFI calls return JSON strings that need deserialization into Java types. These types live in the `core` module (shared between JNA and Panama).
+
+### Types to Create in `core`
+
+| Go Type | Java Type | Fields | Notes |
+|---------|-----------|--------|-------|
+| `RebuildCollectionResult` | `RebuildResult` | collectionId, name, tenantId, databaseName, precheck, wouldRebuild, rebuilt, recordsScanned, vectorsReindexed, durationMs, backupPath, warnings | List<String> for warnings |
+| `CompactionCollectionResult` | `CompactionCollectionResult` | collectionId, name, tenantId, databaseName, pendingOpsBefore, pendingOpsAfter, pendingOpsBeforeError, pendingOpsAfterError, error | Long (nullable) for optional uint64 fields |
+| `CompactionResult` | `CompactionResult` | collectionCount, durationMs, pendingOpsBeforeTotal, pendingOpsAfterTotal, collections | List of CompactionCollectionResult |
+| `WALPruneCollectionResult` | `WALPruneCollectionResult` | collectionId, name, tenantId, databaseName, safeSeqCutoff, candidateSeqMin/Max, prunedSeqMin/Max, candidateCount/Bytes, prunedCount/Bytes, error | Long (nullable) for optional fields |
+| `WALPruneResult` | `WALPruneResult` | collectionCount, durationMs, dryRun, vacuumRequested, vacuumExecuted, warning, candidateCountTotal, candidateBytesTotal, prunedCountTotal, prunedBytesTotal, collections | List of WALPruneCollectionResult |
+
+### Gson Field Naming
+
+The JSON field names from the Rust shim use `snake_case` (e.g., `collection_id`, `duration_ms`). Gson supports `@SerializedName` annotations or a global `FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES` setting.
+
+**Decision: Use `FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES` on a shared `Gson` instance.** This avoids annotating every field in every response type. Create one `Gson` instance in the `core` module's utility class and reuse it.
+
+```java
+// In core module
+public final class JsonCodec {
+    private static final Gson GSON = new GsonBuilder()
+        .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
+        .create();
+
+    public static <T> T fromJson(String json, Class<T> type) {
+        return GSON.fromJson(json, type);
+    }
+
+    public static String toJson(Object obj) {
+        return GSON.toJson(obj);
+    }
+}
 ```
 
-After reorganization: `./...` continues to work from the repo root and will discover all packages including those in `internal/`. No Makefile change needed for test discovery.
-
-The only possible change is if tests move into `internal/` packages. Tests for internal packages use `package runtime_test` or `package runtime` (white-box) in the same directory — this is idiomatic and `go test ./...` picks them up correctly.
-
-**Confidence: HIGH.**
-
-### `golangci-lint run ./...`
-
-`./...` also covers `internal/` packages. The existing `.golangci.yml` will need one update: the `gci` formatter's `prefix()` section currently references `github.com/chaoslabs-bg/tclr-v2/` which appears to be a copy-paste from another project. This should be updated to `github.com/amikos-tech/chroma-go-local/` regardless of the reorganization. No other linter config changes are required by the subtree move.
-
-**Confidence: HIGH.**
+**Confidence: HIGH** -- Gson's `FieldNamingPolicy` is stable and well-documented.
 
 ---
 
-## Go Version Compatibility
+## Gradle Dependency Changes
 
-The current `go.mod` declares `go 1.21`. All features needed for this reorganization are available in Go 1.21:
+### core/build.gradle.kts (ADD Gson)
 
-| Feature | Available Since | Notes |
-|---------|----------------|-------|
-| Type aliases (`type T = pkg.T`) | Go 1.9 | Full support for non-generic types |
-| Generic type aliases | Go 1.24 | Only needed if exported types are generic — current API has no generic types |
-| `internal/` package enforcement | Before Go 1.9 | Stable, unchanged |
-| `go test ./...` recursive discovery | All Go module versions | No changes |
-| `//go:build` constraint syntax | Go 1.17 | Current codebase already uses this |
+```kotlin
+dependencies {
+    api("com.google.code.gson:gson:2.13.2")
 
-No `go.mod` version bump is required by the reorganization. The minimum `go 1.21` in `go.mod` is sufficient.
-
-**Confidence: HIGH** — All features verified against official release notes.
-
----
-
-## What NOT to Do
-
-### Do NOT create a second go.mod under `go/`
-
-A second `go.mod` would create a separate module (`github.com/amikos-tech/chroma-go-local/go`). The root facade would then need a `replace` directive to reference it during development, and consumers would need to import a different module path. This defeats the entire goal of preserving the import path and adds ongoing maintenance burden (two modules, two version tags, two go.sum files).
-
-**Why teams reach for this wrongly:** They conflate "directory subtree" with "Go module". A module is defined by its `go.mod`, not by directory structure. Subdirectories without their own `go.mod` are packages of the parent module.
-
-### Do NOT use `go mod replace` for the internal split
-
-Module replace directives are for substituting an external module with a local one (e.g., local development of a dependency). They are not needed when moving packages within a single module.
-
-### Do NOT put `internal/` under `go/`
-
-As explained in the Internal Package Layout section above, `go/internal/runtime/` cannot be imported by the root package because the root is outside the `go/` subtree. This would require either removing `internal/` from the path (losing the protection) or not having a root facade at all.
-
-### Do NOT inline implementation into the root facade files
-
-The facade files at root should contain only forwarding declarations (`type X = impl.X`, `func F(...) { return impl.F(...) }`). Mixing implementation logic into facade files defeats the organizational goal and makes the internal package the wrong place for tests.
-
-### Do NOT change the public API surface during this refactor
-
-The PROJECT.md constraint is correct: this is a purely structural change. Any API addition or change should be a separate PR after v0.4.0 lands. Mixing features into this refactor makes `go-apidiff` output harder to interpret and increases rollback risk.
-
----
-
-## Alternatives Considered
-
-| Approach | Why Not |
-|----------|---------|
-| Separate `go/go.mod` module | Changes import path for internal users; replace directives required in dev; two modules to version |
-| `go mod replace` for split | Unnecessary and confusing; doesn't apply to intra-module package moves |
-| Keep flat root layout | Fails the stated goal of separating Go/Rust/Java ownership boundaries |
-| Move Go files to `go/` without internal protection | Implementation becomes importable by external modules; no boundary enforcement |
-| v2 major version bump | Would break all existing importers; the goal explicitly forbids this |
-
----
-
-## Installation Reference
-
-All tools below are already present in the repo or are one-time dev installs; none change `go.mod`:
-
-```bash
-# API compatibility checker (run before/after each phase)
-go install github.com/joelanford/go-apidiff@latest
-
-# Already in use — no change
-golangci-lint run ./...
-go vet ./...
-go build ./...
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
 ```
+
+Gson is an `api` dependency (not `implementation`) because the response types use Gson's `@SerializedName` annotation in their public API, and JNA/Panama modules need to call `JsonCodec` from `core`.
+
+### jna/build.gradle.kts and panama/build.gradle.kts
+
+No new dependencies. They already depend on `api(project(":core"))` which transitively provides Gson.
+
+**Confidence: HIGH** -- Standard Gradle multi-module dependency management.
+
+---
+
+## Testing Strategy
+
+### No Mocking Libraries Needed
+
+All Java tests are integration tests that call the real native library. The existing pattern is correct:
+
+```java
+String libPath = System.getenv("CHROMA_LIB_PATH");
+Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+```
+
+Tests skip cleanly when the native library is not available. When it is available, they exercise real FFI calls. This is the ONLY meaningful test strategy for FFI code -- mocking the native layer would test Java boilerplate, not correctness.
+
+### Test Patterns for New APIs
+
+| API Category | Test Pattern | Key Assertions |
+|-------------|-------------|----------------|
+| Server lifecycle | Start server, verify port/address/URL, stop, close | Port > 0, address non-blank, URL format correct |
+| Server config builder | Build config, verify YAML output | YAML string contains expected key-value pairs |
+| Embedded maintenance | Start embedded, create collection, run maintenance, verify result | Non-null result, expected field values |
+| Backup | Start embedded, backup to temp dir, verify manifest | Manifest file exists, field values match |
+| Error handling | Invalid inputs, null handles, already-closed sessions | ChromaException or IllegalStateException thrown |
+
+### JUnit 5 Features Already in Use (No Additions Needed)
+
+- `@TempDir` -- temporary directories for persist paths and backup destinations
+- `Assumptions.assumeTrue` -- skip tests when native lib unavailable
+- `assertThrows` -- verify exception types
+- `assertDoesNotThrow` -- verify idempotent close
+
+**Confidence: HIGH** -- Pattern proven by existing scaffold tests.
+
+---
+
+## What NOT to Use
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| Jackson | 3 jars, ~1.8 MB for tiny JSON payloads | Gson (1 jar, ~300 KB, zero transitive deps) |
+| SnakeYAML | Adds complexity for simple flat YAML generation | `StringBuilder`-based YAML formatting |
+| Lombok | Annotation processing overhead for 5 trivial builders | Hand-rolled static inner `Builder` classes |
+| Immutables / AutoValue | Annotation processing for simple final-field data classes | Plain Java classes with final fields |
+| Mockito | Mocking FFI calls tests nothing useful | Integration tests with `Assumptions.assumeTrue` |
+| AssertJ | Marginal assertion improvement, extra dependency | JUnit 5 built-in assertions |
+| JNA `Structure` mapping | Not needed -- no C structs cross FFI boundary | JSON string serialization via Gson |
+| jextract (Panama code generator) | Generates bindings from C headers; adds build complexity and generates code we'd need to customize | Hand-written `MethodHandle` lookups (already established pattern) |
+
+---
+
+## Version Compatibility
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| Gson 2.13.2 | Java 17+ | Supports Java 9 modules. No issues with Java 22. |
+| JNA 5.14.0 | Java 8+ | Stable on Java 17 and 22 toolchains. |
+| JUnit 5.11.4 | Java 8+ | Full support for both Java 17 and 22 test toolchains. |
+| Gradle 9+ | Java 17-22 | Current build config already handles dual toolchain (17 for core/jna, 22 for panama). |
+
+---
+
+## Stack Patterns by Module
+
+**core module:**
+- Response types (final-field classes with Gson `FieldNamingPolicy`)
+- Config builders (static inner `Builder` with `toYaml()`)
+- `JsonCodec` utility (shared `Gson` instance)
+- `ChromaRuntime` interface (extended with server and maintenance methods)
+- `ServerSession` type (new, mirrors `EmbeddedSession` pattern)
+- Maintenance option types (simple POJOs with chained setters)
+
+**jna module:**
+- Extended `JnaBindings` interface with new `chroma_server_*` and maintenance symbols
+- `JnaChromaRuntime` methods implementing new `ChromaRuntime` interface methods
+- JSON serialization for maintenance requests, deserialization for responses
+
+**panama module:**
+- Additional `MethodHandle` fields for new symbols (resolved in `init()`)
+- `PanamaChromaRuntime` methods implementing new `ChromaRuntime` interface methods
+- Same JSON ser/de pattern as JNA (shared `core` types)
 
 ---
 
 ## Sources
 
-- [Organizing a Go module — go.dev/doc/modules/layout](https://go.dev/doc/modules/layout) — HIGH confidence, official
-- [Go Modules Reference — go.dev/ref/mod](https://go.dev/ref/mod) — HIGH confidence, official
-- [What's in an (Alias) Name? — go.dev/blog/alias-names](https://go.dev/blog/alias-names) — HIGH confidence, official Go blog
-- [Codebase Refactoring (with help from Go) — go.dev/talks/2016/refactor.article](https://go.dev/talks/2016/refactor.article) — HIGH confidence, official Go talk; forwarding patterns
-- [golang.org/x/exp/apidiff — pkg.go.dev](https://pkg.go.dev/golang.org/x/exp/apidiff) — HIGH confidence, official x/ package
-- [joelanford/go-apidiff — github.com](https://github.com/joelanford/go-apidiff) — MEDIUM confidence, community tool wrapping official package
-- [Go 1.24 Release Notes — go.dev/doc/go1.24](https://go.dev/doc/go1.24) — HIGH confidence, official; generic type aliases GA
-- [Go internal package spec — pkg.go.dev/cmd/go](https://pkg.go.dev/cmd/go#hdr-Internal_Directories) — HIGH confidence, official spec
-- [Keeping Your Modules Compatible — go.dev/blog/module-compatibility](https://go.dev/blog/module-compatibility) — HIGH confidence, official
+- [JNA GitHub releases](https://github.com/java-native-access/jna/releases) -- JNA 5.18.1 is latest, 5.14.0 in use is sufficient
+- [JNA Structures and Unions documentation](https://github.com/java-native-access/jna/blob/master/www/StructuresAndUnions.md) -- confirmed struct mapping NOT needed for this project
+- [JEP 454: Foreign Function & Memory API](https://openjdk.org/jeps/454) -- Panama FFM finalized in JDK 22, HIGH confidence
+- [Gson Maven Central](https://mvnrepository.com/artifact/com.google.code.gson/gson) -- version 2.13.2 verified, MEDIUM confidence (WebSearch)
+- [JUnit 5 Release Notes](https://junit.org/junit5/docs/current/release-notes/index.html) -- 5.11.4 features confirmed, HIGH confidence
+- [Jackson vs Gson comparison (Baeldung)](https://www.baeldung.com/jackson-vs-gson) -- size/complexity tradeoff confirmed, MEDIUM confidence
+- Direct codebase examination: `shim/src/lib.rs`, `internal/runtime/*.go`, `java/**/*.java` -- HIGH confidence, primary source for FFI symbol signatures and patterns
+
+---
+*Stack research for: Java API Surface v0.5.0*
+*Researched: 2026-03-21*

@@ -32,9 +32,9 @@ public final class EmbeddedSession implements AutoCloseable {
         if (closed.compareAndSet(false, true)) {
             try {
                 closeAction.accept(handle);
-            } catch (RuntimeException | Error e) {
+            } catch (Throwable t) {
                 closed.set(false);
-                throw e;
+                throw t;
             }
         }
     }

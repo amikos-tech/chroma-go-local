@@ -29,19 +29,25 @@ class EmbeddedSessionTest {
     }
 
     @Test
-    void closeAllowsRetryAfterFailure() {
+    void close_retriableAfterFailure() {
         AtomicInteger closeCalls = new AtomicInteger();
         EmbeddedSession session = new EmbeddedSession(42L, ignored -> {
-            int call = closeCalls.incrementAndGet();
-            if (call == 1) {
-                throw new RuntimeException("first close failed");
+            if (closeCalls.incrementAndGet() == 1) {
+                throw new RuntimeException("close failed");
             }
         });
 
         assertThrows(RuntimeException.class, session::close);
+        assertEquals(42L, session.handle(), "handle accessible after failed close");
         session.close();
+        assertEquals(2, closeCalls.get(), "closeAction retried on second close");
+        assertThrows(IllegalStateException.class, session::handle);
+    }
 
-        assertEquals(2, closeCalls.get());
+    @Test
+    void handle_returnsValue_whenOpen() {
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> {});
+        assertEquals(42L, session.handle());
     }
 
     @Test

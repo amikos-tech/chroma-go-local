@@ -5,6 +5,8 @@ public interface ChromaRuntime extends AutoCloseable {
 
     EmbeddedSession startEmbedded(String configYaml);
 
+    ServerSession startServer(String configYaml);
+
     @Override
     void close();
 }
