@@ -2,6 +2,7 @@ package tech.amikos.chroma.local.core;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.LongConsumer;
 
 public final class EmbeddedSession implements AutoCloseable {
@@ -13,13 +14,15 @@ public final class EmbeddedSession implements AutoCloseable {
     private final BiFunction<Long, String, CompactionResult> compactAllAction;
     private final BiFunction<Long, String, WALPruneResult> pruneWalCollectionAction;
     private final BiFunction<Long, String, WALPruneResult> pruneWalAllAction;
+    private final Function<BackupOptions, BackupResult<EmbeddedSession>> backupAction;
 
     public EmbeddedSession(long handle, LongConsumer closeAction,
             BiFunction<Long, String, RebuildCollectionResult> rebuildAction,
             BiFunction<Long, String, CompactionResult> compactCollectionAction,
             BiFunction<Long, String, CompactionResult> compactAllAction,
             BiFunction<Long, String, WALPruneResult> pruneWalCollectionAction,
-            BiFunction<Long, String, WALPruneResult> pruneWalAllAction) {
+            BiFunction<Long, String, WALPruneResult> pruneWalAllAction,
+            Function<BackupOptions, BackupResult<EmbeddedSession>> backupAction) {
         if (handle == 0L) {
             throw new IllegalArgumentException("embedded handle must be non-zero");
         }
@@ -41,6 +44,9 @@ public final class EmbeddedSession implements AutoCloseable {
         if (pruneWalAllAction == null) {
             throw new IllegalArgumentException("pruneWalAllAction must be set");
         }
+        if (backupAction == null) {
+            throw new IllegalArgumentException("backupAction must be set");
+        }
         this.handle = handle;
         this.closeAction = closeAction;
         this.closed = new AtomicBoolean(false);
@@ -49,6 +55,7 @@ public final class EmbeddedSession implements AutoCloseable {
         this.compactAllAction = compactAllAction;
         this.pruneWalCollectionAction = pruneWalCollectionAction;
         this.pruneWalAllAction = pruneWalAllAction;
+        this.backupAction = backupAction;
     }
 
     private void ensureOpen() {
@@ -111,6 +118,12 @@ public final class EmbeddedSession implements AutoCloseable {
             throw new IllegalArgumentException("options is required");
         }
         return pruneWalAllAction.apply(handle, options.toJson());
+    }
+
+    public BackupResult<EmbeddedSession> backup(BackupOptions options) {
+        ensureOpen();
+        if (options == null) throw new IllegalArgumentException("options is required");
+        return backupAction.apply(options);
     }
 
     @Override

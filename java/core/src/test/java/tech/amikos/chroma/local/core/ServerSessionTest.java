@@ -5,9 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 class ServerSessionTest {
+
+    private static final Function<BackupOptions, BackupResult<ServerSession>> STUB_BACKUP =
+            opts -> { throw new UnsupportedOperationException("stub"); };
 
     private ServerSession createSession(long handle) {
         return new ServerSession(
@@ -16,44 +20,51 @@ class ServerSessionTest {
                 h -> {},
                 h -> 8000,
                 h -> "localhost",
-                h -> "/data"
+                h -> "/data",
+                STUB_BACKUP
         );
     }
 
     @Test
     void constructorRejectsZeroHandle() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(0L, h -> {}, h -> {}, h -> 0, h -> "", h -> ""));
+                () -> new ServerSession(0L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullStopAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, null, h -> {}, h -> 0, h -> "", h -> ""));
+                () -> new ServerSession(1L, null, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullFreeAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, null, h -> 0, h -> "", h -> ""));
+                () -> new ServerSession(1L, h -> {}, null, h -> 0, h -> "", h -> "", STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullPortAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, null, h -> "", h -> ""));
+                () -> new ServerSession(1L, h -> {}, h -> {}, null, h -> "", h -> "", STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullAddressAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, null, h -> ""));
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, null, h -> "", STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullPersistPathAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", null));
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", null, STUB_BACKUP));
+    }
+
+    @Test
+    void constructorRejectsNullBackupAction() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", null));
     }
 
     @Test
@@ -76,7 +87,8 @@ class ServerSessionTest {
                 99L,
                 h -> {}, h -> {},
                 h -> { receivedHandle.set(h); return 9090; },
-                h -> "host", h -> "/path"
+                h -> "host", h -> "/path",
+                STUB_BACKUP
         );
         assertEquals(9090, session.port());
         assertEquals(99L, receivedHandle.get());
@@ -90,7 +102,8 @@ class ServerSessionTest {
                 h -> {}, h -> {},
                 h -> 8000,
                 h -> { receivedHandle.set(h); return "0.0.0.0"; },
-                h -> "/path"
+                h -> "/path",
+                STUB_BACKUP
         );
         assertEquals("0.0.0.0", session.address());
         assertEquals(88L, receivedHandle.get());
@@ -103,7 +116,8 @@ class ServerSessionTest {
                 77L,
                 h -> {}, h -> {},
                 h -> 8000, h -> "host",
-                h -> { receivedHandle.set(h); return "/my/data"; }
+                h -> { receivedHandle.set(h); return "/my/data"; },
+                STUB_BACKUP
         );
         assertEquals("/my/data", session.persistPath());
         assertEquals(77L, receivedHandle.get());
@@ -116,7 +130,8 @@ class ServerSessionTest {
                 h -> {}, h -> {},
                 h -> 8080,
                 h -> "127.0.0.1",
-                h -> "/data"
+                h -> "/data",
+                STUB_BACKUP
         );
         assertEquals("http://127.0.0.1:8080", session.url());
     }
@@ -129,7 +144,8 @@ class ServerSessionTest {
                 1L,
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
-                h -> 8000, h -> "host", h -> "/path"
+                h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP
         );
         session.close();
         assertEquals(1, stopCalls.get());
@@ -144,7 +160,8 @@ class ServerSessionTest {
                 1L,
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
-                h -> 8000, h -> "host", h -> "/path"
+                h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP
         );
         session.close();
         session.close();
@@ -160,7 +177,8 @@ class ServerSessionTest {
                 1L,
                 h -> { throw new RuntimeException("stop failed"); },
                 h -> freeCalls.incrementAndGet(),
-                h -> 8000, h -> "host", h -> "/path"
+                h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP
         );
         assertThrows(RuntimeException.class, session::close);
         assertEquals(1, freeCalls.get(), "freeAction must run even if stopAction throws");
@@ -173,7 +191,8 @@ class ServerSessionTest {
                 1L,
                 h -> { stopCalls.incrementAndGet(); throw new RuntimeException("stop failed"); },
                 h -> {},
-                h -> 8000, h -> "host", h -> "/path"
+                h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP
         );
         assertThrows(RuntimeException.class, session::close);
         assertThrows(IllegalStateException.class, session::port);
@@ -188,7 +207,8 @@ class ServerSessionTest {
                 1L,
                 h -> { throw new RuntimeException("stop failed"); },
                 h -> { throw new RuntimeException("free failed"); },
-                h -> 8000, h -> "host", h -> "/path"
+                h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP
         );
         RuntimeException ex = assertThrows(RuntimeException.class, session::close);
         assertEquals("stop failed", ex.getMessage(), "stop exception propagates as primary");
@@ -232,10 +252,17 @@ class ServerSessionTest {
     }
 
     @Test
-    void backup_throwsUnsupportedOperationException() {
+    void backupRejectsNullOptions() {
         ServerSession session = createSession(1L);
-        assertThrows(UnsupportedOperationException.class,
-                () -> session.backup(null));
+        assertThrows(IllegalArgumentException.class, () -> session.backup(null));
+    }
+
+    @Test
+    void backupThrowsAfterClose() {
+        ServerSession session = createSession(1L);
+        session.close();
+        BackupOptions opts = new BackupOptions.Builder("/tmp/dest").build();
+        assertThrows(IllegalStateException.class, () -> session.backup(opts));
     }
 
     @Test
@@ -252,7 +279,7 @@ class ServerSessionTest {
                 () -> session.pruneCollectionWAL(WALPruneOptions.defaults("coll")));
         assertThrows(IllegalStateException.class,
                 () -> session.pruneAllWAL(null));
-        assertThrows(IllegalStateException.class,
-                () -> session.backup(null));
+        BackupOptions opts = new BackupOptions.Builder("/tmp/dest").build();
+        assertThrows(IllegalStateException.class, () -> session.backup(opts));
     }
 }

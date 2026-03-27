@@ -15,6 +15,14 @@ public final class BackupFileMetadata {
         this.modifiedAt = null;
     }
 
+    BackupFileMetadata(String path, long sizeBytes, String mode, String sha256, String modifiedAt) {
+        this.path = path;
+        this.sizeBytes = sizeBytes;
+        this.mode = mode;
+        this.sha256 = sha256;
+        this.modifiedAt = modifiedAt;
+    }
+
     public String path() { return path; }
     public long sizeBytes() { return sizeBytes; }
     public String mode() { return mode; }

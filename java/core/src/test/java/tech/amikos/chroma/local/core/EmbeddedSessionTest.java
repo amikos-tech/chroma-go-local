@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.LongConsumer;
 import org.junit.jupiter.api.Test;
 
@@ -24,11 +25,13 @@ class EmbeddedSessionTest {
             (h, json) -> { throw new UnsupportedOperationException("stub"); };
     private static final BiFunction<Long, String, WALPruneResult> STUB_PRUNE_WAL_ALL =
             (h, json) -> { throw new UnsupportedOperationException("stub"); };
+    private static final Function<BackupOptions, BackupResult<EmbeddedSession>> STUB_BACKUP =
+            opts -> { throw new UnsupportedOperationException("stub"); };
 
     private static EmbeddedSession create(long handle, LongConsumer closeAction) {
         return new EmbeddedSession(handle, closeAction,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
-                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL);
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP);
     }
 
     // --- Constructor null-rejection tests ---
@@ -47,35 +50,42 @@ class EmbeddedSessionTest {
     void constructorRejectsNullRebuildAction() {
         assertThrows(IllegalArgumentException.class, () -> new EmbeddedSession(42L, ignored -> {},
                 null, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
-                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL));
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullCompactCollectionAction() {
         assertThrows(IllegalArgumentException.class, () -> new EmbeddedSession(42L, ignored -> {},
                 STUB_REBUILD, null, STUB_COMPACT_ALL,
-                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL));
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullCompactAllAction() {
         assertThrows(IllegalArgumentException.class, () -> new EmbeddedSession(42L, ignored -> {},
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, null,
-                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL));
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullPruneWalCollectionAction() {
         assertThrows(IllegalArgumentException.class, () -> new EmbeddedSession(42L, ignored -> {},
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
-                null, STUB_PRUNE_WAL_ALL));
+                null, STUB_PRUNE_WAL_ALL, STUB_BACKUP));
     }
 
     @Test
     void constructorRejectsNullPruneWalAllAction() {
         assertThrows(IllegalArgumentException.class, () -> new EmbeddedSession(42L, ignored -> {},
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
-                STUB_PRUNE_WAL_COLLECTION, null));
+                STUB_PRUNE_WAL_COLLECTION, null, STUB_BACKUP));
+    }
+
+    @Test
+    void constructorRejectsNullBackupAction() {
+        assertThrows(IllegalArgumentException.class, () -> new EmbeddedSession(42L, ignored -> {},
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, null));
     }
 
     // --- Close lifecycle tests ---
@@ -150,6 +160,20 @@ class EmbeddedSessionTest {
         assertThrows(IllegalArgumentException.class, () -> session.pruneAllWAL(null));
     }
 
+    @Test
+    void backupRejectsNullOptions() {
+        EmbeddedSession session = create(42L, ignored -> {});
+        assertThrows(IllegalArgumentException.class, () -> session.backup(null));
+    }
+
+    @Test
+    void backupThrowsAfterClose() {
+        EmbeddedSession session = create(42L, ignored -> {});
+        session.close();
+        BackupOptions opts = new BackupOptions.Builder("/tmp/dest").build();
+        assertThrows(IllegalStateException.class, () -> session.backup(opts));
+    }
+
     // --- Convenience overload delegation tests ---
 
     @Test
@@ -161,7 +185,7 @@ class EmbeddedSessionTest {
         EmbeddedSession session = new EmbeddedSession(42L, ignored -> {},
                 (h, json) -> { capturedHandle.set(h); capturedJson.set(json); return fakeResult; },
                 STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
-                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL);
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP);
 
         RebuildCollectionResult result = session.rebuildCollection("myCollection");
 
@@ -181,7 +205,7 @@ class EmbeddedSessionTest {
                 STUB_REBUILD,
                 (h, json) -> { capturedHandle.set(h); capturedJson.set(json); return fakeResult; },
                 STUB_COMPACT_ALL,
-                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL);
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP);
 
         CompactionResult result = session.compactCollection("myCollection");
 
@@ -200,7 +224,7 @@ class EmbeddedSessionTest {
         EmbeddedSession session = new EmbeddedSession(42L, ignored -> {},
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 (h, json) -> { capturedHandle.set(h); capturedJson.set(json); return fakeResult; },
-                STUB_PRUNE_WAL_ALL);
+                STUB_PRUNE_WAL_ALL, STUB_BACKUP);
 
         WALPruneResult result = session.pruneCollectionWAL("myCollection");
 
