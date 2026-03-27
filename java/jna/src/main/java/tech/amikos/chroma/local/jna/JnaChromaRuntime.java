@@ -5,6 +5,9 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import java.nio.file.Path;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
+import tech.amikos.chroma.local.core.BackupExecutor;
+import tech.amikos.chroma.local.core.BackupOptions;
+import tech.amikos.chroma.local.core.BackupResult;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -100,6 +103,8 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     protected EmbeddedSession doStartEmbedded(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_embedded_start_from_string(configYaml)));
+        String persistPath = BackupExecutor.extractPersistPath(configYaml);
+        final String savedYaml = configYaml;
         return new EmbeddedSession(
                 handle,
                 this::embeddedFree,
@@ -117,20 +122,27 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
                         WALPruneResult.class),
                 (h, json) -> callFfiJson(
                         () -> Pointer.nativeValue(bindings.chroma_embedded_prune_wal_all(new Pointer(h), json)),
-                        WALPruneResult.class));
+                        WALPruneResult.class),
+                opts -> BackupExecutor.execute("embedded", persistPath, opts,
+                        () -> embeddedFree(handle), () -> doStartEmbedded(savedYaml)));
     }
 
     @Override
     protected ServerSession doStartServer(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_server_start_from_string(configYaml)));
+        String persistPath = serverPersistPath(handle);
+        final String savedYaml = configYaml;
         return new ServerSession(
                 handle,
                 this::serverStop,
                 this::serverFree,
                 this::serverPort,
                 this::serverAddress,
-                this::serverPersistPath);
+                this::serverPersistPath,
+                opts -> BackupExecutor.execute("server", persistPath, opts,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        () -> doStartServer(savedYaml)));
     }
 
     private void serverStop(long handle) {

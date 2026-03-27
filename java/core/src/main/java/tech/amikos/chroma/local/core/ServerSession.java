@@ -1,6 +1,7 @@
 package tech.amikos.chroma.local.core;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 import java.util.function.LongToIntFunction;
@@ -13,22 +14,26 @@ public final class ServerSession implements AutoCloseable {
     private final LongToIntFunction portAccessor;
     private final LongFunction<String> addressAccessor;
     private final LongFunction<String> persistPathAccessor;
+    private final Function<BackupOptions, BackupResult<ServerSession>> backupAction;
 
     public ServerSession(long handle, LongConsumer stopAction, LongConsumer freeAction,
                          LongToIntFunction portAccessor, LongFunction<String> addressAccessor,
-                         LongFunction<String> persistPathAccessor) {
+                         LongFunction<String> persistPathAccessor,
+                         Function<BackupOptions, BackupResult<ServerSession>> backupAction) {
         if (handle == 0L) throw new IllegalArgumentException("server handle must be non-zero");
         if (stopAction == null) throw new IllegalArgumentException("stopAction must be set");
         if (freeAction == null) throw new IllegalArgumentException("freeAction must be set");
         if (portAccessor == null) throw new IllegalArgumentException("portAccessor must be set");
         if (addressAccessor == null) throw new IllegalArgumentException("addressAccessor must be set");
         if (persistPathAccessor == null) throw new IllegalArgumentException("persistPathAccessor must be set");
+        if (backupAction == null) throw new IllegalArgumentException("backupAction must be set");
         this.handle = handle;
         this.stopAction = stopAction;
         this.freeAction = freeAction;
         this.portAccessor = portAccessor;
         this.addressAccessor = addressAccessor;
         this.persistPathAccessor = persistPathAccessor;
+        this.backupAction = backupAction;
         this.closed = new AtomicBoolean(false);
     }
 
@@ -116,8 +121,9 @@ public final class ServerSession implements AutoCloseable {
         throw new UnsupportedOperationException("pruneAllWAL will be wired in Phase 10");
     }
 
-    public BackupManifest backup(BackupOptions options) {
+    public BackupResult<ServerSession> backup(BackupOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("backup will be wired in Phase 9");
+        if (options == null) throw new IllegalArgumentException("options is required");
+        return backupAction.apply(options);
     }
 }

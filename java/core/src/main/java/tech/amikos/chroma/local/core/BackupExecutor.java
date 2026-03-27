@@ -25,7 +25,7 @@ import java.util.function.Supplier;
 
 import org.yaml.snakeyaml.Yaml;
 
-final class BackupExecutor {
+public final class BackupExecutor {
 
     static final String MANIFEST_FILENAME = "backup_manifest.json";
     static final String SNAPSHOT_DIRNAME = "persist";
@@ -38,8 +38,8 @@ final class BackupExecutor {
 
     private BackupExecutor() {}
 
-    static <S> BackupResult<S> execute(String mode, String persistPath, BackupOptions options,
-                                       Runnable closeAction, Supplier<S> restartAction) {
+    public static <S> BackupResult<S> execute(String mode, String persistPath, BackupOptions options,
+                                              Runnable closeAction, Supplier<S> restartAction) {
         validateModeOptions(mode, options);
 
         Path dest = Path.of(options.destinationPath()).toAbsolutePath().normalize();
@@ -92,7 +92,7 @@ final class BackupExecutor {
     }
 
     @SuppressWarnings("unchecked")
-    static String extractPersistPath(String configYaml) {
+    public static String extractPersistPath(String configYaml) {
         Yaml yaml = new Yaml();
         Object loaded = yaml.load(configYaml);
         if (!(loaded instanceof Map)) {

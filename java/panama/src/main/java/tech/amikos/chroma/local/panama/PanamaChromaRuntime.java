@@ -10,6 +10,9 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
 import java.util.Locale;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
+import tech.amikos.chroma.local.core.BackupExecutor;
+import tech.amikos.chroma.local.core.BackupOptions;
+import tech.amikos.chroma.local.core.BackupResult;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -192,6 +195,8 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to start embedded runtime", t);
             }
         });
+        String persistPath = BackupExecutor.extractPersistPath(configYaml);
+        final String savedYaml = configYaml;
         return new EmbeddedSession(
                 handle,
                 this::embeddedFree,
@@ -249,7 +254,9 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                         if (t instanceof Error error) throw error;
                         throw new ChromaException("failed to call embedded prune wal all", t);
                     }
-                }, WALPruneResult.class));
+                }, WALPruneResult.class),
+                opts -> BackupExecutor.execute("embedded", persistPath, opts,
+                        () -> embeddedFree(handle), () -> doStartEmbedded(savedYaml)));
     }
 
     @Override
@@ -264,13 +271,18 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to start server runtime", t);
             }
         });
+        String persistPath = serverPersistPath(handle);
+        final String savedYaml = configYaml;
         return new ServerSession(
                 handle,
                 this::serverStop,
                 this::serverFree,
                 this::serverPort,
                 this::serverAddress,
-                this::serverPersistPath);
+                this::serverPersistPath,
+                opts -> BackupExecutor.execute("server", persistPath, opts,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        () -> doStartServer(savedYaml)));
     }
 
     private void serverStop(long handleAddress) {
