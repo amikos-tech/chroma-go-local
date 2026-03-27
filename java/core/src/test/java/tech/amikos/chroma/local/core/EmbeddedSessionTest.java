@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,8 +34,6 @@ class EmbeddedSessionTest {
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, STUB_BACKUP);
     }
-
-    // --- Constructor null-rejection tests ---
 
     @Test
     void constructorRejectsZeroHandle() {
@@ -88,8 +87,6 @@ class EmbeddedSessionTest {
                 STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL, null));
     }
 
-    // --- Close lifecycle tests ---
-
     @Test
     void closeInvokesActionOnce() {
         AtomicInteger closeCalls = new AtomicInteger();
@@ -112,7 +109,7 @@ class EmbeddedSessionTest {
         assertThrows(RuntimeException.class, session::close);
         assertThrows(IllegalStateException.class, session::handle, "handle poisoned after failed close");
         session.close();
-        assertEquals(1, closeCalls.get(), "closeAction must not be retried — native handle is in unknown state");
+        assertEquals(1, closeCalls.get(), "closeAction must not be retried");
     }
 
     @Test
@@ -127,8 +124,6 @@ class EmbeddedSessionTest {
         session.close();
         assertThrows(IllegalStateException.class, session::handle);
     }
-
-    // --- Input validation tests ---
 
     @Test
     void rebuildCollectionRejectsNullOptions() {
@@ -174,8 +169,6 @@ class EmbeddedSessionTest {
         assertThrows(IllegalStateException.class, () -> session.backup(opts));
     }
 
-    // --- Convenience overload delegation tests ---
-
     @Test
     void rebuildCollectionConvenienceOverloadDelegates() {
         AtomicLong capturedHandle = new AtomicLong();
@@ -213,6 +206,81 @@ class EmbeddedSessionTest {
         assertEquals(42L, capturedHandle.get());
         assertNotNull(capturedJson.get());
         assertTrue(capturedJson.get().contains("myCollection"));
+    }
+
+    @Test
+    void backupDelegatesAndInvalidatesSession() {
+        BackupManifest manifest = new BackupManifest("v1", "embedded", "now", "java",
+                java.util.List.of("/src"), "/dst", "/dst/persist", "/dst/manifest.json",
+                false, 0, 0, null);
+        BackupResult<EmbeddedSession> fakeResult = new BackupResult<>(manifest, null);
+        AtomicReference<BackupOptions> capturedOpts = new AtomicReference<>();
+
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> {},
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL,
+                opts -> { capturedOpts.set(opts); return fakeResult; });
+
+        BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
+        BackupResult<EmbeddedSession> result = session.backup(options);
+
+        assertEquals(fakeResult, result);
+        assertEquals(options, capturedOpts.get());
+        assertThrows(IllegalStateException.class, session::handle,
+                "session must be invalidated after backup");
+    }
+
+    @Test
+    void backupSetsClosedAfterActionNotBefore() {
+        AtomicBoolean wasOpenDuringAction = new AtomicBoolean(false);
+        BackupManifest manifest = new BackupManifest("v1", "embedded", "now", "java",
+                java.util.List.of("/src"), "/dst", "/dst/persist", "/dst/manifest.json",
+                false, 0, 0, null);
+
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> {},
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL,
+                opts -> {
+                    wasOpenDuringAction.set(true);
+                    return new BackupResult<>(manifest, null);
+                });
+
+        session.backup(new BackupOptions.Builder("/tmp/backup").build());
+        assertTrue(wasOpenDuringAction.get(), "backupAction must execute before session is marked closed");
+        assertThrows(IllegalStateException.class, session::handle,
+                "session must be closed after backup completes");
+    }
+
+    @Test
+    void closeAfterBackupIsNoOp() {
+        BackupManifest manifest = new BackupManifest("v1", "embedded", "now", "java",
+                java.util.List.of("/src"), "/dst", "/dst/persist", "/dst/manifest.json",
+                false, 0, 0, null);
+        AtomicInteger closeCalls = new AtomicInteger();
+
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> closeCalls.incrementAndGet(),
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL,
+                opts -> new BackupResult<>(manifest, null));
+
+        session.backup(new BackupOptions.Builder("/tmp/backup").build());
+        session.close();
+        assertEquals(0, closeCalls.get(), "closeAction must not be called after backup invalidated the session");
+    }
+
+    @Test
+    void backupFailureStillInvalidatesSession() {
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> {},
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL,
+                opts -> { throw new RuntimeException("backup failed"); });
+
+        BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
+        assertThrows(RuntimeException.class, () -> session.backup(options));
+
+        assertThrows(IllegalStateException.class, session::handle,
+                "session must be invalidated even when backup fails");
+        session.close();
     }
 
     @Test

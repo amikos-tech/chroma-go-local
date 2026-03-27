@@ -4,13 +4,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class BackupResultTest {
 
+    private static BackupManifest testManifest() {
+        return new BackupManifest("v1", "embedded", "now", "java",
+                List.of("/src"), "/dst", "/dst/persist", "/dst/manifest.json",
+                false, 0, 0, null);
+    }
+
     @Test
     void manifestAndSessionAccessors() {
-        BackupManifest manifest = new BackupManifest();
+        BackupManifest manifest = testManifest();
         String session = "test-session";
         BackupResult<String> result = new BackupResult<>(manifest, session);
         assertEquals(manifest, result.manifest());
@@ -24,7 +31,7 @@ class BackupResultTest {
 
     @Test
     void allowsNullSession() {
-        BackupManifest manifest = new BackupManifest();
+        BackupManifest manifest = testManifest();
         BackupResult<String> result = new BackupResult<>(manifest, null);
         assertEquals(manifest, result.manifest());
         assertNull(result.session());

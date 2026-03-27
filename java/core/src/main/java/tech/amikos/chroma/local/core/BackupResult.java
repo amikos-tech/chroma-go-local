@@ -2,17 +2,9 @@ package tech.amikos.chroma.local.core;
 
 import java.util.Objects;
 
-public final class BackupResult<S> {
-    private final BackupManifest manifest;
-    private final S session;
-
-    public BackupResult(BackupManifest manifest, S session) {
-        this.manifest = Objects.requireNonNull(manifest, "manifest");
-        this.session = session;
+/** @param session the new session, or null when backup was configured to leave the system inactive */
+public record BackupResult<S>(BackupManifest manifest, S session) {
+    public BackupResult {
+        Objects.requireNonNull(manifest, "manifest");
     }
-
-    public BackupManifest manifest() { return manifest; }
-
-    /** Returns the new session after backup, or null if left closed/stopped. */
-    public S session() { return session; }
 }

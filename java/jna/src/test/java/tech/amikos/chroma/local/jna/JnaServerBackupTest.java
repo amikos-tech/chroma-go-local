@@ -59,13 +59,13 @@ class JnaServerBackupTest {
     }
 
     @Test
-    void serverBackupWithLeaveStopped(
+    void serverBackupWithLeaveInactive(
             @TempDir(cleanup = CleanupMode.NEVER) Path persistDir,
             @TempDir Path backupDir) throws Exception {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
-        Files.writeString(persistDir.resolve("sentinel.txt"), "leave-stopped-test");
+        Files.writeString(persistDir.resolve("sentinel.txt"), "leave-inactive-test");
 
         int port = findFreePort();
         String yaml = new ServerConfigBuilder()
@@ -80,41 +80,11 @@ class JnaServerBackupTest {
         try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath)) {
             ServerSession session = runtime.startServer(yaml);
             BackupResult<ServerSession> result = session.backup(
-                    new BackupOptions.Builder(dest.toString()).leaveStopped(true).build());
+                    new BackupOptions.Builder(dest.toString()).leaveInactive(true).build());
 
             assertNull(result.session());
             assertNotNull(result.manifest());
             assertTrue(Files.exists(dest.resolve("backup_manifest.json")));
-        }
-    }
-
-    @Test
-    void serverBackupRejectsLeaveClosed(
-            @TempDir(cleanup = CleanupMode.NEVER) Path persistDir,
-            @TempDir Path backupDir) throws Exception {
-        String libPath = System.getenv("CHROMA_LIB_PATH");
-        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
-
-        int port = findFreePort();
-        String yaml = new ServerConfigBuilder()
-                .port(port)
-                .listenAddress("127.0.0.1")
-                .persistPath(persistDir.toAbsolutePath().toString())
-                .allowReset(true)
-                .build();
-
-        Path dest = backupDir.resolve("output");
-
-        try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath)) {
-            ServerSession session = runtime.startServer(yaml);
-            try {
-                IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                        () -> session.backup(
-                                new BackupOptions.Builder(dest.toString()).leaveClosed(true).build()));
-                assertTrue(ex.getMessage().contains("leaveClosed"));
-            } finally {
-                session.close();
-            }
         }
     }
 

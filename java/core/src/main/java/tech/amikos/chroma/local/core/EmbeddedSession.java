@@ -1,6 +1,7 @@
 package tech.amikos.chroma.local.core;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
@@ -9,6 +10,7 @@ public final class EmbeddedSession implements AutoCloseable {
     private final long handle;
     private final LongConsumer closeAction;
     private final AtomicBoolean closed;
+    private final ReentrantLock backupLock = new ReentrantLock();
     private final BiFunction<Long, String, RebuildCollectionResult> rebuildAction;
     private final BiFunction<Long, String, CompactionResult> compactCollectionAction;
     private final BiFunction<Long, String, CompactionResult> compactAllAction;
@@ -111,7 +113,7 @@ public final class EmbeddedSession implements AutoCloseable {
         return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
-    /** Prunes WAL rows for all collections. The {@code name} field in options is ignored. */
+    /** The {@code name} field in options is ignored. */
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
         ensureOpen();
         if (options == null) {
@@ -121,15 +123,29 @@ public final class EmbeddedSession implements AutoCloseable {
     }
 
     public BackupResult<EmbeddedSession> backup(BackupOptions options) {
-        ensureOpen();
-        if (options == null) throw new IllegalArgumentException("options is required");
-        return backupAction.apply(options);
+        backupLock.lock();
+        try {
+            ensureOpen();
+            if (options == null) throw new IllegalArgumentException("options is required");
+            try {
+                return backupAction.apply(options);
+            } finally {
+                closed.set(true);
+            }
+        } finally {
+            backupLock.unlock();
+        }
     }
 
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true)) {
-            closeAction.accept(handle);
+        backupLock.lock();
+        try {
+            if (closed.compareAndSet(false, true)) {
+                closeAction.accept(handle);
+            }
+        } finally {
+            backupLock.unlock();
         }
     }
 }

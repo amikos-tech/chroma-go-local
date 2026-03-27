@@ -55,13 +55,13 @@ class JnaEmbeddedBackupTest {
     }
 
     @Test
-    void embeddedBackupWithLeaveClosed(
+    void embeddedBackupWithLeaveInactive(
             @TempDir(cleanup = CleanupMode.NEVER) Path persistDir,
             @TempDir Path backupDir) throws Exception {
         String libPath = System.getenv("CHROMA_LIB_PATH");
         Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
 
-        Files.writeString(persistDir.resolve("sentinel.txt"), "leave-closed-test");
+        Files.writeString(persistDir.resolve("sentinel.txt"), "leave-inactive-test");
 
         String yaml = new EmbeddedConfigBuilder()
                 .persistPath(persistDir.toAbsolutePath().toString())
@@ -73,34 +73,11 @@ class JnaEmbeddedBackupTest {
         try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath)) {
             EmbeddedSession session = runtime.startEmbedded(yaml);
             BackupResult<EmbeddedSession> result = session.backup(
-                    new BackupOptions.Builder(dest.toString()).leaveClosed(true).build());
+                    new BackupOptions.Builder(dest.toString()).leaveInactive(true).build());
 
             assertNull(result.session());
             assertNotNull(result.manifest());
             assertTrue(Files.exists(dest.resolve("backup_manifest.json")));
-        }
-    }
-
-    @Test
-    void embeddedBackupRejectsLeaveStopped(
-            @TempDir(cleanup = CleanupMode.NEVER) Path persistDir,
-            @TempDir Path backupDir) {
-        String libPath = System.getenv("CHROMA_LIB_PATH");
-        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
-
-        String yaml = new EmbeddedConfigBuilder()
-                .persistPath(persistDir.toAbsolutePath().toString())
-                .allowReset(true)
-                .build();
-
-        Path dest = backupDir.resolve("output");
-
-        try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath);
-             EmbeddedSession session = runtime.startEmbedded(yaml)) {
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                    () -> session.backup(
-                            new BackupOptions.Builder(dest.toString()).leaveStopped(true).build()));
-            assertTrue(ex.getMessage().contains("leaveStopped"));
         }
     }
 

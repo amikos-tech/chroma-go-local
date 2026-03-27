@@ -1,6 +1,7 @@
 package tech.amikos.chroma.local.core;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
@@ -9,6 +10,7 @@ import java.util.function.LongToIntFunction;
 public final class ServerSession implements AutoCloseable {
     private final long handle;
     private final AtomicBoolean closed;
+    private final ReentrantLock backupLock = new ReentrantLock();
     private final LongConsumer stopAction;
     private final LongConsumer freeAction;
     private final LongToIntFunction portAccessor;
@@ -49,32 +51,37 @@ public final class ServerSession implements AutoCloseable {
 
     public String persistPath() { ensureOpen(); return persistPathAccessor.apply(handle); }
 
-    // TLS not yet supported — plain HTTP only (see issue tracker for self-signed cert support)
+    // TLS not yet supported
     public String url() {
         return "http://" + address() + ":" + port();
     }
 
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true)) {
-            Throwable stopError = null;
-            try {
-                stopAction.accept(handle);
-            } catch (Throwable t) {
-                stopError = t;
-            }
-            try {
-                freeAction.accept(handle);
-            } catch (Throwable t) {
+        backupLock.lock();
+        try {
+            if (closed.compareAndSet(false, true)) {
+                Throwable stopError = null;
+                try {
+                    stopAction.accept(handle);
+                } catch (Throwable t) {
+                    stopError = t;
+                }
+                try {
+                    freeAction.accept(handle);
+                } catch (Throwable t) {
+                    if (stopError != null) {
+                        stopError.addSuppressed(t);
+                        throw rethrow(stopError);
+                    }
+                    throw rethrow(t);
+                }
                 if (stopError != null) {
-                    stopError.addSuppressed(t);
                     throw rethrow(stopError);
                 }
-                throw rethrow(t);
             }
-            if (stopError != null) {
-                throw rethrow(stopError);
-            }
+        } finally {
+            backupLock.unlock();
         }
     }
 
@@ -85,7 +92,7 @@ public final class ServerSession implements AutoCloseable {
 
     public RebuildCollectionResult rebuildCollection(RebuildOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("rebuildCollection will be wired in Phase 10");
+        throw new UnsupportedOperationException("rebuildCollection is not yet supported for server sessions");
     }
 
     public RebuildCollectionResult rebuildCollection(String name) {
@@ -94,7 +101,7 @@ public final class ServerSession implements AutoCloseable {
 
     public CompactionResult compactCollection(CompactCollectionRequest request) {
         ensureOpen();
-        throw new UnsupportedOperationException("compactCollection will be wired in Phase 10");
+        throw new UnsupportedOperationException("compactCollection is not yet supported for server sessions");
     }
 
     public CompactionResult compactCollection(String name) {
@@ -103,27 +110,36 @@ public final class ServerSession implements AutoCloseable {
 
     public CompactionResult compactAll(CompactAllRequest request) {
         ensureOpen();
-        throw new UnsupportedOperationException("compactAll will be wired in Phase 10");
+        throw new UnsupportedOperationException("compactAll is not yet supported for server sessions");
     }
 
     public WALPruneResult pruneCollectionWAL(WALPruneOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("pruneCollectionWAL will be wired in Phase 10");
+        throw new UnsupportedOperationException("pruneCollectionWAL is not yet supported for server sessions");
     }
 
     public WALPruneResult pruneCollectionWAL(String name) {
         return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
-    /** Prunes WAL rows for all collections. The {@code name} field in options is ignored. */
+    /** The {@code name} field in options is ignored. */
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
         ensureOpen();
-        throw new UnsupportedOperationException("pruneAllWAL will be wired in Phase 10");
+        throw new UnsupportedOperationException("pruneAllWAL is not yet supported for server sessions");
     }
 
     public BackupResult<ServerSession> backup(BackupOptions options) {
-        ensureOpen();
-        if (options == null) throw new IllegalArgumentException("options is required");
-        return backupAction.apply(options);
+        backupLock.lock();
+        try {
+            ensureOpen();
+            if (options == null) throw new IllegalArgumentException("options is required");
+            try {
+                return backupAction.apply(options);
+            } finally {
+                closed.set(true);
+            }
+        } finally {
+            backupLock.unlock();
+        }
     }
 }

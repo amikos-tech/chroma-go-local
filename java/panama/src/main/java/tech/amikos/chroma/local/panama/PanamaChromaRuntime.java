@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.Locale;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.BackupExecutor;
+import tech.amikos.chroma.local.core.BackupMode;
 import tech.amikos.chroma.local.core.BackupOptions;
 import tech.amikos.chroma.local.core.BackupResult;
 import tech.amikos.chroma.local.core.ChromaException;
@@ -195,7 +196,13 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to start embedded runtime", t);
             }
         });
-        String persistPath = BackupExecutor.extractPersistPath(configYaml);
+        String persistPath;
+        try {
+            persistPath = BackupExecutor.extractPersistPath(configYaml);
+        } catch (RuntimeException e) {
+            embeddedFree(handle);
+            throw e;
+        }
         final String savedYaml = configYaml;
         return new EmbeddedSession(
                 handle,
@@ -255,7 +262,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                         throw new ChromaException("failed to call embedded prune wal all", t);
                     }
                 }, WALPruneResult.class),
-                opts -> BackupExecutor.execute("embedded", persistPath, opts,
+                opts -> BackupExecutor.execute(BackupMode.EMBEDDED, persistPath, opts,
                         () -> embeddedFree(handle), () -> doStartEmbedded(savedYaml)));
     }
 
@@ -280,7 +287,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 this::serverPort,
                 this::serverAddress,
                 this::serverPersistPath,
-                opts -> BackupExecutor.execute("server", persistPath, opts,
+                opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, opts,
                         () -> { serverStop(handle); serverFree(handle); },
                         () -> doStartServer(savedYaml)));
     }

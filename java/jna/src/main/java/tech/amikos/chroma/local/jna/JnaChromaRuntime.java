@@ -6,6 +6,7 @@ import com.sun.jna.Pointer;
 import java.nio.file.Path;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.BackupExecutor;
+import tech.amikos.chroma.local.core.BackupMode;
 import tech.amikos.chroma.local.core.BackupOptions;
 import tech.amikos.chroma.local.core.BackupResult;
 import tech.amikos.chroma.local.core.ChromaException;
@@ -103,7 +104,13 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     protected EmbeddedSession doStartEmbedded(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_embedded_start_from_string(configYaml)));
-        String persistPath = BackupExecutor.extractPersistPath(configYaml);
+        String persistPath;
+        try {
+            persistPath = BackupExecutor.extractPersistPath(configYaml);
+        } catch (RuntimeException e) {
+            embeddedFree(handle);
+            throw e;
+        }
         final String savedYaml = configYaml;
         return new EmbeddedSession(
                 handle,
@@ -123,7 +130,7 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
                 (h, json) -> callFfiJson(
                         () -> Pointer.nativeValue(bindings.chroma_embedded_prune_wal_all(new Pointer(h), json)),
                         WALPruneResult.class),
-                opts -> BackupExecutor.execute("embedded", persistPath, opts,
+                opts -> BackupExecutor.execute(BackupMode.EMBEDDED, persistPath, opts,
                         () -> embeddedFree(handle), () -> doStartEmbedded(savedYaml)));
     }
 
@@ -140,7 +147,7 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
                 this::serverPort,
                 this::serverAddress,
                 this::serverPersistPath,
-                opts -> BackupExecutor.execute("server", persistPath, opts,
+                opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, opts,
                         () -> { serverStop(handle); serverFree(handle); },
                         () -> doStartServer(savedYaml)));
     }

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 import org.yaml.snakeyaml.Yaml;
@@ -38,9 +39,13 @@ public final class BackupExecutor {
 
     private BackupExecutor() {}
 
-    public static <S> BackupResult<S> execute(String mode, String persistPath, BackupOptions options,
+    public static <S> BackupResult<S> execute(BackupMode mode, String persistPath, BackupOptions options,
                                               Runnable closeAction, Supplier<S> restartAction) {
-        validateModeOptions(mode, options);
+        Objects.requireNonNull(mode, "mode");
+        Objects.requireNonNull(persistPath, "persistPath");
+        Objects.requireNonNull(options, "options");
+        Objects.requireNonNull(closeAction, "closeAction");
+        Objects.requireNonNull(restartAction, "restartAction");
 
         Path dest = Path.of(options.destinationPath()).toAbsolutePath().normalize();
         Path source = Path.of(persistPath).toAbsolutePath().normalize();
@@ -51,22 +56,31 @@ public final class BackupExecutor {
         }
 
         ensureEmptyDir(dest);
-        closeAction.run();
 
+        try {
+            closeAction.run();
+        } catch (RuntimeException e) {
+            IOException cleanupErr = deleteDirectoryQuietly(dest);
+            if (cleanupErr != null) e.addSuppressed(cleanupErr);
+            throw e;
+        }
+
+        IOException backupError = null;
+        BackupManifest manifest = null;
         try {
             Path snapshotPath = dest.resolve(SNAPSHOT_DIRNAME);
             CopyResult copyResult;
             if (Files.isDirectory(source)) {
                 copyResult = copyDirectory(source, snapshotPath, options.includeMetadata());
             } else {
-                Files.createDirectories(snapshotPath);
-                copyResult = new CopyResult(0, 0, List.of());
+                throw new IOException(
+                        "backup source path does not exist or is not a directory: " + source);
             }
 
             Path manifestPath = dest.resolve(MANIFEST_FILENAME);
-            BackupManifest manifest = new BackupManifest(
+            manifest = new BackupManifest(
                     SCHEMA_VERSION,
-                    mode,
+                    mode.toWire(),
                     Instant.now().toString(),
                     "java",
                     List.of(source.toString()),
@@ -79,22 +93,56 @@ public final class BackupExecutor {
                     options.includeMetadata() ? copyResult.files : null);
 
             writeManifest(manifestPath, manifest);
-
-            boolean leaveInactive = "embedded".equals(mode) ? options.leaveClosed() : options.leaveStopped();
-            if (leaveInactive) {
-                return new BackupResult<>(manifest, null);
-            }
-            S newSession = restartAction.get();
-            return new BackupResult<>(manifest, newSession);
         } catch (IOException e) {
-            throw new ChromaException("backup failed: " + e.getMessage(), e);
+            backupError = e;
         }
+
+        if (options.leaveInactive()) {
+            if (backupError != null) {
+                IOException cleanupErr = deleteDirectoryQuietly(dest);
+                if (cleanupErr != null) backupError.addSuppressed(cleanupErr);
+                throw toRuntimeException(backupError);
+            }
+            return new BackupResult<>(manifest, null);
+        }
+
+        S newSession;
+        try {
+            newSession = restartAction.get();
+        } catch (RuntimeException restartErr) {
+            if (backupError != null) {
+                IOException cleanupErr = deleteDirectoryQuietly(dest);
+                if (cleanupErr != null) backupError.addSuppressed(cleanupErr);
+            }
+            ChromaException combined = new ChromaException(
+                    "backup failed and restart also failed: " + restartErr.getMessage(), restartErr);
+            if (backupError != null) {
+                combined.addSuppressed(backupError);
+            }
+            throw combined;
+        }
+
+        if (backupError != null) {
+            throw toRuntimeException(backupError);
+        }
+
+        return new BackupResult<>(manifest, newSession);
+    }
+
+    private static RuntimeException toRuntimeException(Throwable t) {
+        if (t instanceof RuntimeException re) return re;
+        return new ChromaException("backup failed: " + t.getMessage(), t);
     }
 
     @SuppressWarnings("unchecked")
     public static String extractPersistPath(String configYaml) {
         Yaml yaml = new Yaml();
-        Object loaded = yaml.load(configYaml);
+        Object loaded;
+        try {
+            loaded = yaml.load(configYaml);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("invalid config YAML: " + e.getMessage(), e);
+        }
         if (!(loaded instanceof Map)) {
             throw new IllegalArgumentException("invalid config YAML");
         }
@@ -110,15 +158,6 @@ public final class BackupExecutor {
             throw new IllegalArgumentException("persist_path not found in config YAML");
         }
         return persistPath.toString();
-    }
-
-    private static void validateModeOptions(String mode, BackupOptions options) {
-        if ("embedded".equals(mode) && options.leaveStopped()) {
-            throw new IllegalArgumentException("leaveStopped is only valid for server backups");
-        }
-        if ("server".equals(mode) && options.leaveClosed()) {
-            throw new IllegalArgumentException("leaveClosed is only valid for embedded backups");
-        }
     }
 
     private static boolean isWithinPath(Path path, Path parent) {
@@ -204,7 +243,7 @@ public final class BackupExecutor {
         }
     }
 
-    private static String readFileMode(Path file) {
+    private static String readFileMode(Path file) throws IOException {
         try {
             var perms = Files.getPosixFilePermissions(file);
             String permStr = PosixFilePermissions.toString(perms);
@@ -219,8 +258,31 @@ public final class BackupExecutor {
             if (permStr.charAt(7) == 'w') mode |= 02;
             if (permStr.charAt(8) == 'x') mode |= 01;
             return String.format("0%o", mode);
-        } catch (UnsupportedOperationException | IOException e) {
+        } catch (UnsupportedOperationException e) {
             return "0644";
+        }
+    }
+
+    static IOException deleteDirectoryQuietly(Path dir) {
+        try {
+            if (!Files.exists(dir)) return null;
+            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    Files.deleteIfExists(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
+                    if (exc != null) throw exc;
+                    Files.deleteIfExists(d);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            return null;
+        } catch (IOException e) {
+            return e;
         }
     }
 

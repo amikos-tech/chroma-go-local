@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
@@ -263,6 +264,69 @@ class ServerSessionTest {
         session.close();
         BackupOptions opts = new BackupOptions.Builder("/tmp/dest").build();
         assertThrows(IllegalStateException.class, () -> session.backup(opts));
+    }
+
+    @Test
+    void backupDelegatesAndInvalidatesSession() {
+        BackupManifest manifest = new BackupManifest("v1", "server", "now", "java",
+                java.util.List.of("/src"), "/dst", "/dst/persist", "/dst/manifest.json",
+                false, 0, 0, null);
+        BackupResult<ServerSession> fakeResult = new BackupResult<>(manifest, null);
+        AtomicReference<BackupOptions> capturedOpts = new AtomicReference<>();
+
+        ServerSession session = new ServerSession(
+                42L,
+                h -> {}, h -> {},
+                h -> 8000, h -> "host", h -> "/path",
+                opts -> { capturedOpts.set(opts); return fakeResult; }
+        );
+
+        BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
+        BackupResult<ServerSession> result = session.backup(options);
+
+        assertEquals(fakeResult, result);
+        assertEquals(options, capturedOpts.get());
+        assertThrows(IllegalStateException.class, session::port,
+                "session must be invalidated after backup");
+    }
+
+    @Test
+    void closeAfterBackupIsNoOp() {
+        BackupManifest manifest = new BackupManifest("v1", "server", "now", "java",
+                java.util.List.of("/src"), "/dst", "/dst/persist", "/dst/manifest.json",
+                false, 0, 0, null);
+        AtomicInteger stopCalls = new AtomicInteger();
+        AtomicInteger freeCalls = new AtomicInteger();
+
+        ServerSession session = new ServerSession(
+                42L,
+                h -> stopCalls.incrementAndGet(),
+                h -> freeCalls.incrementAndGet(),
+                h -> 8000, h -> "host", h -> "/path",
+                opts -> new BackupResult<>(manifest, null)
+        );
+
+        session.backup(new BackupOptions.Builder("/tmp/backup").build());
+        session.close();
+        assertEquals(0, stopCalls.get(), "stopAction must not be called after backup invalidated the session");
+        assertEquals(0, freeCalls.get(), "freeAction must not be called after backup invalidated the session");
+    }
+
+    @Test
+    void backupFailureStillInvalidatesSession() {
+        ServerSession session = new ServerSession(
+                42L,
+                h -> {}, h -> {},
+                h -> 8000, h -> "host", h -> "/path",
+                opts -> { throw new RuntimeException("backup failed"); }
+        );
+
+        BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
+        assertThrows(RuntimeException.class, () -> session.backup(options));
+
+        assertThrows(IllegalStateException.class, session::port,
+                "session must be invalidated even when backup fails");
+        session.close();
     }
 
     @Test
