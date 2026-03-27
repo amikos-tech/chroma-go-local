@@ -6,8 +6,8 @@ public record BackupFileMetadata(String path, long sizeBytes, String mode, Strin
     public BackupFileMetadata {
         Objects.requireNonNull(path, "path");
         if (sizeBytes < 0) throw new IllegalArgumentException("sizeBytes must be non-negative");
+        Objects.requireNonNull(mode, "mode");
         Objects.requireNonNull(sha256, "sha256");
         Objects.requireNonNull(modifiedAt, "modifiedAt");
-        // mode is intentionally nullable (fallback "0644" on non-POSIX systems)
     }
 }

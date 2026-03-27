@@ -20,11 +20,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
-
-import org.yaml.snakeyaml.Yaml;
 
 public final class BackupExecutor {
 
@@ -39,10 +36,12 @@ public final class BackupExecutor {
 
     private BackupExecutor() {}
 
-    public static <S> BackupResult<S> execute(BackupMode mode, String persistPath, BackupOptions options,
-                                              Runnable closeAction, Supplier<S> restartAction) {
+    public static <S> BackupResult<S> execute(BackupMode mode, String persistPath, String wrapperVersion,
+                                              BackupOptions options, Runnable closeAction,
+                                              Supplier<S> restartAction) {
         Objects.requireNonNull(mode, "mode");
         Objects.requireNonNull(persistPath, "persistPath");
+        Objects.requireNonNull(wrapperVersion, "wrapperVersion");
         Objects.requireNonNull(options, "options");
         Objects.requireNonNull(closeAction, "closeAction");
         Objects.requireNonNull(restartAction, "restartAction");
@@ -82,7 +81,7 @@ public final class BackupExecutor {
                     SCHEMA_VERSION,
                     mode.toWire(),
                     Instant.now().toString(),
-                    "java",
+                    wrapperVersion,
                     List.of(source.toString()),
                     dest.toString(),
                     snapshotPath.toString(),
@@ -123,6 +122,8 @@ public final class BackupExecutor {
         }
 
         if (backupError != null) {
+            IOException cleanupErr = deleteDirectoryQuietly(dest);
+            if (cleanupErr != null) backupError.addSuppressed(cleanupErr);
             throw toRuntimeException(backupError);
         }
 
@@ -132,32 +133,6 @@ public final class BackupExecutor {
     private static RuntimeException toRuntimeException(Throwable t) {
         if (t instanceof RuntimeException re) return re;
         return new ChromaException("backup failed: " + t.getMessage(), t);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static String extractPersistPath(String configYaml) {
-        Yaml yaml = new Yaml();
-        Object loaded;
-        try {
-            loaded = yaml.load(configYaml);
-        } catch (RuntimeException e) {
-            throw new IllegalArgumentException("invalid config YAML: " + e.getMessage(), e);
-        }
-        if (!(loaded instanceof Map)) {
-            throw new IllegalArgumentException("invalid config YAML");
-        }
-        Map<String, Object> map = (Map<String, Object>) loaded;
-        Object persistPath = map.get("persist_path");
-        if (persistPath == null) {
-            Object chroma = map.get("chroma");
-            if (chroma instanceof Map) {
-                persistPath = ((Map<String, Object>) chroma).get("persist_path");
-            }
-        }
-        if (persistPath == null) {
-            throw new IllegalArgumentException("persist_path not found in config YAML");
-        }
-        return persistPath.toString();
     }
 
     private static boolean isWithinPath(Path path, Path parent) {

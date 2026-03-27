@@ -17,6 +17,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class BackupExecutorTest {
 
+    private static final String TEST_VERSION = "test-1.0";
+
     @TempDir
     Path tempDir;
 
@@ -34,7 +36,7 @@ class BackupExecutorTest {
 
         AtomicBoolean closed = new AtomicBoolean(false);
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options,
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                 () -> closed.set(true),
                 () -> "new-session");
 
@@ -53,6 +55,7 @@ class BackupExecutorTest {
         assertNotNull(manifest);
         assertEquals("v1", manifest.schemaVersion());
         assertEquals("embedded", manifest.mode());
+        assertEquals(TEST_VERSION, manifest.wrapperVersion());
         assertTrue(manifest.fileCount() >= 1);
         assertTrue(manifest.totalBytes() > 0);
         assertEquals(1, manifest.files().size());
@@ -70,7 +73,7 @@ class BackupExecutorTest {
                 .build();
 
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options,
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                 () -> {},
                 () -> "should-not-be-called");
 
@@ -90,7 +93,7 @@ class BackupExecutorTest {
                 .build();
 
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.SERVER, source.toString(), options,
+                BackupMode.SERVER, source.toString(), TEST_VERSION, options,
                 () -> {},
                 () -> "should-not-be-called");
 
@@ -108,7 +111,7 @@ class BackupExecutorTest {
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
         assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options, () -> {}, () -> "x"));
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "x"));
     }
 
     @Test
@@ -122,7 +125,7 @@ class BackupExecutorTest {
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
         assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options, () -> {}, () -> "x"));
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "x"));
     }
 
     @Test
@@ -135,7 +138,7 @@ class BackupExecutorTest {
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
         assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options, () -> {}, () -> "x"));
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "x"));
     }
 
     @Test
@@ -147,7 +150,7 @@ class BackupExecutorTest {
 
         AtomicBoolean restarted = new AtomicBoolean(false);
         ChromaException ex = assertThrows(ChromaException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> {},
                         () -> { restarted.set(true); return "new-session"; }));
 
@@ -168,7 +171,7 @@ class BackupExecutorTest {
                 .build();
 
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options,
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                 () -> {},
                 () -> "session");
 
@@ -192,7 +195,7 @@ class BackupExecutorTest {
                 .build();
 
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options,
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                 () -> {},
                 () -> "session");
 
@@ -216,7 +219,7 @@ class BackupExecutorTest {
                 .build();
 
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options,
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                 () -> {},
                 () -> "session");
 
@@ -241,7 +244,7 @@ class BackupExecutorTest {
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
         assertThrows(ChromaException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> {},
                         () -> "session"));
     }
@@ -254,7 +257,7 @@ class BackupExecutorTest {
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
         assertThrows(RuntimeException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> { throw new RuntimeException("close failed"); },
                         () -> "session"));
 
@@ -275,12 +278,14 @@ class BackupExecutorTest {
 
         AtomicBoolean restarted = new AtomicBoolean(false);
         ChromaException ex = assertThrows(ChromaException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> {},
                         () -> { restarted.set(true); return "restarted"; }));
 
         assertTrue(restarted.get(), "restart must be attempted even after copy failure");
         assertTrue(ex.getCause() instanceof IOException, "original IOException must be preserved as cause");
+        assertTrue(!Files.exists(dest) || isEmptyDir(dest),
+                "partial backup must be cleaned up when restart succeeds after copy failure");
     }
 
     @Test
@@ -296,7 +301,7 @@ class BackupExecutorTest {
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
         ChromaException ex = assertThrows(ChromaException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> {},
                         () -> { throw new RuntimeException("restart failed"); }));
 
@@ -319,7 +324,7 @@ class BackupExecutorTest {
                 .build();
 
         ChromaException ex = assertThrows(ChromaException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> {},
                         () -> "should-not-be-called"));
 
@@ -341,7 +346,7 @@ class BackupExecutorTest {
                 .build();
 
         assertThrows(RuntimeException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), options,
+                BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options,
                         () -> {},
                         () -> "should-not-be-called"));
 
@@ -349,43 +354,50 @@ class BackupExecutorTest {
                 "partial backup must be cleaned up in leave-inactive path");
     }
 
-    // --- Fix #11: null argument rejection ---
+    // --- null argument rejection ---
 
     @Test
     void executeRejectsNullMode() {
         BackupOptions options = new BackupOptions.Builder("/tmp/dest").build();
         assertThrows(NullPointerException.class, () ->
-                BackupExecutor.execute(null, "/src", options, () -> {}, () -> "s"));
+                BackupExecutor.execute(null, "/src", TEST_VERSION, options, () -> {}, () -> "s"));
     }
 
     @Test
     void executeRejectsNullPersistPath() {
         BackupOptions options = new BackupOptions.Builder("/tmp/dest").build();
         assertThrows(NullPointerException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, null, options, () -> {}, () -> "s"));
+                BackupExecutor.execute(BackupMode.EMBEDDED, null, TEST_VERSION, options, () -> {}, () -> "s"));
+    }
+
+    @Test
+    void executeRejectsNullWrapperVersion() {
+        BackupOptions options = new BackupOptions.Builder("/tmp/dest").build();
+        assertThrows(NullPointerException.class, () ->
+                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", null, options, () -> {}, () -> "s"));
     }
 
     @Test
     void executeRejectsNullOptions() {
         assertThrows(NullPointerException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", null, () -> {}, () -> "s"));
+                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", TEST_VERSION, null, () -> {}, () -> "s"));
     }
 
     @Test
     void executeRejectsNullCloseAction() {
         BackupOptions options = new BackupOptions.Builder("/tmp/dest").build();
         assertThrows(NullPointerException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", options, null, () -> "s"));
+                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", TEST_VERSION, options, null, () -> "s"));
     }
 
     @Test
     void executeRejectsNullRestartAction() {
         BackupOptions options = new BackupOptions.Builder("/tmp/dest").build();
         assertThrows(NullPointerException.class, () ->
-                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", options, () -> {}, null));
+                BackupExecutor.execute(BackupMode.EMBEDDED, "/src", TEST_VERSION, options, () -> {}, null));
     }
 
-    // --- Fix #14: manifest list immutability ---
+    // --- manifest list immutability ---
 
     @Test
     void manifestSourcePathsIsImmutable() throws IOException {
@@ -395,7 +407,7 @@ class BackupExecutorTest {
 
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options, () -> {}, () -> "s");
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "s");
 
         assertThrows(UnsupportedOperationException.class, () ->
                 result.manifest().sourcePaths().add("evil"));
@@ -412,54 +424,10 @@ class BackupExecutorTest {
                 .includeMetadata(true)
                 .build();
         BackupResult<String> result = BackupExecutor.execute(
-                BackupMode.EMBEDDED, source.toString(), options, () -> {}, () -> "s");
+                BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "s");
 
         assertThrows(UnsupportedOperationException.class, () ->
                 result.manifest().files().add(new BackupFileMetadata("x", 0, "0644", "abc", "now")));
-    }
-
-    // --- extractPersistPath ---
-
-    @Test
-    void extractPersistPathFromTopLevel() {
-        String yaml = "persist_path: /tmp/chroma\nsqlite_filename: chroma.sqlite3\n";
-        assertEquals("/tmp/chroma", BackupExecutor.extractPersistPath(yaml));
-    }
-
-    @Test
-    void extractPersistPathFromNestedChromaKey() {
-        String yaml = "chroma:\n  persist_path: /data/chroma\n";
-        assertEquals("/data/chroma", BackupExecutor.extractPersistPath(yaml));
-    }
-
-    @Test
-    void extractPersistPathTopLevelTakesPrecedence() {
-        String yaml = "persist_path: /top\nchroma:\n  persist_path: /nested\n";
-        assertEquals("/top", BackupExecutor.extractPersistPath(yaml));
-    }
-
-    @Test
-    void extractPersistPathThrowsForMissingKey() {
-        assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.extractPersistPath("some_other_key: value\n"));
-    }
-
-    @Test
-    void extractPersistPathThrowsForInvalidYaml() {
-        assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.extractPersistPath("just-a-string"));
-    }
-
-    @Test
-    void extractPersistPathThrowsForEmptyYaml() {
-        assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.extractPersistPath(""));
-    }
-
-    @Test
-    void extractPersistPathThrowsForMalformedYaml() {
-        assertThrows(IllegalArgumentException.class, () ->
-                BackupExecutor.extractPersistPath("{: invalid yaml ["));
     }
 
     private static boolean isEmptyDir(Path dir) {
