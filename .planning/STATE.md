@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
-status: "Phase 09 plan 01 complete"
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-03-27T05:38:53Z"
+status: Executing Phase 09
+stopped_at: Phase 9 context gathered
+last_updated: "2026-03-27T05:28:55.158Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 9
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 
 ## Current Position
 
-Phase: 9
-Plan: 1 of 1 complete
+Phase: 09 (backup-api) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -37,7 +37,6 @@ Plan: 1 of 1 complete
 | 07 | 02 | 2min | 1 | 2 |
 | 08 | 01 | 3min | 2 | 4 |
 | 08 | 02 | 9min | 2 | 2 |
-| 09 | 01 | 8min | 2 | 13 |
 
 ## Accumulated Context
 
@@ -59,8 +58,6 @@ Plan: 1 of 1 complete
 - [Phase 08]: EmbeddedSession constructor expanded from 2 to 7 parameters
 - [Phase 08]: Smoke tier tests only -- D-09 data-seeded tests deferred pending FUTURE-03 collection CRUD
 - [Phase 08]: EmbeddedConfigBuilder used for test YAML instead of hand-written strings
-- [Phase 09]: BackupExecutor made public for cross-module access from JNA/Panama backends
-- [Phase 09]: Persist path extracted from config YAML at embedded session creation time via SnakeYAML
 
 ### Pending Todos
 
@@ -72,6 +69,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T05:38:53Z
-Stopped at: Completed 09-01-PLAN.md
-Resume file: None
+Last session: 2026-03-27T05:04:36.371Z
+Stopped at: Phase 9 context gathered
+Resume file: .planning/phases/09-backup-api/09-CONTEXT.md
