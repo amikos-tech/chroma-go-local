@@ -1,5 +1,6 @@
 package tech.amikos.chroma.local.core;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -30,6 +31,24 @@ public final class BackupManifest {
         this.fileCount = 0;
         this.totalBytes = 0;
         this.files = null;
+    }
+
+    BackupManifest(String schemaVersion, String mode, String createdAt, String wrapperVersion,
+                   List<String> sourcePaths, String destinationPath, String snapshotPath,
+                   String manifestPath, boolean includeMetadata, int fileCount, long totalBytes,
+                   List<BackupFileMetadata> files) {
+        this.schemaVersion = schemaVersion;
+        this.mode = mode;
+        this.createdAt = createdAt;
+        this.wrapperVersion = wrapperVersion;
+        this.sourcePaths = sourcePaths == null ? null : new ArrayList<>(sourcePaths);
+        this.destinationPath = destinationPath;
+        this.snapshotPath = snapshotPath;
+        this.manifestPath = manifestPath;
+        this.includeMetadata = includeMetadata;
+        this.fileCount = fileCount;
+        this.totalBytes = totalBytes;
+        this.files = files == null ? null : new ArrayList<>(files);
     }
 
     public String schemaVersion() { return schemaVersion; }
