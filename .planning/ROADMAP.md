@@ -94,7 +94,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 09-01: TBD
+- [x] 09-01-PLAN.md -- BackupResult, BackupExecutor core types, session callback wiring, JNA/Panama backends
 
 ### Phase 10: Server Maintenance
 **Goal**: Users can perform rebuild, compaction, and WAL prune operations on a server-mode Chroma instance, with the server automatically stopping and restarting around each maintenance operation
@@ -126,5 +126,5 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 6. Core Foundation Types | v0.5.0 | 0/3 | Not started | - |
 | 7. Server Lifecycle | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
-| 9. Backup API | v0.5.0 | 0/? | Not started | - |
+| 9. Backup API | v0.5.0 | 1/1 | Complete | 2026-03-27 |
 | 10. Server Maintenance | v0.5.0 | 0/? | Not started | - |
