@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
-status: Ready to plan
+status: "Phase 09 shipped — PR #81"
 stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-27T05:58:00.949Z"
+last_updated: "2026-03-27T10:09:58.751Z"
 progress:
   total_phases: 5
   completed_phases: 4
