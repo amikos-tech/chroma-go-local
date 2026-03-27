@@ -40,7 +40,7 @@ Java and Go APIs must provide equivalent access to all Chroma runtime capabiliti
 
 - [x] Java server lifecycle API (start/stop/port/address/URL) — Validated in Phase 7
 - [x] Java builder pattern for server configuration — Validated in Phase 6
-- [ ] Java backup API with option builder
+- [x] Java backup API with option builder — Validated in Phase 9
 - [x] Java rebuild API with option builder — Validated in Phase 8
 - [x] Java compaction API (per-collection and all) — Validated in Phase 8
 - [x] Java WAL prune API with option builder — Validated in Phase 8
@@ -62,6 +62,8 @@ The Java scaffold (v0.3.x) provides basic `ChromaRuntime` interface with `versio
 Phase 6 complete — core module now contains all shared types (7 result POJOs, 6 option/request builders, 2 config builders), FFI safety infrastructure (`AbstractChromaRuntime` with global lock), and `ServerSession` with callback slots. Backend modules (JNA, Panama) can now implement against these stable contracts.
 
 Phase 7 complete — both JNA and Panama backends retrofitted to extend `AbstractChromaRuntime`, replacing inline FFI patterns with lock-protected template methods. Server lifecycle (start/stop/close) wired through `ServerSession` with method-reference callbacks. Integration tests verify full error matrix in both backends.
+
+Phase 9 complete — backup API implemented for both embedded and server modes. Core types (BackupResult, BackupExecutor, BackupManifest) in core module, session wiring with callback slots in EmbeddedSession (8-param) and ServerSession (7-param), backend lambda construction in both JNA and Panama. 20 integration tests cover sentinel files, manifest SHA-256, options validation, and edge cases.
 
 Existing Java architecture: `core` module defines `ChromaRuntime` interface + `EmbeddedSession`, `jna` module implements via JNA, `panama` module implements via Foreign Function & Memory API. Both backends must stay in sync.
 
@@ -103,4 +105,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 after Phase 7 completion*
+*Last updated: 2026-03-27 after Phase 9 completion*

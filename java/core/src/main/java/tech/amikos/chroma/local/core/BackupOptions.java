@@ -4,30 +4,22 @@ public final class BackupOptions {
 
     private final String destinationPath;
     private final boolean includeMetadata;
-    private final boolean leaveStopped;
-    private final boolean leaveClosed;
+    private final boolean leaveInactive;
 
     private BackupOptions(Builder builder) {
         this.destinationPath = builder.destinationPath;
         this.includeMetadata = builder.includeMetadata;
-        this.leaveStopped = builder.leaveStopped;
-        this.leaveClosed = builder.leaveClosed;
+        this.leaveInactive = builder.leaveInactive;
     }
 
     public String destinationPath() { return destinationPath; }
     public boolean includeMetadata() { return includeMetadata; }
-    public boolean leaveStopped() { return leaveStopped; }
-    public boolean leaveClosed() { return leaveClosed; }
-
-    public String toJson() {
-        return JsonUtil.toJson(this);
-    }
+    public boolean leaveInactive() { return leaveInactive; }
 
     public static class Builder {
         private final String destinationPath;
         private boolean includeMetadata;
-        private boolean leaveStopped;
-        private boolean leaveClosed;
+        private boolean leaveInactive;
 
         public Builder(String destinationPath) {
             this.destinationPath = destinationPath;
@@ -38,19 +30,14 @@ public final class BackupOptions {
             return this;
         }
 
-        public Builder leaveStopped(boolean leaveStopped) {
-            this.leaveStopped = leaveStopped;
-            return this;
-        }
-
-        public Builder leaveClosed(boolean leaveClosed) {
-            this.leaveClosed = leaveClosed;
+        public Builder leaveInactive(boolean leaveInactive) {
+            this.leaveInactive = leaveInactive;
             return this;
         }
 
         public BackupOptions build() {
             if (destinationPath == null || destinationPath.isBlank()) {
-                throw new IllegalArgumentException("destination_path is required");
+                throw new IllegalArgumentException("destinationPath is required");
             }
             return new BackupOptions(this);
         }

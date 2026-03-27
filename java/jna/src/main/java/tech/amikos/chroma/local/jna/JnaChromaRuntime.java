@@ -5,6 +5,8 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import java.nio.file.Path;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
+import tech.amikos.chroma.local.core.BackupExecutor;
+import tech.amikos.chroma.local.core.BackupMode;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -45,6 +47,8 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
         int chroma_server_port(Pointer handle);
 
         Pointer chroma_server_address(Pointer handle);
+
+        Pointer chroma_embedded_persist_path(Pointer handle);
 
         Pointer chroma_server_persist_path(Pointer handle);
     }
@@ -100,6 +104,8 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     protected EmbeddedSession doStartEmbedded(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_embedded_start_from_string(configYaml)));
+        String persistPath = embeddedPersistPath(handle);
+        String version = doVersion();
         return new EmbeddedSession(
                 handle,
                 this::embeddedFree,
@@ -117,20 +123,27 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
                         WALPruneResult.class),
                 (h, json) -> callFfiJson(
                         () -> Pointer.nativeValue(bindings.chroma_embedded_prune_wal_all(new Pointer(h), json)),
-                        WALPruneResult.class));
+                        WALPruneResult.class),
+                opts -> BackupExecutor.execute(BackupMode.EMBEDDED, persistPath, version, opts,
+                        () -> embeddedFree(handle), () -> doStartEmbedded(configYaml)));
     }
 
     @Override
     protected ServerSession doStartServer(String configYaml) {
         long handle = callFfiHandle(
                 () -> Pointer.nativeValue(bindings.chroma_server_start_from_string(configYaml)));
+        String persistPath = serverPersistPath(handle);
+        String version = doVersion();
         return new ServerSession(
                 handle,
                 this::serverStop,
                 this::serverFree,
                 this::serverPort,
                 this::serverAddress,
-                this::serverPersistPath);
+                this::serverPersistPath,
+                opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, version, opts,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        () -> doStartServer(configYaml)));
     }
 
     private void serverStop(long handle) {
@@ -149,6 +162,11 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     private String serverAddress(long handle) {
         return callFfiBorrowedString(
                 () -> Pointer.nativeValue(bindings.chroma_server_address(new Pointer(handle))));
+    }
+
+    private String embeddedPersistPath(long handle) {
+        return callFfiBorrowedString(
+                () -> Pointer.nativeValue(bindings.chroma_embedded_persist_path(new Pointer(handle))));
     }
 
     private String serverPersistPath(long handle) {

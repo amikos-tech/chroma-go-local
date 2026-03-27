@@ -1,25 +1,30 @@
 package tech.amikos.chroma.local.core;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.LongConsumer;
 
 public final class EmbeddedSession implements AutoCloseable {
     private final long handle;
     private final LongConsumer closeAction;
     private final AtomicBoolean closed;
+    private final ReentrantLock backupLock = new ReentrantLock();
     private final BiFunction<Long, String, RebuildCollectionResult> rebuildAction;
     private final BiFunction<Long, String, CompactionResult> compactCollectionAction;
     private final BiFunction<Long, String, CompactionResult> compactAllAction;
     private final BiFunction<Long, String, WALPruneResult> pruneWalCollectionAction;
     private final BiFunction<Long, String, WALPruneResult> pruneWalAllAction;
+    private final Function<BackupOptions, BackupResult<EmbeddedSession>> backupAction;
 
     public EmbeddedSession(long handle, LongConsumer closeAction,
             BiFunction<Long, String, RebuildCollectionResult> rebuildAction,
             BiFunction<Long, String, CompactionResult> compactCollectionAction,
             BiFunction<Long, String, CompactionResult> compactAllAction,
             BiFunction<Long, String, WALPruneResult> pruneWalCollectionAction,
-            BiFunction<Long, String, WALPruneResult> pruneWalAllAction) {
+            BiFunction<Long, String, WALPruneResult> pruneWalAllAction,
+            Function<BackupOptions, BackupResult<EmbeddedSession>> backupAction) {
         if (handle == 0L) {
             throw new IllegalArgumentException("embedded handle must be non-zero");
         }
@@ -41,6 +46,9 @@ public final class EmbeddedSession implements AutoCloseable {
         if (pruneWalAllAction == null) {
             throw new IllegalArgumentException("pruneWalAllAction must be set");
         }
+        if (backupAction == null) {
+            throw new IllegalArgumentException("backupAction must be set");
+        }
         this.handle = handle;
         this.closeAction = closeAction;
         this.closed = new AtomicBoolean(false);
@@ -49,6 +57,7 @@ public final class EmbeddedSession implements AutoCloseable {
         this.compactAllAction = compactAllAction;
         this.pruneWalCollectionAction = pruneWalCollectionAction;
         this.pruneWalAllAction = pruneWalAllAction;
+        this.backupAction = backupAction;
     }
 
     private void ensureOpen() {
@@ -104,7 +113,7 @@ public final class EmbeddedSession implements AutoCloseable {
         return pruneCollectionWAL(WALPruneOptions.defaults(name));
     }
 
-    /** Prunes WAL rows for all collections. The {@code name} field in options is ignored. */
+    /** The {@code name} field in options is ignored. */
     public WALPruneResult pruneAllWAL(WALPruneOptions options) {
         ensureOpen();
         if (options == null) {
@@ -113,10 +122,35 @@ public final class EmbeddedSession implements AutoCloseable {
         return pruneWalAllAction.apply(handle, options.toJson());
     }
 
+    public BackupResult<EmbeddedSession> backup(BackupOptions options) {
+        backupLock.lock();
+        try {
+            ensureOpen();
+            if (options == null) throw new IllegalArgumentException("options is required");
+            try {
+                BackupResult<EmbeddedSession> result = backupAction.apply(options);
+                closed.set(true);
+                return result;
+            } catch (BackupExecutor.PreValidationFailure e) {
+                throw (RuntimeException) e.getCause();
+            } catch (RuntimeException e) {
+                closed.set(true);
+                throw e;
+            }
+        } finally {
+            backupLock.unlock();
+        }
+    }
+
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true)) {
-            closeAction.accept(handle);
+        backupLock.lock();
+        try {
+            if (closed.compareAndSet(false, true)) {
+                closeAction.accept(handle);
+            }
+        } finally {
+            backupLock.unlock();
         }
     }
 }

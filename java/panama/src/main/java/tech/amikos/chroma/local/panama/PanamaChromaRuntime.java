@@ -10,6 +10,8 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
 import java.util.Locale;
 import tech.amikos.chroma.local.core.AbstractChromaRuntime;
+import tech.amikos.chroma.local.core.BackupExecutor;
+import tech.amikos.chroma.local.core.BackupMode;
 import tech.amikos.chroma.local.core.ChromaException;
 import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
@@ -34,6 +36,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             MethodHandle embeddedCompactAll,
             MethodHandle embeddedPruneWalCollection,
             MethodHandle embeddedPruneWalAll,
+            MethodHandle embeddedPersistPath,
             MethodHandle serverStart,
             MethodHandle serverStop,
             MethodHandle serverFree,
@@ -88,6 +91,9 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                     linker.downcallHandle(
                             requireSymbol(library, "chroma_embedded_prune_wal_all"),
                             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_embedded_persist_path"),
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
                     linker.downcallHandle(
                             requireSymbol(library, "chroma_server_start_from_string"),
                             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
@@ -192,6 +198,8 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to start embedded runtime", t);
             }
         });
+        String persistPath = embeddedPersistPath(handle);
+        String version = doVersion();
         return new EmbeddedSession(
                 handle,
                 this::embeddedFree,
@@ -249,7 +257,9 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                         if (t instanceof Error error) throw error;
                         throw new ChromaException("failed to call embedded prune wal all", t);
                     }
-                }, WALPruneResult.class));
+                }, WALPruneResult.class),
+                opts -> BackupExecutor.execute(BackupMode.EMBEDDED, persistPath, version, opts,
+                        () -> embeddedFree(handle), () -> doStartEmbedded(configYaml)));
     }
 
     @Override
@@ -264,13 +274,18 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to start server runtime", t);
             }
         });
+        String persistPath = serverPersistPath(handle);
+        String version = doVersion();
         return new ServerSession(
                 handle,
                 this::serverStop,
                 this::serverFree,
                 this::serverPort,
                 this::serverAddress,
-                this::serverPersistPath);
+                this::serverPersistPath,
+                opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, version, opts,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        () -> doStartServer(configYaml)));
     }
 
     private void serverStop(long handleAddress) {
@@ -320,6 +335,19 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             } catch (Throwable t) {
                 if (t instanceof Error error) throw error;
                 throw new ChromaException("failed to read server address", t);
+            }
+        });
+    }
+
+    private String embeddedPersistPath(long handleAddress) {
+        return callFfiBorrowedString(() -> {
+            try {
+                MemorySegment ptr = (MemorySegment) ffi.embeddedPersistPath().invokeExact(
+                        MemorySegment.ofAddress(handleAddress));
+                return ptr.address();
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to read embedded persist path", t);
             }
         });
     }
