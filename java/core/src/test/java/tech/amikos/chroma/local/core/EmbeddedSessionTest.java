@@ -284,6 +284,26 @@ class EmbeddedSessionTest {
     }
 
     @Test
+    void backupPreValidationFailureLeavesSessionOpen() {
+        AtomicInteger closeCalls = new AtomicInteger();
+        EmbeddedSession session = new EmbeddedSession(42L, ignored -> closeCalls.incrementAndGet(),
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_WAL_COLLECTION, STUB_PRUNE_WAL_ALL,
+                opts -> { throw new BackupExecutor.PreValidationFailure(
+                        new IllegalArgumentException("dest inside source")); });
+
+        BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> session.backup(options));
+        assertEquals("dest inside source", ex.getMessage());
+
+        assertEquals(42L, session.handle(), "session must remain open after pre-validation failure");
+
+        session.close();
+        assertEquals(1, closeCalls.get(), "closeAction must run on explicit close");
+    }
+
+    @Test
     void pruneCollectionWalConvenienceOverloadDelegates() {
         AtomicLong capturedHandle = new AtomicLong();
         AtomicReference<String> capturedJson = new AtomicReference<>();

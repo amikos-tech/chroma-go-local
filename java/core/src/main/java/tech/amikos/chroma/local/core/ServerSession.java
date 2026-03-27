@@ -134,9 +134,14 @@ public final class ServerSession implements AutoCloseable {
             ensureOpen();
             if (options == null) throw new IllegalArgumentException("options is required");
             try {
-                return backupAction.apply(options);
-            } finally {
+                BackupResult<ServerSession> result = backupAction.apply(options);
                 closed.set(true);
+                return result;
+            } catch (BackupExecutor.PreValidationFailure e) {
+                throw (RuntimeException) e.getCause();
+            } catch (RuntimeException e) {
+                closed.set(true);
+                throw e;
             }
         } finally {
             backupLock.unlock();

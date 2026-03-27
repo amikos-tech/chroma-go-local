@@ -110,8 +110,9 @@ class BackupExecutorTest {
 
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
-        assertThrows(IllegalArgumentException.class, () ->
+        BackupExecutor.PreValidationFailure ex = assertThrows(BackupExecutor.PreValidationFailure.class, () ->
                 BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "x"));
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
     }
 
     @Test
@@ -124,8 +125,9 @@ class BackupExecutorTest {
 
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
-        assertThrows(IllegalArgumentException.class, () ->
+        BackupExecutor.PreValidationFailure ex = assertThrows(BackupExecutor.PreValidationFailure.class, () ->
                 BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "x"));
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
     }
 
     @Test
@@ -137,8 +139,9 @@ class BackupExecutorTest {
 
         BackupOptions options = new BackupOptions.Builder(dest.toString()).build();
 
-        assertThrows(IllegalArgumentException.class, () ->
+        BackupExecutor.PreValidationFailure ex = assertThrows(BackupExecutor.PreValidationFailure.class, () ->
                 BackupExecutor.execute(BackupMode.EMBEDDED, source.toString(), TEST_VERSION, options, () -> {}, () -> "x"));
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
     }
 
     @Test

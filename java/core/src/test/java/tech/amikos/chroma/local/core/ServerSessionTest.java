@@ -330,6 +330,31 @@ class ServerSessionTest {
     }
 
     @Test
+    void backupPreValidationFailureLeavesSessionOpen() {
+        AtomicInteger stopCalls = new AtomicInteger();
+        AtomicInteger freeCalls = new AtomicInteger();
+        ServerSession session = new ServerSession(
+                42L,
+                h -> stopCalls.incrementAndGet(),
+                h -> freeCalls.incrementAndGet(),
+                h -> 8000, h -> "host", h -> "/path",
+                opts -> { throw new BackupExecutor.PreValidationFailure(
+                        new IllegalArgumentException("dest inside source")); }
+        );
+
+        BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> session.backup(options));
+        assertEquals("dest inside source", ex.getMessage());
+
+        assertEquals(8000, session.port(), "session must remain open after pre-validation failure");
+
+        session.close();
+        assertEquals(1, stopCalls.get(), "stopAction must run on explicit close");
+        assertEquals(1, freeCalls.get(), "freeAction must run on explicit close");
+    }
+
+    @Test
     void maintenanceMethods_throwIllegalStateException_afterClose() {
         ServerSession session = createSession(1L);
         session.close();

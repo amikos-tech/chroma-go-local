@@ -36,6 +36,10 @@ public final class BackupExecutor {
 
     private BackupExecutor() {}
 
+    static final class PreValidationFailure extends RuntimeException {
+        PreValidationFailure(RuntimeException cause) { super(cause); }
+    }
+
     public static <S> BackupResult<S> execute(BackupMode mode, String persistPath, String wrapperVersion,
                                               BackupOptions options, Runnable closeAction,
                                               Supplier<S> restartAction) {
@@ -46,15 +50,21 @@ public final class BackupExecutor {
         Objects.requireNonNull(closeAction, "closeAction");
         Objects.requireNonNull(restartAction, "restartAction");
 
-        Path dest = Path.of(options.destinationPath()).toAbsolutePath().normalize();
-        Path source = Path.of(persistPath).toAbsolutePath().normalize();
+        Path dest;
+        Path source;
+        try {
+            dest = Path.of(options.destinationPath()).toAbsolutePath().normalize();
+            source = Path.of(persistPath).toAbsolutePath().normalize();
 
-        if (isWithinPath(dest, source)) {
-            throw new IllegalArgumentException(
-                    "destination path cannot be inside source persist path: " + dest);
+            if (isWithinPath(dest, source)) {
+                throw new IllegalArgumentException(
+                        "destination path cannot be inside source persist path: " + dest);
+            }
+
+            ensureEmptyDir(dest);
+        } catch (RuntimeException e) {
+            throw new PreValidationFailure(e);
         }
-
-        ensureEmptyDir(dest);
 
         try {
             closeAction.run();
