@@ -34,7 +34,7 @@
 - [x] **BKUP-01**: `EmbeddedSession.backup(options)` performs directory copy with manifest and returns BackupManifest
 - [x] **BKUP-02**: `ServerSession.backup(options)` performs stop-backup-restart cycle and returns BackupManifest
 - [x] **BKUP-03**: `BackupOptions` builder supports destination, includeMetadata, leaveClosed/leaveStopped
-- [ ] **BKUP-04**: Integration tests verify backup creates valid output directory in both backends
+- [x] **BKUP-04**: Integration tests verify backup creates valid output directory in both backends
 
 ### Server Maintenance
 
@@ -86,7 +86,7 @@
 | BKUP-01 | Phase 9 | Complete |
 | BKUP-02 | Phase 9 | Complete |
 | BKUP-03 | Phase 9 | Complete |
-| BKUP-04 | Phase 9 | Pending |
+| BKUP-04 | Phase 9 | Complete |
 | SMNT-01 | Phase 10 | Pending |
 | SMNT-02 | Phase 10 | Pending |
 | SMNT-03 | Phase 10 | Pending |
