@@ -91,10 +91,11 @@ Plans:
   2. `ServerSession.backup(options)` performs a stop-backup-restart cycle and returns a BackupManifest without corrupting the running server state
   3. `BackupOptions` builder supports destination, includeMetadata, and leaveClosed/leaveStopped flags with validation at build time
   4. Integration tests verify backup creates a valid output directory with expected contents in both JNA and Panama backends
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 09-01: TBD
+- [ ] 09-01-PLAN.md -- Core backup types (BackupResult, BackupExecutor), session wiring, backend lambda construction
+- [ ] 09-02-PLAN.md -- Integration tests for embedded and server backup in both JNA and Panama backends
 
 ### Phase 10: Server Maintenance
 **Goal**: Users can perform rebuild, compaction, and WAL prune operations on a server-mode Chroma instance, with the server automatically stopping and restarting around each maintenance operation
@@ -126,5 +127,5 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 6. Core Foundation Types | v0.5.0 | 0/3 | Not started | - |
 | 7. Server Lifecycle | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
-| 9. Backup API | v0.5.0 | 0/? | Not started | - |
+| 9. Backup API | v0.5.0 | 0/2 | Not started | - |
 | 10. Server Maintenance | v0.5.0 | 0/? | Not started | - |
