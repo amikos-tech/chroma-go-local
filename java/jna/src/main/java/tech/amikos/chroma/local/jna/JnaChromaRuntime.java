@@ -8,6 +8,7 @@ import tech.amikos.chroma.local.core.AbstractChromaRuntime;
 import tech.amikos.chroma.local.core.BackupExecutor;
 import tech.amikos.chroma.local.core.BackupMode;
 import tech.amikos.chroma.local.core.ChromaException;
+import tech.amikos.chroma.local.core.MaintenanceExecutor;
 import tech.amikos.chroma.local.core.CompactionResult;
 import tech.amikos.chroma.local.core.EmbeddedSession;
 import tech.amikos.chroma.local.core.RebuildCollectionResult;
@@ -143,7 +144,27 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
                 this::serverPersistPath,
                 opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, version, opts,
                         () -> { serverStop(handle); serverFree(handle); },
-                        () -> doStartServer(configYaml)));
+                        () -> doStartServer(configYaml)),
+                opts -> MaintenanceExecutor.execute(configYaml,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        this::doStartEmbedded, this::doStartServer,
+                        emb -> emb.rebuildCollection(opts)),
+                req -> MaintenanceExecutor.execute(configYaml,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        this::doStartEmbedded, this::doStartServer,
+                        emb -> emb.compactCollection(req)),
+                req -> MaintenanceExecutor.execute(configYaml,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        this::doStartEmbedded, this::doStartServer,
+                        emb -> emb.compactAll(req)),
+                opts -> MaintenanceExecutor.execute(configYaml,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        this::doStartEmbedded, this::doStartServer,
+                        emb -> emb.pruneCollectionWAL(opts)),
+                opts -> MaintenanceExecutor.execute(configYaml,
+                        () -> { serverStop(handle); serverFree(handle); },
+                        this::doStartEmbedded, this::doStartServer,
+                        emb -> emb.pruneAllWAL(opts)));
     }
 
     private void serverStop(long handle) {
