@@ -44,8 +44,8 @@ Java and Go APIs must provide equivalent access to all Chroma runtime capabiliti
 - [x] Java rebuild API with option builder — Validated in Phase 8
 - [x] Java compaction API (per-collection and all) — Validated in Phase 8
 - [x] Java WAL prune API with option builder — Validated in Phase 8
-- [ ] JNA and Panama implementations kept in sync
-- [ ] Java integration tests for all new APIs
+- [x] JNA and Panama implementations kept in sync — Validated in Phase 10
+- [x] Java integration tests for all new APIs — Validated in Phase 10
 
 ### Out of Scope
 
@@ -64,6 +64,8 @@ Phase 6 complete — core module now contains all shared types (7 result POJOs, 
 Phase 7 complete — both JNA and Panama backends retrofitted to extend `AbstractChromaRuntime`, replacing inline FFI patterns with lock-protected template methods. Server lifecycle (start/stop/close) wired through `ServerSession` with method-reference callbacks. Integration tests verify full error matrix in both backends.
 
 Phase 9 complete — backup API implemented for both embedded and server modes. Core types (BackupResult, BackupExecutor, BackupManifest) in core module, session wiring with callback slots in EmbeddedSession (8-param) and ServerSession (7-param), backend lambda construction in both JNA and Panama. 20 integration tests cover sentinel files, manifest SHA-256, options validation, and edge cases.
+
+Phase 10 complete — server maintenance operations (rebuild, compact collection/all, prune WAL collection/all) implemented via stop-embed-op-restart orchestration. MaintenanceExecutor in core mirrors Go's error matrix. ServerSession expanded to 12-param constructor with 5 maintenance callback slots. 22 integration tests (11 per backend) verify full lifecycle with data seeding.
 
 Existing Java architecture: `core` module defines `ChromaRuntime` interface + `EmbeddedSession`, `jna` module implements via JNA, `panama` module implements via Foreign Function & Memory API. Both backends must stay in sync.
 
@@ -84,8 +86,8 @@ GitHub milestone: v0.5.0
 |----------|-----------|---------|
 | Reuse existing chroma_* FFI symbols | No Rust shim changes needed; Go and Java share same native interface | Validated (Phase 6) |
 | Java builder pattern for config | Idiomatic Java; Go uses functional options which don't translate well | Validated (Phase 6) |
-| Both JNA and Panama in sync | Maintains Java 17+ support via JNA while offering Panama for Java 22+ | — Pending |
-| Full API mirror in one milestone | Shipping partial Java API creates confusing mixed coverage | — Pending |
+| Both JNA and Panama in sync | Maintains Java 17+ support via JNA while offering Panama for Java 22+ | Validated (Phase 10) |
+| Full API mirror in one milestone | Shipping partial Java API creates confusing mixed coverage | Validated (Phase 10) |
 
 ## Evolution
 
@@ -105,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 9 completion*
+*Last updated: 2026-03-28 after Phase 10 completion*
