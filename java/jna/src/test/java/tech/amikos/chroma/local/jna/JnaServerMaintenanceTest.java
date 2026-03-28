@@ -1,5 +1,6 @@
 package tech.amikos.chroma.local.jna;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -54,12 +55,12 @@ class JnaServerMaintenanceTest {
                     session.rebuildCollection("rebuild_test");
 
             assertNotNull(result.result());
-            assertNotNull(result.session());
             assertNull(result.restartError());
-            verifyServerResponds(result.session().url());
-            verifyCollectionExists(result.session().url(), "rebuild_test");
-
-            result.session().close();
+            try (ServerSession newSession = result.session()) {
+                assertNotNull(newSession);
+                verifyServerResponds(newSession.url());
+                verifyCollectionExists(newSession.url(), "rebuild_test");
+            }
         }
     }
 
@@ -85,12 +86,12 @@ class JnaServerMaintenanceTest {
                     session.compactCollection("compact_test");
 
             assertNotNull(result.result());
-            assertNotNull(result.session());
             assertNull(result.restartError());
-            verifyServerResponds(result.session().url());
-            verifyCollectionExists(result.session().url(), "compact_test");
-
-            result.session().close();
+            try (ServerSession newSession = result.session()) {
+                assertNotNull(newSession);
+                verifyServerResponds(newSession.url());
+                verifyCollectionExists(newSession.url(), "compact_test");
+            }
         }
     }
 
@@ -116,11 +117,11 @@ class JnaServerMaintenanceTest {
                     session.compactAll(new CompactAllRequest.Builder().build());
 
             assertNotNull(result.result());
-            assertNotNull(result.session());
             assertNull(result.restartError());
-            verifyServerResponds(result.session().url());
-
-            result.session().close();
+            try (ServerSession newSession = result.session()) {
+                assertNotNull(newSession);
+                verifyServerResponds(newSession.url());
+            }
         }
     }
 
@@ -146,12 +147,12 @@ class JnaServerMaintenanceTest {
                     session.pruneCollectionWAL("prune_test");
 
             assertNotNull(result.result());
-            assertNotNull(result.session());
             assertNull(result.restartError());
-            verifyServerResponds(result.session().url());
-            verifyCollectionExists(result.session().url(), "prune_test");
-
-            result.session().close();
+            try (ServerSession newSession = result.session()) {
+                assertNotNull(newSession);
+                verifyServerResponds(newSession.url());
+                verifyCollectionExists(newSession.url(), "prune_test");
+            }
         }
     }
 
@@ -177,11 +178,11 @@ class JnaServerMaintenanceTest {
                     session.pruneAllWAL(WALPruneOptions.defaults("ignored"));
 
             assertNotNull(result.result());
-            assertNotNull(result.session());
             assertNull(result.restartError());
-            verifyServerResponds(result.session().url());
-
-            result.session().close();
+            try (ServerSession newSession = result.session()) {
+                assertNotNull(newSession);
+                verifyServerResponds(newSession.url());
+            }
         }
     }
 
@@ -223,6 +224,8 @@ class JnaServerMaintenanceTest {
             ServerSession session = runtime.startServer(yaml);
             assertThrows(IllegalArgumentException.class,
                     () -> session.rebuildCollection((RebuildOptions) null));
+            assertDoesNotThrow(session::port, "session must remain usable after null-arg rejection");
+            session.close();
         }
     }
 
@@ -241,6 +244,8 @@ class JnaServerMaintenanceTest {
             ServerSession session = runtime.startServer(yaml);
             assertThrows(IllegalArgumentException.class,
                     () -> session.compactCollection((CompactCollectionRequest) null));
+            assertDoesNotThrow(session::port, "session must remain usable after null-arg rejection");
+            session.close();
         }
     }
 
@@ -259,6 +264,8 @@ class JnaServerMaintenanceTest {
             ServerSession session = runtime.startServer(yaml);
             assertThrows(IllegalArgumentException.class,
                     () -> session.compactAll(null));
+            assertDoesNotThrow(session::port, "session must remain usable after null-arg rejection");
+            session.close();
         }
     }
 
@@ -277,6 +284,8 @@ class JnaServerMaintenanceTest {
             ServerSession session = runtime.startServer(yaml);
             assertThrows(IllegalArgumentException.class,
                     () -> session.pruneCollectionWAL((WALPruneOptions) null));
+            assertDoesNotThrow(session::port, "session must remain usable after null-arg rejection");
+            session.close();
         }
     }
 
@@ -295,6 +304,27 @@ class JnaServerMaintenanceTest {
             ServerSession session = runtime.startServer(yaml);
             assertThrows(IllegalArgumentException.class,
                     () -> session.pruneAllWAL(null));
+            assertDoesNotThrow(session::port, "session must remain usable after null-arg rejection");
+            session.close();
+        }
+    }
+
+    @Test
+    void serverRebuildNonexistentCollectionThrows(@TempDir(cleanup = CleanupMode.NEVER) Path persistDir) throws Exception {
+        String libPath = System.getenv("CHROMA_LIB_PATH");
+        Assumptions.assumeTrue(libPath != null && !libPath.isBlank(), "CHROMA_LIB_PATH is required");
+
+        int port = findFreePort();
+        String yaml = new ServerConfigBuilder()
+                .port(port).listenAddress("127.0.0.1")
+                .persistPath(persistDir.toAbsolutePath().toString())
+                .allowReset(true).build();
+
+        try (JnaChromaRuntime runtime = JnaChromaRuntime.init(libPath)) {
+            ServerSession session = runtime.startServer(yaml);
+            waitForReady(session.url(), Duration.ofSeconds(15));
+            assertThrows(RuntimeException.class,
+                    () -> session.rebuildCollection("nonexistent_collection"));
         }
     }
 

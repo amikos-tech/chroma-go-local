@@ -400,6 +400,133 @@ class ServerSessionTest {
         assertEquals(1, freeCalls.get(), "freeAction must run on explicit close");
     }
 
+    // --- Constructor null rejection for maintenance actions ---
+
+    @Test
+    void constructorRejectsNullRebuildAction() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        null, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
+    }
+
+    @Test
+    void constructorRejectsNullCompactCollectionAction() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, null, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
+    }
+
+    @Test
+    void constructorRejectsNullCompactAllAction() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, null, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
+    }
+
+    @Test
+    void constructorRejectsNullPruneWalCollectionAction() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, null, STUB_PRUNE_ALL));
+    }
+
+    @Test
+    void constructorRejectsNullPruneWalAllAction() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, null));
+    }
+
+    // --- Maintenance invalidation tests (mirrors backup lifecycle tests) ---
+
+    @Test
+    void rebuildCollection_delegatesAndInvalidatesSession() {
+        MaintenanceResult<RebuildCollectionResult, ServerSession> fakeResult =
+                new MaintenanceResult<>(new RebuildCollectionResult(), createSession(99L), null);
+        AtomicReference<RebuildOptions> capturedOpts = new AtomicReference<>();
+
+        ServerSession session = new ServerSession(
+                42L, h -> {}, h -> {}, h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP,
+                opts -> { capturedOpts.set(opts); return fakeResult; },
+                STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL);
+
+        RebuildOptions options = RebuildOptions.defaults("coll");
+        MaintenanceResult<RebuildCollectionResult, ServerSession> result = session.rebuildCollection(options);
+
+        assertEquals(fakeResult, result);
+        assertEquals(options, capturedOpts.get());
+        assertThrows(IllegalStateException.class, session::port,
+                "session must be invalidated after maintenance");
+    }
+
+    @Test
+    void rebuildCollection_failureStillInvalidatesSession() {
+        ServerSession session = new ServerSession(
+                42L, h -> {}, h -> {}, h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP,
+                opts -> { throw new RuntimeException("op failed"); },
+                STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL);
+
+        assertThrows(RuntimeException.class,
+                () -> session.rebuildCollection(RebuildOptions.defaults("coll")));
+        assertThrows(IllegalStateException.class, session::port,
+                "session must be invalidated even when maintenance fails");
+    }
+
+    @Test
+    void rebuildCollection_nullOptionsLeavesSessionOpen() {
+        ServerSession session = createSession(42L);
+        assertThrows(IllegalArgumentException.class,
+                () -> session.rebuildCollection((RebuildOptions) null));
+        assertEquals(8000, session.port(),
+                "session must remain open after null-arg validation failure");
+        session.close();
+    }
+
+    @Test
+    void compactAll_delegatesAndInvalidatesSession() {
+        MaintenanceResult<CompactionResult, ServerSession> fakeResult =
+                new MaintenanceResult<>(new CompactionResult(), createSession(99L), null);
+
+        ServerSession session = new ServerSession(
+                42L, h -> {}, h -> {}, h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP, STUB_REBUILD, STUB_COMPACT_COLLECTION,
+                req -> fakeResult,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL);
+
+        MaintenanceResult<CompactionResult, ServerSession> result =
+                session.compactAll(new CompactAllRequest.Builder().build());
+
+        assertEquals(fakeResult, result);
+        assertThrows(IllegalStateException.class, session::port);
+    }
+
+    @Test
+    void closeAfterMaintenanceIsNoOp() {
+        MaintenanceResult<RebuildCollectionResult, ServerSession> fakeResult =
+                new MaintenanceResult<>(new RebuildCollectionResult(), createSession(99L), null);
+        AtomicInteger stopCalls = new AtomicInteger();
+        AtomicInteger freeCalls = new AtomicInteger();
+
+        ServerSession session = new ServerSession(
+                42L,
+                h -> stopCalls.incrementAndGet(),
+                h -> freeCalls.incrementAndGet(),
+                h -> 8000, h -> "host", h -> "/path",
+                STUB_BACKUP,
+                opts -> fakeResult,
+                STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL);
+
+        session.rebuildCollection(RebuildOptions.defaults("coll"));
+        session.close();
+        assertEquals(0, stopCalls.get(), "stopAction must not be called after maintenance invalidated the session");
+        assertEquals(0, freeCalls.get(), "freeAction must not be called after maintenance invalidated the session");
+    }
+
     @Test
     void maintenanceMethods_throwIllegalStateException_afterClose() {
         ServerSession session = createSession(1L);

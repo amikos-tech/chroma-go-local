@@ -1,5 +1,6 @@
 package tech.amikos.chroma.local.core;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 public final class MaintenanceExecutor {
@@ -13,28 +14,27 @@ public final class MaintenanceExecutor {
             Function<String, ServerSession> startServerAction,
             Function<EmbeddedSession, R> operation) {
 
+        Objects.requireNonNull(configYaml, "configYaml");
+        Objects.requireNonNull(closeServerAction, "closeServerAction");
+        Objects.requireNonNull(startEmbeddedAction, "startEmbeddedAction");
+        Objects.requireNonNull(startServerAction, "startServerAction");
+        Objects.requireNonNull(operation, "operation");
+
         // Step 1: Stop+free the current server handle
-        closeServerAction.run();
+        try {
+            closeServerAction.run();
+        } catch (RuntimeException e) {
+            throw new ChromaException("failed to stop/free server before maintenance", e);
+        }
 
         // Step 2: Start temporary embedded session
         EmbeddedSession embedded;
         try {
             embedded = startEmbeddedAction.apply(configYaml);
         } catch (RuntimeException startErr) {
-            try {
-                ServerSession restarted = startServerAction.apply(configYaml);
-                restarted.close();
-            } catch (RuntimeException restartErr) {
-                ChromaException combined = new ChromaException(
-                        "failed to start temporary embedded runtime for maintenance: " + startErr.getMessage()
-                                + "; restart failed: " + restartErr.getMessage()
-                                + "; server remains stopped",
-                        startErr);
-                combined.addSuppressed(restartErr);
-                throw combined;
-            }
             throw new ChromaException(
-                    "failed to start temporary embedded runtime for maintenance", startErr);
+                    "failed to start temporary embedded runtime for maintenance; server remains stopped",
+                    startErr);
         }
 
         // Step 3: Run operation
@@ -63,7 +63,7 @@ public final class MaintenanceExecutor {
             restartError = e;
         }
 
-        // Step 6: Error matrix (mirrors Go rebuild.go:214-232)
+        // Step 6: Error matrix (matches Go rebuild.go error-handling strategy)
         if (opError != null) {
             if (closeError != null) {
                 opError.addSuppressed(closeError);
@@ -98,7 +98,6 @@ public final class MaintenanceExecutor {
             return new MaintenanceResult<>(result, null, restartError);
         }
 
-        // Happy path
         return new MaintenanceResult<>(result, newSession, null);
     }
 }

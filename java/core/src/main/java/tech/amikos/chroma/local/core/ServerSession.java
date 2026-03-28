@@ -10,7 +10,7 @@ import java.util.function.LongToIntFunction;
 public final class ServerSession implements AutoCloseable {
     private final long handle;
     private final AtomicBoolean closed;
-    private final ReentrantLock backupLock = new ReentrantLock();
+    private final ReentrantLock lifecycleLock = new ReentrantLock();
     private final LongConsumer stopAction;
     private final LongConsumer freeAction;
     private final LongToIntFunction portAccessor;
@@ -59,6 +59,9 @@ public final class ServerSession implements AutoCloseable {
         this.closed = new AtomicBoolean(false);
     }
 
+    // Read accessors call ensureOpen() without holding lifecycleLock. This is a deliberate
+    // trade-off: the native handle remains valid until close() completes inside the lock,
+    // so concurrent reads may see stale data but won't use-after-free.
     private void ensureOpen() {
         if (closed.get()) throw new IllegalStateException("session is closed");
     }
@@ -78,7 +81,7 @@ public final class ServerSession implements AutoCloseable {
 
     @Override
     public void close() {
-        backupLock.lock();
+        lifecycleLock.lock();
         try {
             if (closed.compareAndSet(false, true)) {
                 Throwable stopError = null;
@@ -101,7 +104,7 @@ public final class ServerSession implements AutoCloseable {
                 }
             }
         } finally {
-            backupLock.unlock();
+            lifecycleLock.unlock();
         }
     }
 
@@ -110,20 +113,28 @@ public final class ServerSession implements AutoCloseable {
         throw (T) t;
     }
 
-    public MaintenanceResult<RebuildCollectionResult, ServerSession> rebuildCollection(RebuildOptions options) {
-        backupLock.lock();
+    private <O, R> MaintenanceResult<R, ServerSession> executeMaintenanceOp(
+            O options, String paramName,
+            Function<O, MaintenanceResult<R, ServerSession>> action) {
+        lifecycleLock.lock();
         try {
             ensureOpen();
-            if (options == null) throw new IllegalArgumentException("options is required");
-            MaintenanceResult<RebuildCollectionResult, ServerSession> result = rebuildAction.apply(options);
-            closed.set(true);
-            return result;
-        } catch (RuntimeException e) {
-            closed.set(true);
-            throw e;
+            if (options == null) throw new IllegalArgumentException(paramName + " is required");
+            try {
+                MaintenanceResult<R, ServerSession> result = action.apply(options);
+                closed.set(true);
+                return result;
+            } catch (RuntimeException e) {
+                closed.set(true);
+                throw e;
+            }
         } finally {
-            backupLock.unlock();
+            lifecycleLock.unlock();
         }
+    }
+
+    public MaintenanceResult<RebuildCollectionResult, ServerSession> rebuildCollection(RebuildOptions options) {
+        return executeMaintenanceOp(options, "options", rebuildAction);
     }
 
     public MaintenanceResult<RebuildCollectionResult, ServerSession> rebuildCollection(String name) {
@@ -131,19 +142,7 @@ public final class ServerSession implements AutoCloseable {
     }
 
     public MaintenanceResult<CompactionResult, ServerSession> compactCollection(CompactCollectionRequest request) {
-        backupLock.lock();
-        try {
-            ensureOpen();
-            if (request == null) throw new IllegalArgumentException("request is required");
-            MaintenanceResult<CompactionResult, ServerSession> result = compactCollectionAction.apply(request);
-            closed.set(true);
-            return result;
-        } catch (RuntimeException e) {
-            closed.set(true);
-            throw e;
-        } finally {
-            backupLock.unlock();
-        }
+        return executeMaintenanceOp(request, "request", compactCollectionAction);
     }
 
     public MaintenanceResult<CompactionResult, ServerSession> compactCollection(String name) {
@@ -151,35 +150,11 @@ public final class ServerSession implements AutoCloseable {
     }
 
     public MaintenanceResult<CompactionResult, ServerSession> compactAll(CompactAllRequest request) {
-        backupLock.lock();
-        try {
-            ensureOpen();
-            if (request == null) throw new IllegalArgumentException("request is required");
-            MaintenanceResult<CompactionResult, ServerSession> result = compactAllAction.apply(request);
-            closed.set(true);
-            return result;
-        } catch (RuntimeException e) {
-            closed.set(true);
-            throw e;
-        } finally {
-            backupLock.unlock();
-        }
+        return executeMaintenanceOp(request, "request", compactAllAction);
     }
 
     public MaintenanceResult<WALPruneResult, ServerSession> pruneCollectionWAL(WALPruneOptions options) {
-        backupLock.lock();
-        try {
-            ensureOpen();
-            if (options == null) throw new IllegalArgumentException("options is required");
-            MaintenanceResult<WALPruneResult, ServerSession> result = pruneWalCollectionAction.apply(options);
-            closed.set(true);
-            return result;
-        } catch (RuntimeException e) {
-            closed.set(true);
-            throw e;
-        } finally {
-            backupLock.unlock();
-        }
+        return executeMaintenanceOp(options, "options", pruneWalCollectionAction);
     }
 
     public MaintenanceResult<WALPruneResult, ServerSession> pruneCollectionWAL(String name) {
@@ -187,23 +162,11 @@ public final class ServerSession implements AutoCloseable {
     }
 
     public MaintenanceResult<WALPruneResult, ServerSession> pruneAllWAL(WALPruneOptions options) {
-        backupLock.lock();
-        try {
-            ensureOpen();
-            if (options == null) throw new IllegalArgumentException("options is required");
-            MaintenanceResult<WALPruneResult, ServerSession> result = pruneWalAllAction.apply(options);
-            closed.set(true);
-            return result;
-        } catch (RuntimeException e) {
-            closed.set(true);
-            throw e;
-        } finally {
-            backupLock.unlock();
-        }
+        return executeMaintenanceOp(options, "options", pruneWalAllAction);
     }
 
     public BackupResult<ServerSession> backup(BackupOptions options) {
-        backupLock.lock();
+        lifecycleLock.lock();
         try {
             ensureOpen();
             if (options == null) throw new IllegalArgumentException("options is required");
@@ -218,7 +181,7 @@ public final class ServerSession implements AutoCloseable {
                 throw e;
             }
         } finally {
-            backupLock.unlock();
+            lifecycleLock.unlock();
         }
     }
 }
