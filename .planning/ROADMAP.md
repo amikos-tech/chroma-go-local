@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 7: Server Lifecycle** - Implement server start/stop/close and connection accessors in both JNA and Panama backends
 - [ ] **Phase 8: Embedded Maintenance** - Implement rebuild, compaction, and WAL prune operations on EmbeddedSession in both backends
 - [x] **Phase 9: Backup API** - Implement backup with filesystem copy, manifest generation, and option builder for both embedded and server modes (completed 2026-03-27)
-- [ ] **Phase 10: Server Maintenance** - Implement stop-embed-op-restart orchestration for all maintenance operations on ServerSession
+- [x] **Phase 10: Server Maintenance** - Implement stop-embed-op-restart orchestration for all maintenance operations on ServerSession (completed 2026-03-28)
 
 ## Phase Details
 
@@ -109,7 +109,7 @@ Plans:
 
 Plans:
 - [x] 10-01-PLAN.md -- MaintenanceResult, MaintenanceExecutor, ServerSession expansion, JNA/Panama backend wiring
-- [ ] 10-02-PLAN.md -- Data-seeded integration tests for server maintenance in both JNA and Panama backends
+- [x] 10-02-PLAN.md -- Data-seeded integration tests for server maintenance in both JNA and Panama backends
 
 ## Progress
 
@@ -128,4 +128,4 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 7. Server Lifecycle | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 9. Backup API | v0.5.0 | 2/2 | Complete   | 2026-03-27 |
-| 10. Server Maintenance | v0.5.0 | 1/2 | In Progress|  |
+| 10. Server Maintenance | v0.5.0 | 2/2 | Complete   | 2026-03-28 |
