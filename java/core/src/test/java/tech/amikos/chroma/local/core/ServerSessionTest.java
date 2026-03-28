@@ -13,6 +13,16 @@ class ServerSessionTest {
 
     private static final Function<BackupOptions, BackupResult<ServerSession>> STUB_BACKUP =
             opts -> { throw new UnsupportedOperationException("stub"); };
+    private static final Function<RebuildOptions, MaintenanceResult<RebuildCollectionResult, ServerSession>> STUB_REBUILD =
+            opts -> { throw new UnsupportedOperationException("stub"); };
+    private static final Function<CompactCollectionRequest, MaintenanceResult<CompactionResult, ServerSession>> STUB_COMPACT_COLLECTION =
+            req -> { throw new UnsupportedOperationException("stub"); };
+    private static final Function<CompactAllRequest, MaintenanceResult<CompactionResult, ServerSession>> STUB_COMPACT_ALL =
+            req -> { throw new UnsupportedOperationException("stub"); };
+    private static final Function<WALPruneOptions, MaintenanceResult<WALPruneResult, ServerSession>> STUB_PRUNE_COLLECTION =
+            opts -> { throw new UnsupportedOperationException("stub"); };
+    private static final Function<WALPruneOptions, MaintenanceResult<WALPruneResult, ServerSession>> STUB_PRUNE_ALL =
+            opts -> { throw new UnsupportedOperationException("stub"); };
 
     private ServerSession createSession(long handle) {
         return new ServerSession(
@@ -22,50 +32,59 @@ class ServerSessionTest {
                 h -> 8000,
                 h -> "localhost",
                 h -> "/data",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
     }
 
     @Test
     void constructorRejectsZeroHandle() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(0L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP));
+                () -> new ServerSession(0L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullStopAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, null, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP));
+                () -> new ServerSession(1L, null, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullFreeAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, null, h -> 0, h -> "", h -> "", STUB_BACKUP));
+                () -> new ServerSession(1L, h -> {}, null, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullPortAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, null, h -> "", h -> "", STUB_BACKUP));
+                () -> new ServerSession(1L, h -> {}, h -> {}, null, h -> "", h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullAddressAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, null, h -> "", STUB_BACKUP));
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, null, h -> "", STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullPersistPathAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", null, STUB_BACKUP));
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", null, STUB_BACKUP,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullBackupAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", null));
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", null,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
@@ -89,7 +108,9 @@ class ServerSessionTest {
                 h -> {}, h -> {},
                 h -> { receivedHandle.set(h); return 9090; },
                 h -> "host", h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertEquals(9090, session.port());
         assertEquals(99L, receivedHandle.get());
@@ -104,7 +125,9 @@ class ServerSessionTest {
                 h -> 8000,
                 h -> { receivedHandle.set(h); return "0.0.0.0"; },
                 h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertEquals("0.0.0.0", session.address());
         assertEquals(88L, receivedHandle.get());
@@ -118,7 +141,9 @@ class ServerSessionTest {
                 h -> {}, h -> {},
                 h -> 8000, h -> "host",
                 h -> { receivedHandle.set(h); return "/my/data"; },
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertEquals("/my/data", session.persistPath());
         assertEquals(77L, receivedHandle.get());
@@ -132,7 +157,9 @@ class ServerSessionTest {
                 h -> 8080,
                 h -> "127.0.0.1",
                 h -> "/data",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertEquals("http://127.0.0.1:8080", session.url());
     }
@@ -146,7 +173,9 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         session.close();
         assertEquals(1, stopCalls.get());
@@ -162,7 +191,9 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         session.close();
         session.close();
@@ -179,7 +210,9 @@ class ServerSessionTest {
                 h -> { throw new RuntimeException("stop failed"); },
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertThrows(RuntimeException.class, session::close);
         assertEquals(1, freeCalls.get(), "freeAction must run even if stopAction throws");
@@ -193,7 +226,9 @@ class ServerSessionTest {
                 h -> { stopCalls.incrementAndGet(); throw new RuntimeException("stop failed"); },
                 h -> {},
                 h -> 8000, h -> "host", h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertThrows(RuntimeException.class, session::close);
         assertThrows(IllegalStateException.class, session::port);
@@ -209,7 +244,9 @@ class ServerSessionTest {
                 h -> { throw new RuntimeException("stop failed"); },
                 h -> { throw new RuntimeException("free failed"); },
                 h -> 8000, h -> "host", h -> "/path",
-                STUB_BACKUP
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         RuntimeException ex = assertThrows(RuntimeException.class, session::close);
         assertEquals("stop failed", ex.getMessage(), "stop exception propagates as primary");
@@ -239,16 +276,17 @@ class ServerSessionTest {
     }
 
     @Test
-    void rebuildCollection_throwsUnsupportedOperationException() {
+    void rebuildCollection_delegatesToCallback() {
         ServerSession session = createSession(1L);
         assertThrows(UnsupportedOperationException.class,
-                () -> session.rebuildCollection(RebuildOptions.defaults("coll")));
+                () -> session.rebuildCollection(RebuildOptions.defaults("coll")),
+                "stub callback throws UnsupportedOperationException");
     }
 
     @Test
-    void compactCollection_throwsUnsupportedOperationException() {
+    void compactCollection_rejectsNullRequest() {
         ServerSession session = createSession(1L);
-        assertThrows(UnsupportedOperationException.class,
+        assertThrows(IllegalArgumentException.class,
                 () -> session.compactCollection((CompactCollectionRequest) null));
     }
 
@@ -278,7 +316,9 @@ class ServerSessionTest {
                 42L,
                 h -> {}, h -> {},
                 h -> 8000, h -> "host", h -> "/path",
-                opts -> { capturedOpts.set(opts); return fakeResult; }
+                opts -> { capturedOpts.set(opts); return fakeResult; },
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
 
         BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
@@ -303,7 +343,9 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
-                opts -> new BackupResult<>(manifest, null)
+                opts -> new BackupResult<>(manifest, null),
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
 
         session.backup(new BackupOptions.Builder("/tmp/backup").build());
@@ -318,7 +360,9 @@ class ServerSessionTest {
                 42L,
                 h -> {}, h -> {},
                 h -> 8000, h -> "host", h -> "/path",
-                opts -> { throw new RuntimeException("backup failed"); }
+                opts -> { throw new RuntimeException("backup failed"); },
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
 
         BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
@@ -339,7 +383,9 @@ class ServerSessionTest {
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
                 opts -> { throw new BackupExecutor.PreValidationFailure(
-                        new IllegalArgumentException("dest inside source")); }
+                        new IllegalArgumentException("dest inside source")); },
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
 
         BackupOptions options = new BackupOptions.Builder("/tmp/backup").build();
@@ -361,13 +407,13 @@ class ServerSessionTest {
         assertThrows(IllegalStateException.class,
                 () -> session.rebuildCollection(RebuildOptions.defaults("coll")));
         assertThrows(IllegalStateException.class,
-                () -> session.compactCollection((CompactCollectionRequest) null));
+                () -> session.compactCollection(new CompactCollectionRequest.Builder("coll").build()));
         assertThrows(IllegalStateException.class,
-                () -> session.compactAll(null));
+                () -> session.compactAll(new CompactAllRequest.Builder().build()));
         assertThrows(IllegalStateException.class,
                 () -> session.pruneCollectionWAL(WALPruneOptions.defaults("coll")));
         assertThrows(IllegalStateException.class,
-                () -> session.pruneAllWAL(null));
+                () -> session.pruneAllWAL(WALPruneOptions.defaults("coll")));
         BackupOptions opts = new BackupOptions.Builder("/tmp/dest").build();
         assertThrows(IllegalStateException.class, () -> session.backup(opts));
     }
