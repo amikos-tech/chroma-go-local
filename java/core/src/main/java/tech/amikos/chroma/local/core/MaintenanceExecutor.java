@@ -81,12 +81,13 @@ public final class MaintenanceExecutor {
 
         if (closeError != null) {
             if (restartError != null) {
-                return new MaintenanceResult<>(result, null,
-                        new ChromaException(
-                                "close embedded failed: " + closeError.getMessage()
-                                        + "; restart failed: " + restartError.getMessage()
-                                        + "; server remains stopped",
-                                closeError));
+                ChromaException combined = new ChromaException(
+                        "close embedded failed: " + closeError.getMessage()
+                                + "; restart failed: " + restartError.getMessage()
+                                + "; server remains stopped",
+                        closeError);
+                combined.addSuppressed(restartError);
+                return new MaintenanceResult<>(result, null, combined);
             }
             return new MaintenanceResult<>(result, newSession,
                     new ChromaException(

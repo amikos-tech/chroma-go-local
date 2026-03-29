@@ -14,9 +14,9 @@ import java.util.Objects;
 public final class MaintenanceResult<R, S> {
     private final R result;
     private final S session;
-    private final Exception restartError;
+    private final RuntimeException restartError;
 
-    MaintenanceResult(R result, S session, Exception restartError) {
+    MaintenanceResult(R result, S session, RuntimeException restartError) {
         Objects.requireNonNull(result, "result");
         if (session == null && restartError == null) {
             throw new IllegalArgumentException(
@@ -33,5 +33,5 @@ public final class MaintenanceResult<R, S> {
     public S session() { return session; }
 
     /** Non-null when a non-fatal error occurred during teardown or server restart. */
-    public Exception restartError() { return restartError; }
+    public RuntimeException restartError() { return restartError; }
 }
