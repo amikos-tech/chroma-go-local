@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 7: Server Lifecycle** - Implement server start/stop/close and connection accessors in both JNA and Panama backends
 - [ ] **Phase 8: Embedded Maintenance** - Implement rebuild, compaction, and WAL prune operations on EmbeddedSession in both backends
 - [x] **Phase 9: Backup API** - Implement backup with filesystem copy, manifest generation, and option builder for both embedded and server modes (completed 2026-03-27)
-- [ ] **Phase 10: Server Maintenance** - Implement stop-embed-op-restart orchestration for all maintenance operations on ServerSession
+- [x] **Phase 10: Server Maintenance** - Implement stop-embed-op-restart orchestration for all maintenance operations on ServerSession (completed 2026-03-28)
 
 ## Phase Details
 
@@ -105,10 +105,11 @@ Plans:
   2. `ServerSession.compactCollection(request)` and `compactAll(request)` use the stop-embed-op-restart pattern and return CompactionResult
   3. `ServerSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` use the stop-embed-op-restart pattern and return WALPruneResult
   4. Integration tests verify each server maintenance operation completes and the server is accessible again afterward in both backends
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 10-01: TBD
+- [x] 10-01-PLAN.md -- MaintenanceResult, MaintenanceExecutor, ServerSession expansion, JNA/Panama backend wiring
+- [x] 10-02-PLAN.md -- Data-seeded integration tests for server maintenance in both JNA and Panama backends
 
 ## Progress
 
@@ -127,4 +128,4 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 7. Server Lifecycle | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 9. Backup API | v0.5.0 | 2/2 | Complete   | 2026-03-27 |
-| 10. Server Maintenance | v0.5.0 | 0/? | Not started | - |
+| 10. Server Maintenance | v0.5.0 | 2/2 | Complete    | 2026-03-28 |

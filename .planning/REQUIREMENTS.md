@@ -38,10 +38,10 @@
 
 ### Server Maintenance
 
-- [ ] **SMNT-01**: `ServerSession.rebuildCollection(name, options)` uses stop-embed-op-restart pattern
-- [ ] **SMNT-02**: `ServerSession.compactCollection(request)` and `compactAll(request)` use stop-embed-op-restart pattern
-- [ ] **SMNT-03**: `ServerSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` use stop-embed-op-restart pattern
-- [ ] **SMNT-04**: Integration tests verify server maintenance operations in both backends
+- [x] **SMNT-01**: `ServerSession.rebuildCollection(name, options)` uses stop-embed-op-restart pattern
+- [x] **SMNT-02**: `ServerSession.compactCollection(request)` and `compactAll(request)` use stop-embed-op-restart pattern
+- [x] **SMNT-03**: `ServerSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` use stop-embed-op-restart pattern
+- [x] **SMNT-04**: Integration tests verify server maintenance operations in both backends
 
 ## v2 Requirements
 
@@ -87,10 +87,10 @@
 | BKUP-02 | Phase 9 | Complete |
 | BKUP-03 | Phase 9 | Complete |
 | BKUP-04 | Phase 9 | Complete |
-| SMNT-01 | Phase 10 | Pending |
-| SMNT-02 | Phase 10 | Pending |
-| SMNT-03 | Phase 10 | Pending |
-| SMNT-04 | Phase 10 | Pending |
+| SMNT-01 | Phase 10 | Complete |
+| SMNT-02 | Phase 10 | Complete |
+| SMNT-03 | Phase 10 | Complete |
+| SMNT-04 | Phase 10 | Complete |
 
 **Coverage:**
 - v1 requirements: 23 total

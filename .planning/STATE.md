@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
-status: "Phase 09 shipped — PR #81"
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-27T10:09:58.751Z"
+status: "Phase 10 shipped — PR #82"
+stopped_at: Completed 10-02-PLAN.md
+last_updated: "2026-03-28T13:39:05.763Z"
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  completed_phases: 5
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # Project State
@@ -19,7 +19,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Java and Go APIs must provide equivalent access to all Chroma runtime capabilities
-**Current focus:** Phase 09 — backup-api
+**Current focus:** Phase 10 — server-maintenance (complete)
 
 ## Current Position
 
@@ -38,6 +38,8 @@ Plan: Not started
 | 08 | 01 | 3min | 2 | 4 |
 | 08 | 02 | 9min | 2 | 2 |
 | Phase 09 P02 | 4min | 2 tasks | 4 files |
+| Phase 10 P01 | 6min | 2 tasks | 6 files |
+| 10 | 02 | 6min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -59,6 +61,11 @@ Plan: Not started
 - [Phase 08]: EmbeddedSession constructor expanded from 2 to 7 parameters
 - [Phase 08]: Smoke tier tests only -- D-09 data-seeded tests deferred pending FUTURE-03 collection CRUD
 - [Phase 08]: EmbeddedConfigBuilder used for test YAML instead of hand-written strings
+- [Phase 10]: MaintenanceResult preserves operation result on partial failure (restart error) per D-03
+- [Phase 10]: MaintenanceExecutor mirrors Go rebuild.go error matrix with Java exception semantics
+- [Phase 10]: Server maintenance methods invalidate session after callback matching backup pattern
+- [Phase 10]: Split null-option rejection tests per operation due to ServerSession closing on IllegalArgumentException
+- [Phase 10]: HTTP data seeding via Chroma v2 REST API for server maintenance test verification
 
 ### Pending Todos
 
@@ -70,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T05:52:51.227Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-03-28T09:41:20Z
+Stopped at: Completed 10-02-PLAN.md
 Resume file: None
