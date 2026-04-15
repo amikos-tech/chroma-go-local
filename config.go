@@ -46,6 +46,14 @@ func WithOpenTelemetry(endpoint, serviceName string) ServerOption {
 	return runtime.WithOpenTelemetry(endpoint, serviceName)
 }
 
+func WithTLSCertPath(certPath string) ServerOption {
+	return runtime.WithTLSCertPath(certPath)
+}
+
+func WithTLSKeyPath(keyPath string) ServerOption {
+	return runtime.WithTLSKeyPath(keyPath)
+}
+
 func WithRawYAML(yaml string) ServerOption {
 	return runtime.WithRawYAML(yaml)
 }

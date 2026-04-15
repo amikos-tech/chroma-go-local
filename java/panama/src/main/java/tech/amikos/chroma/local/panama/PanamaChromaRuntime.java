@@ -43,7 +43,8 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
             MethodHandle serverFree,
             MethodHandle serverPort,
             MethodHandle serverAddress,
-            MethodHandle serverPersistPath) {}
+            MethodHandle serverPersistPath,
+            MethodHandle serverTlsEnabled) {}
 
     private final Arena arena;
     private final Ffi ffi;
@@ -112,7 +113,10 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
                     linker.downcallHandle(
                             requireSymbol(library, "chroma_server_persist_path"),
-                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)));
+                            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)),
+                    linker.downcallHandle(
+                            requireSymbol(library, "chroma_server_tls_enabled"),
+                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)));
 
             PanamaChromaRuntime runtime = new PanamaChromaRuntime(arena, ffi);
             initialized = true;
@@ -284,6 +288,7 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 this::serverPort,
                 this::serverAddress,
                 this::serverPersistPath,
+                () -> serverTlsEnabled(handle),
                 opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, version, opts,
                         () -> { try { serverStop(handle); } finally { serverFree(handle); } },
                         () -> doStartServer(configYaml)),
@@ -384,6 +389,18 @@ public final class PanamaChromaRuntime extends AbstractChromaRuntime {
                 throw new ChromaException("failed to read server persist path", t);
             }
         });
+    }
+
+    private boolean serverTlsEnabled(long handleAddress) {
+        return callFfiInt(() -> {
+            try {
+                return (int) ffi.serverTlsEnabled().invokeExact(
+                        MemorySegment.ofAddress(handleAddress));
+            } catch (Throwable t) {
+                if (t instanceof Error error) throw error;
+                throw new ChromaException("failed to read server TLS state", t);
+            }
+        }) > 0;
     }
 
     // Same invokeExact constraint as serverFree — cannot use callFfiFree.

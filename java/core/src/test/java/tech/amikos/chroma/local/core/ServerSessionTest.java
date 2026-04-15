@@ -32,6 +32,7 @@ class ServerSessionTest {
                 h -> 8000,
                 h -> "localhost",
                 h -> "/data",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -41,49 +42,56 @@ class ServerSessionTest {
     @Test
     void constructorRejectsZeroHandle() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(0L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(0L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullStopAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, null, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, null, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullFreeAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, null, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, null, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullPortAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, null, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, null, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullAddressAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, null, h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, null, h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullPersistPathAccessor() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", null, STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", null, () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullBackupAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", null,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, null,
+                        STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
+    }
+
+    @Test
+    void constructorRejectsNullTlsEnabledAccessor() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", null, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
@@ -108,6 +116,7 @@ class ServerSessionTest {
                 h -> {}, h -> {},
                 h -> { receivedHandle.set(h); return 9090; },
                 h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -125,6 +134,7 @@ class ServerSessionTest {
                 h -> 8000,
                 h -> { receivedHandle.set(h); return "0.0.0.0"; },
                 h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -141,6 +151,7 @@ class ServerSessionTest {
                 h -> {}, h -> {},
                 h -> 8000, h -> "host",
                 h -> { receivedHandle.set(h); return "/my/data"; },
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -157,11 +168,34 @@ class ServerSessionTest {
                 h -> 8080,
                 h -> "127.0.0.1",
                 h -> "/data",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
         );
         assertEquals("http://127.0.0.1:8080", session.url());
+    }
+
+    @Test
+    void url_returnsHttpsUrl_whenTlsEnabled() {
+        ServerSession session = new ServerSession(
+                1L,
+                h -> {}, h -> {},
+                h -> 8443,
+                h -> "127.0.0.1",
+                h -> "/data",
+                () -> true,
+                STUB_BACKUP,
+                STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
+                STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
+        );
+        assertEquals("https://127.0.0.1:8443", session.url());
+    }
+
+    @Test
+    void tlsEnabled_returnsFalse_byDefault() {
+        ServerSession session = createSession(1L);
+        assertEquals(false, session.tlsEnabled());
     }
 
     @Test
@@ -173,6 +207,7 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -191,6 +226,7 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -210,6 +246,7 @@ class ServerSessionTest {
                 h -> { throw new RuntimeException("stop failed"); },
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -226,6 +263,7 @@ class ServerSessionTest {
                 h -> { stopCalls.incrementAndGet(); throw new RuntimeException("stop failed"); },
                 h -> {},
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -244,6 +282,7 @@ class ServerSessionTest {
                 h -> { throw new RuntimeException("stop failed"); },
                 h -> { throw new RuntimeException("free failed"); },
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -316,6 +355,7 @@ class ServerSessionTest {
                 42L,
                 h -> {}, h -> {},
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 opts -> { capturedOpts.set(opts); return fakeResult; },
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -343,6 +383,7 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 opts -> new BackupResult<>(manifest, null),
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -360,6 +401,7 @@ class ServerSessionTest {
                 42L,
                 h -> {}, h -> {},
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 opts -> { throw new RuntimeException("backup failed"); },
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL
@@ -382,6 +424,7 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 opts -> { throw new BackupExecutor.PreValidationFailure(
                         new IllegalArgumentException("dest inside source")); },
                 STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
@@ -405,35 +448,35 @@ class ServerSessionTest {
     @Test
     void constructorRejectsNullRebuildAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         null, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullCompactCollectionAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, null, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullCompactAllAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, null, STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullPruneWalCollectionAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, null, STUB_PRUNE_ALL));
     }
 
     @Test
     void constructorRejectsNullPruneWalAllAction() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", STUB_BACKUP,
+                () -> new ServerSession(1L, h -> {}, h -> {}, h -> 0, h -> "", h -> "", () -> false, STUB_BACKUP,
                         STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL, STUB_PRUNE_COLLECTION, null));
     }
 
@@ -447,6 +490,7 @@ class ServerSessionTest {
 
         ServerSession session = new ServerSession(
                 42L, h -> {}, h -> {}, h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 opts -> { capturedOpts.set(opts); return fakeResult; },
                 STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
@@ -465,6 +509,7 @@ class ServerSessionTest {
     void rebuildCollection_failureStillInvalidatesSession() {
         ServerSession session = new ServerSession(
                 42L, h -> {}, h -> {}, h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 opts -> { throw new RuntimeException("op failed"); },
                 STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
@@ -493,6 +538,7 @@ class ServerSessionTest {
 
         ServerSession session = new ServerSession(
                 42L, h -> {}, h -> {}, h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP, STUB_REBUILD, STUB_COMPACT_COLLECTION,
                 req -> fakeResult,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL);
@@ -516,6 +562,7 @@ class ServerSessionTest {
                 h -> stopCalls.incrementAndGet(),
                 h -> freeCalls.incrementAndGet(),
                 h -> 8000, h -> "host", h -> "/path",
+                () -> false,
                 STUB_BACKUP,
                 opts -> fakeResult,
                 STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,

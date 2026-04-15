@@ -22,6 +22,14 @@ type ServerConfig struct {
 	OTelEndpoint    string
 	OTelServiceName string
 
+	// TLS (optional)
+	// TLSCertPath is the path to the PEM-encoded TLS certificate file.
+	// When set, chroma_server_tls_enabled will report TLS as enabled and
+	// Server.URL() will return an https:// URL.
+	TLSCertPath string
+	// TLSKeyPath is the path to the PEM-encoded TLS private key file.
+	TLSKeyPath string
+
 	// Raw config (takes precedence if set)
 	rawYAML string
 }
@@ -98,6 +106,21 @@ func WithOpenTelemetry(endpoint, serviceName string) ServerOption {
 	}
 }
 
+// WithTLSCertPath sets the path to the PEM-encoded TLS certificate file.
+// When a cert path is provided, Server.URL() will return an https:// URL.
+func WithTLSCertPath(certPath string) ServerOption {
+	return func(c *ServerConfig) {
+		c.TLSCertPath = certPath
+	}
+}
+
+// WithTLSKeyPath sets the path to the PEM-encoded TLS private key file.
+func WithTLSKeyPath(keyPath string) ServerOption {
+	return func(c *ServerConfig) {
+		c.TLSKeyPath = keyPath
+	}
+}
+
 // WithRawYAML sets a raw YAML config string (overrides all other options).
 func WithRawYAML(yaml string) ServerOption {
 	return func(c *ServerConfig) {
@@ -133,6 +156,13 @@ func (c *ServerConfig) toYAML() string {
 		if c.OTelServiceName != "" {
 			fmt.Fprintf(&b, "  service_name: %q\n", c.OTelServiceName)
 		}
+	}
+
+	if c.TLSCertPath != "" {
+		fmt.Fprintf(&b, "tls_cert_path: %q\n", c.TLSCertPath)
+	}
+	if c.TLSKeyPath != "" {
+		fmt.Fprintf(&b, "tls_key_path: %q\n", c.TLSKeyPath)
 	}
 
 	return b.String()

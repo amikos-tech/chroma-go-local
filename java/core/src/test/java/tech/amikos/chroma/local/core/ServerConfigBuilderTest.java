@@ -206,4 +206,31 @@ class ServerConfigBuilderTest {
         assertTrue(map.containsKey("sqlite_filename"));
         assertTrue(map.containsKey("allow_reset"));
     }
+
+    @Test
+    void tlsCertPathAppearsInYaml() {
+        String yaml = new ServerConfigBuilder().tlsCertPath("/etc/certs/server.crt").build();
+        Map<String, Object> map = parseYaml(yaml);
+        assertEquals("/etc/certs/server.crt", map.get("tls_cert_path"));
+        assertFalse(map.containsKey("tls_key_path"));
+    }
+
+    @Test
+    void tlsKeyPathAppearsInYaml() {
+        String yaml = new ServerConfigBuilder()
+                .tlsCertPath("/etc/certs/server.crt")
+                .tlsKeyPath("/etc/certs/server.key")
+                .build();
+        Map<String, Object> map = parseYaml(yaml);
+        assertEquals("/etc/certs/server.crt", map.get("tls_cert_path"));
+        assertEquals("/etc/certs/server.key", map.get("tls_key_path"));
+    }
+
+    @Test
+    void tlsFieldsAbsentWhenNotSet() {
+        String yaml = new ServerConfigBuilder().build();
+        Map<String, Object> map = parseYaml(yaml);
+        assertFalse(map.containsKey("tls_cert_path"));
+        assertFalse(map.containsKey("tls_key_path"));
+    }
 }

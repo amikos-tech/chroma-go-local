@@ -169,6 +169,34 @@ struct ServerHandle {
     port: u16,
     listen_address: CString,
     persist_path: CString,
+    tls_enabled: bool,
+}
+
+/// Minimal shim-level TLS fields parsed from the YAML config.
+/// These keys are not part of FrontendServerConfig but are recognised by the shim
+/// to expose TLS state via chroma_server_tls_enabled.
+#[derive(Deserialize, Default)]
+struct ShimTlsConfig {
+    #[serde(default)]
+    tls_cert_path: Option<String>,
+    /// Parsed but not yet acted upon — reserved for future TLS termination support.
+    #[serde(default)]
+    #[allow(dead_code)]
+    tls_key_path: Option<String>,
+}
+
+fn tls_enabled_from_string(yaml_str: &str) -> bool {
+    let tls_cfg: ShimTlsConfig = figment::Figment::from(Yaml::string(yaml_str))
+        .extract()
+        .unwrap_or_default();
+    tls_cfg.tls_cert_path.as_deref().is_some_and(|p| !p.is_empty())
+}
+
+fn tls_enabled_from_path(path: &str) -> bool {
+    let tls_cfg: ShimTlsConfig = figment::Figment::from(Yaml::file(path))
+        .extract()
+        .unwrap_or_default();
+    tls_cfg.tls_cert_path.as_deref().is_some_and(|p| !p.is_empty())
 }
 
 struct EmbeddedHandle {
@@ -2720,7 +2748,8 @@ pub unsafe extern "C" fn chroma_server_start(config_path: *const c_char) -> *mut
             }
         };
 
-        start_server_with_config(config)
+        let tls_enabled = tls_enabled_from_path(&path);
+        start_server_with_config(config, tls_enabled)
     })
 }
 
@@ -2751,11 +2780,12 @@ pub unsafe extern "C" fn chroma_server_start_from_string(
             }
         };
 
-        start_server_with_config(config)
+        let tls_enabled = tls_enabled_from_string(&yaml);
+        start_server_with_config(config, tls_enabled)
     })
 }
 
-fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
+fn start_server_with_config(config: FrontendServerConfig, tls_enabled: bool) -> *mut c_void {
     let runtime = match Runtime::new() {
         Ok(r) => r,
         Err(e) => {
@@ -2834,6 +2864,7 @@ fn start_server_with_config(config: FrontendServerConfig) -> *mut c_void {
         port,
         listen_address,
         persist_path,
+        tls_enabled,
     });
 
     Box::into_raw(handle) as *mut c_void
@@ -2887,6 +2918,28 @@ pub unsafe extern "C" fn chroma_server_persist_path(handle: *mut c_void) -> *con
         }
         let server = &*(handle as *const ServerHandle);
         server.persist_path.as_ptr()
+    })
+}
+
+/// Return whether TLS is enabled on the server handle.
+/// Returns 1 if TLS is enabled, 0 if not, -1 on invalid handle.
+///
+/// TLS is considered enabled when a `tls_cert_path` was present in the config used to
+/// start the server.  Note that the Chroma frontend does not perform TLS termination
+/// itself; an external proxy or future shim-level implementation is required to serve
+/// HTTPS traffic.
+///
+/// # Safety
+/// `handle` must be a valid handle from `chroma_server_start*` or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn chroma_server_tls_enabled(handle: *mut c_void) -> i32 {
+    ffi_guard_minus_one!({
+        if handle.is_null() {
+            set_last_error("handle is null");
+            return -1;
+        }
+        let server = &*(handle as *const ServerHandle);
+        if server.tls_enabled { 1 } else { 0 }
     })
 }
 

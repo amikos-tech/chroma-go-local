@@ -18,6 +18,8 @@ public final class ServerConfigBuilder {
     private List<String> corsAllowOrigins;
     private String otelEndpoint;
     private String otelServiceName;
+    private String tlsCertPath;
+    private String tlsKeyPath;
     private String rawYaml;
 
     public ServerConfigBuilder port(int port) {
@@ -62,6 +64,16 @@ public final class ServerConfigBuilder {
 
     public ServerConfigBuilder otelServiceName(String otelServiceName) {
         this.otelServiceName = otelServiceName;
+        return this;
+    }
+
+    public ServerConfigBuilder tlsCertPath(String tlsCertPath) {
+        this.tlsCertPath = tlsCertPath;
+        return this;
+    }
+
+    public ServerConfigBuilder tlsKeyPath(String tlsKeyPath) {
+        this.tlsKeyPath = tlsKeyPath;
         return this;
     }
 
@@ -122,6 +134,13 @@ public final class ServerConfigBuilder {
                 otel.put("service_name", otelServiceName);
             }
             map.put("open_telemetry", otel);
+        }
+
+        if (tlsCertPath != null && !tlsCertPath.isBlank()) {
+            map.put("tls_cert_path", tlsCertPath);
+        }
+        if (tlsKeyPath != null && !tlsKeyPath.isBlank()) {
+            map.put("tls_key_path", tlsKeyPath);
         }
 
         Yaml yaml = new Yaml(options);
