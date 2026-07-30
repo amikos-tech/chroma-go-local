@@ -253,6 +253,31 @@ jobs:
           sha256sum -- "${files[@]}" > SHA256SUMS
           ls -lah
 
+      # Guard for issue #100: cosign derives the certificate identity from
+      # github.workflow_ref (the ref the workflow FILE was loaded from), not the
+      # ref that actions/checkout pulled. Dispatching from main therefore signs
+      # tag content with a refs/heads/main identity, forcing downstream consumers
+      # to widen their cosign allowlist. Refuse to sign on mismatch.
+      # NOTE: this holds only while the signing job lives in this file — if it
+      # ever moves to a reusable workflow the identity follows job_workflow_ref.
+      - name: Verify signing identity matches released ref
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          EXPECTED_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          SIGNING_REF="${WORKFLOW_REF##*@}"
+          if [ "${SIGNING_REF}" != "${EXPECTED_REF}" ]; then
+            echo "::error title=Signing identity mismatch::Artifacts would be signed as release.yml@${SIGNING_REF} but were built from ${EXPECTED_REF}"
+            echo "Refusing to sign: the cosign certificate identity must match the released ref (see issue #100)."
+            echo "Re-run the release from the tag itself:"
+            echo "  gh workflow run release.yml --ref ${RELEASE_TAG} -f release_tag=${RELEASE_TAG}"
+            exit 1
+          fi
+          echo "Signing identity ref ${SIGNING_REF} matches released ref ${EXPECTED_REF}."
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
