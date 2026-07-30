@@ -73,7 +73,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Quick task `260730-pii` is waiting for an `amikos` organization owner to create the public `amikos/setup-protoc` fork. The active GitHub identity cannot create the fork, so the four CI/release references remain on the existing source until the new repository and pinned commit can be verified.
+None yet.
 
 ### Quick Tasks Completed
 
@@ -81,10 +81,11 @@ None yet.
 |---|-------------|------|--------|--------|-----------|
 | 260730-ggr | Fix issue #100: release workflow signs with refs/heads/main identity instead of refs/tags/<version> when dispatched from main | 2026-07-30 | 4a5d7aa | Verified | [260730-ggr-fix-issue-100-release-workflow-signs-wit](./quick/260730-ggr-fix-issue-100-release-workflow-signs-wit/) |
 | 260730-p2k | Fix issue #96: replace arduino/setup-protoc (deprecated Node 20 runtime) with chroma-core/setup-protoc fork at all 4 call sites | 2026-07-30 | 425fb9c | N/A | [260730-p2k-replace-arduino-setup-protoc-with-chroma](./quick/260730-p2k-replace-arduino-setup-protoc-with-chroma/) |
+| 260730-pii | Vendor setup-protoc locally, monitor upstream drift, and ignore generated Chroma runtime data | 2026-07-30 | 5d3d437, 3dd112f | Needs CI | [260730-pii-address-setup-protoc-fork-availability-u](./quick/260730-pii-address-setup-protoc-fork-availability-u/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-30 - Paused quick task 260730-pii: setup-protoc availability follow-up is waiting for an `amikos` organization owner to create the fork
+Last activity: 2026-07-30 - Completed quick task 260730-pii: local setup-protoc action migration awaiting the existing CI matrix
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
