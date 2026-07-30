@@ -80,10 +80,11 @@ None yet.
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 260730-ggr | Fix issue #100: release workflow signs with refs/heads/main identity instead of refs/tags/<version> when dispatched from main | 2026-07-30 | 4a5d7aa | Verified | [260730-ggr-fix-issue-100-release-workflow-signs-wit](./quick/260730-ggr-fix-issue-100-release-workflow-signs-wit/) |
+| 260730-p2k | Fix issue #96: replace arduino/setup-protoc (deprecated Node 20 runtime) with chroma-core/setup-protoc fork at all 4 call sites | 2026-07-30 | 425fb9c | N/A | [260730-p2k-replace-arduino-setup-protoc-with-chroma](./quick/260730-p2k-replace-arduino-setup-protoc-with-chroma/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-30 - Completed quick task 260730-ggr: Fix issue #100: release workflow signs with refs/heads/main identity instead of refs/tags/<version> when dispatched from main
+Last activity: 2026-07-30 - Completed quick task 260730-p2k: Fix issue #96: replace arduino/setup-protoc (deprecated Node 20 runtime) with chroma-core/setup-protoc fork
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
