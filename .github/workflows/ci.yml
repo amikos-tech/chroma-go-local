@@ -51,10 +51,54 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          version: "31.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        env:
+          PROTOC_VERSION: "31.1"
+        run: |
+          # Inlined rather than a local composite action: release.yml checks out an
+          # older tag, where .github/actions/ would not exist.
+          set -euo pipefail
+          case "${RUNNER_OS}" in
+            Linux)
+              asset="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+              sha="96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065" ;;
+            macOS)
+              asset="protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
+              sha="99ea004549c139f46da5638187a85bbe422d78939be0fa01af1aa8ab672e395f" ;;
+            Windows)
+              asset="protoc-${PROTOC_VERSION}-win64.zip"
+              sha="70381b116ab0d71cb6a5177d9b17c7c13415866603a0fd40d513dafe32d56c35" ;;
+            *)
+              echo "::error::Unsupported runner OS: ${RUNNER_OS}"
+              exit 1 ;;
+          esac
+
+          tmp="${RUNNER_TEMP}"
+          if command -v cygpath >/dev/null 2>&1; then
+            tmp="$(cygpath -u "${RUNNER_TEMP}")"
+          fi
+
+          curl --fail-with-body --retry 3 --retry-all-errors --max-time 180 -sSL \
+            -o "${tmp}/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${asset}"
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            echo "${sha}  ${tmp}/protoc.zip" | sha256sum -c -
+          else
+            echo "${sha}  ${tmp}/protoc.zip" | shasum -a 256 -c -
+          fi
+
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -q "${tmp}/protoc.zip" -d "${tmp}/protoc"
+          else
+            7z x -y -o"${tmp}/protoc" "${tmp}/protoc.zip" >/dev/null
+          fi
+
+          bin="${tmp}/protoc/bin"
+          if command -v cygpath >/dev/null 2>&1; then
+            bin="$(cygpath -w "${bin}")"
+          fi
+          echo "${bin}" >> "${GITHUB_PATH}"
 
       - name: Verify protoc
         run: protoc --version
@@ -121,10 +165,54 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          version: "31.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        env:
+          PROTOC_VERSION: "31.1"
+        run: |
+          # Inlined rather than a local composite action: release.yml checks out an
+          # older tag, where .github/actions/ would not exist.
+          set -euo pipefail
+          case "${RUNNER_OS}" in
+            Linux)
+              asset="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+              sha="96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065" ;;
+            macOS)
+              asset="protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
+              sha="99ea004549c139f46da5638187a85bbe422d78939be0fa01af1aa8ab672e395f" ;;
+            Windows)
+              asset="protoc-${PROTOC_VERSION}-win64.zip"
+              sha="70381b116ab0d71cb6a5177d9b17c7c13415866603a0fd40d513dafe32d56c35" ;;
+            *)
+              echo "::error::Unsupported runner OS: ${RUNNER_OS}"
+              exit 1 ;;
+          esac
+
+          tmp="${RUNNER_TEMP}"
+          if command -v cygpath >/dev/null 2>&1; then
+            tmp="$(cygpath -u "${RUNNER_TEMP}")"
+          fi
+
+          curl --fail-with-body --retry 3 --retry-all-errors --max-time 180 -sSL \
+            -o "${tmp}/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${asset}"
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            echo "${sha}  ${tmp}/protoc.zip" | sha256sum -c -
+          else
+            echo "${sha}  ${tmp}/protoc.zip" | shasum -a 256 -c -
+          fi
+
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -q "${tmp}/protoc.zip" -d "${tmp}/protoc"
+          else
+            7z x -y -o"${tmp}/protoc" "${tmp}/protoc.zip" >/dev/null
+          fi
+
+          bin="${tmp}/protoc/bin"
+          if command -v cygpath >/dev/null 2>&1; then
+            bin="$(cygpath -w "${bin}")"
+          fi
+          echo "${bin}" >> "${GITHUB_PATH}"
 
       - name: Verify protoc
         run: protoc --version
@@ -195,10 +283,54 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          version: "31.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        env:
+          PROTOC_VERSION: "31.1"
+        run: |
+          # Inlined rather than a local composite action: release.yml checks out an
+          # older tag, where .github/actions/ would not exist.
+          set -euo pipefail
+          case "${RUNNER_OS}" in
+            Linux)
+              asset="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+              sha="96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065" ;;
+            macOS)
+              asset="protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
+              sha="99ea004549c139f46da5638187a85bbe422d78939be0fa01af1aa8ab672e395f" ;;
+            Windows)
+              asset="protoc-${PROTOC_VERSION}-win64.zip"
+              sha="70381b116ab0d71cb6a5177d9b17c7c13415866603a0fd40d513dafe32d56c35" ;;
+            *)
+              echo "::error::Unsupported runner OS: ${RUNNER_OS}"
+              exit 1 ;;
+          esac
+
+          tmp="${RUNNER_TEMP}"
+          if command -v cygpath >/dev/null 2>&1; then
+            tmp="$(cygpath -u "${RUNNER_TEMP}")"
+          fi
+
+          curl --fail-with-body --retry 3 --retry-all-errors --max-time 180 -sSL \
+            -o "${tmp}/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${asset}"
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            echo "${sha}  ${tmp}/protoc.zip" | sha256sum -c -
+          else
+            echo "${sha}  ${tmp}/protoc.zip" | shasum -a 256 -c -
+          fi
+
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -q "${tmp}/protoc.zip" -d "${tmp}/protoc"
+          else
+            7z x -y -o"${tmp}/protoc" "${tmp}/protoc.zip" >/dev/null
+          fi
+
+          bin="${tmp}/protoc/bin"
+          if command -v cygpath >/dev/null 2>&1; then
+            bin="$(cygpath -w "${bin}")"
+          fi
+          echo "${bin}" >> "${GITHUB_PATH}"
 
       - name: Verify protoc
         run: protoc --version

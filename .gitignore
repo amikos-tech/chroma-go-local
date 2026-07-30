@@ -25,6 +25,7 @@ chroma_test_data/
 chroma_test_data_builder/
 chroma_test_data_embedded/
 chroma_test_data_bind_conflict/
+chroma/
 
 # Proptest regression files (local debug artifacts)
 shim/proptest-regressions/
