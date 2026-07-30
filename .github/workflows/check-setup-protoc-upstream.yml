@@ -1,0 +1,37 @@
+name: Check vendored setup-protoc upstream
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for upstream commits to review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UPSTREAM_BASE: 3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623
+        run: |
+          set -euo pipefail
+
+          comparison=$(curl --fail --retry 3 --retry-all-errors --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/arduino/setup-protoc/compare/${UPSTREAM_BASE}...master")
+          ahead_by=$(jq -r '.ahead_by' <<<"${comparison}")
+
+          if [[ ! "${ahead_by}" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Invalid GitHub comparison response::Expected a numeric ahead_by value."
+            exit 1
+          fi
+
+          echo "arduino/setup-protoc has ${ahead_by} commit(s) after ${UPSTREAM_BASE}."
+          if (( ahead_by > 0 )); then
+            echo "::error title=Vendored setup-protoc is behind upstream::Review the upstream changes and update .github/actions/setup-protoc if appropriate."
+            exit 1
+          fi

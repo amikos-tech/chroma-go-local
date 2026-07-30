@@ -57,7 +57,7 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: chroma-core/setup-protoc@df9e7872eaabfd0ddfafd9e27fe77c6229bc7d22 # v4c
+        uses: ./.github/actions/setup-protoc
         with:
           version: "31.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}

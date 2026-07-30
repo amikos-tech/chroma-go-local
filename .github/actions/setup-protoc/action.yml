@@ -1,0 +1,24 @@
+name: 'Setup protoc'
+description: 'Download protoc compiler and add it to the PATH'
+author: 'Arduino'
+inputs:
+  version:
+    description: 'Version to use. Example: 26.2'
+    default: '26.x'
+  include-pre-releases:
+    description: 'Include github pre-releases in latest version calculation'
+    default: 'false'
+  repo-token:
+    description: 'GitHub repo token to use to avoid rate limiter'
+    default: ''
+outputs:
+  version:
+    description: 'Actual version of the protoc compiler environment that has been installed'
+  path:
+    description: 'Path to where the protoc compiler has been installed'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
+branding:
+  icon: 'box'
+  color: 'green'
