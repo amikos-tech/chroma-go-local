@@ -82,7 +82,7 @@ public final class ServerSession implements AutoCloseable {
     public boolean tlsEnabled() { ensureOpen(); return tlsEnabledAccessor.getAsBoolean(); }
 
     public String url() {
-        String scheme = tlsEnabledAccessor.getAsBoolean() ? "https" : "http";
+        String scheme = tlsEnabled() ? "https" : "http";
         return scheme + "://" + address() + ":" + port();
     }
 
