@@ -459,7 +459,6 @@ jobs:
             --content-type "application/json"
 
       - name: Purge release metadata from CDN cache
-        if: vars.CF_ZONE_ID != ''
         shell: bash
         env:
           CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
@@ -468,8 +467,19 @@ jobs:
           RELEASES_DOMAIN: ${{ vars.RELEASES_DOMAIN || 'releases.amikos.tech' }}
         run: |
           set -euo pipefail
+          MISSING=""
+          if [ -z "${CF_ZONE_ID}" ]; then
+            MISSING="CF_ZONE_ID (repository variable)"
+          fi
           if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
-            echo "CLOUDFLARE_API_TOKEN is not set; skipping cache purge."
+            if [ -n "${MISSING}" ]; then
+              MISSING="${MISSING}, CLOUDFLARE_API_TOKEN (repository secret)"
+            else
+              MISSING="CLOUDFLARE_API_TOKEN (repository secret)"
+            fi
+          fi
+          if [ -n "${MISSING}" ]; then
+            echo "::warning title=CDN cache not purged::Missing ${MISSING}. The CDN cache was NOT purged: https://${RELEASES_DOMAIN}/${PROJECT}/latest.json and https://${RELEASES_DOMAIN}/${PROJECT}/releases.json may serve stale release metadata at the edge until the CDN TTL expires."
             exit 0
           fi
           curl -sf -X POST \
