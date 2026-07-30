@@ -1449,7 +1449,7 @@ func normalizeMetadataValue(path string, value any, allowNil bool) (any, error) 
 			return nil, errors.Errorf("%s float metadata values must be finite", path)
 		}
 		return metadataFloat64(f), nil
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if rv.IsNil() {
 			if allowNil {
 				return nil, nil
