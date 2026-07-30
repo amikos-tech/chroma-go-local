@@ -27,6 +27,7 @@ var (
 	chromaServerPort                        func(uintptr) int32
 	chromaServerAddress                     func(uintptr) *byte
 	chromaServerPersistPath                 func(uintptr) *byte
+	chromaServerTLSEnabled                  func(uintptr) int32
 	chromaServerStop                        func(uintptr) int32
 	chromaServerFree                        func(uintptr)
 	chromaEmbeddedStart                     func(*byte) uintptr
@@ -94,6 +95,7 @@ func registerFunctions() error {
 		{&chromaServerPort, "chroma_server_port"},
 		{&chromaServerAddress, "chroma_server_address"},
 		{&chromaServerPersistPath, "chroma_server_persist_path"},
+		{&chromaServerTLSEnabled, "chroma_server_tls_enabled"},
 		{&chromaServerStop, "chroma_server_stop"},
 		{&chromaServerFree, "chroma_server_free"},
 		{&chromaEmbeddedStart, "chroma_embedded_start"},
@@ -220,6 +222,7 @@ type Server struct {
 	addr        string
 	config      StartServerConfig
 	persistPath string
+	tls         bool
 }
 
 // StartServerConfig contains configuration options for starting a server.
@@ -253,6 +256,7 @@ func StartServer(config StartServerConfig) (*Server, error) {
 	var port int32
 	addr := ""
 	persistPath := ""
+	tlsEnabled := false
 	func() {
 		ffiMu.Lock()
 		defer ffiMu.Unlock()
@@ -265,6 +269,7 @@ func StartServer(config StartServerConfig) (*Server, error) {
 		if persistPathPtr != nil {
 			persistPath = goStringFromPtr(persistPathPtr)
 		}
+		tlsEnabled = chromaServerTLSEnabled(handle) > 0
 	}()
 
 	resolvedPersistPath, persistPathErr := normalizePersistPath(persistPath)
@@ -293,6 +298,7 @@ func StartServer(config StartServerConfig) (*Server, error) {
 		addr:        addr,
 		config:      config,
 		persistPath: resolvedPersistPath,
+		tls:         tlsEnabled,
 	}
 
 	goruntime.SetFinalizer(server, func(s *Server) {
@@ -316,11 +322,22 @@ func (s *Server) Address() string {
 	return s.addr
 }
 
-// URL returns the full URL of the server (e.g., "http://127.0.0.1:8000").
+// TLS returns true if the server was started with TLS configured.
+func (s *Server) TLS() bool {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.tls
+}
+
+// URL returns the full URL of the server (e.g., "http://127.0.0.1:8000" or "https://127.0.0.1:8000").
 func (s *Server) URL() string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	return fmt.Sprintf("http://%s:%d", s.addr, s.port)
+	scheme := "http"
+	if s.tls {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, s.addr, s.port)
 }
 
 // Stop gracefully stops the server.

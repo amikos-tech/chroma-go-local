@@ -175,6 +175,33 @@ func TestServerConfigToYAML(t *testing.T) {
 	}
 }
 
+func TestServerConfigTLSYAML(t *testing.T) {
+	cfg := DefaultServerConfig()
+	WithTLSCertPath("/etc/certs/server.crt")(cfg)
+	WithTLSKeyPath("/etc/certs/server.key")(cfg)
+
+	yaml := cfg.toYAML()
+
+	if !strings.Contains(yaml, `tls_cert_path: "/etc/certs/server.crt"`) {
+		t.Errorf("YAML missing tls_cert_path, got: %s", yaml)
+	}
+	if !strings.Contains(yaml, `tls_key_path: "/etc/certs/server.key"`) {
+		t.Errorf("YAML missing tls_key_path, got: %s", yaml)
+	}
+}
+
+func TestServerConfigTLSYAML_NotIncludedWhenEmpty(t *testing.T) {
+	cfg := DefaultServerConfig()
+	yaml := cfg.toYAML()
+
+	if strings.Contains(yaml, "tls_cert_path") {
+		t.Errorf("YAML should not contain tls_cert_path when not set, got: %s", yaml)
+	}
+	if strings.Contains(yaml, "tls_key_path") {
+		t.Errorf("YAML should not contain tls_key_path when not set, got: %s", yaml)
+	}
+}
+
 func TestServerConfigWithOptions(t *testing.T) {
 	cfg := DefaultServerConfig()
 

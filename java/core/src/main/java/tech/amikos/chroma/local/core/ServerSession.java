@@ -2,6 +2,7 @@ package tech.amikos.chroma.local.core;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
@@ -16,6 +17,7 @@ public final class ServerSession implements AutoCloseable {
     private final LongToIntFunction portAccessor;
     private final LongFunction<String> addressAccessor;
     private final LongFunction<String> persistPathAccessor;
+    private final BooleanSupplier tlsEnabledAccessor;
     private final Function<BackupOptions, BackupResult<ServerSession>> backupAction;
     private final Function<RebuildOptions, MaintenanceResult<RebuildCollectionResult, ServerSession>> rebuildAction;
     private final Function<CompactCollectionRequest, MaintenanceResult<CompactionResult, ServerSession>> compactCollectionAction;
@@ -26,6 +28,7 @@ public final class ServerSession implements AutoCloseable {
     public ServerSession(long handle, LongConsumer stopAction, LongConsumer freeAction,
                          LongToIntFunction portAccessor, LongFunction<String> addressAccessor,
                          LongFunction<String> persistPathAccessor,
+                         BooleanSupplier tlsEnabledAccessor,
                          Function<BackupOptions, BackupResult<ServerSession>> backupAction,
                          Function<RebuildOptions, MaintenanceResult<RebuildCollectionResult, ServerSession>> rebuildAction,
                          Function<CompactCollectionRequest, MaintenanceResult<CompactionResult, ServerSession>> compactCollectionAction,
@@ -38,6 +41,7 @@ public final class ServerSession implements AutoCloseable {
         if (portAccessor == null) throw new IllegalArgumentException("portAccessor must be set");
         if (addressAccessor == null) throw new IllegalArgumentException("addressAccessor must be set");
         if (persistPathAccessor == null) throw new IllegalArgumentException("persistPathAccessor must be set");
+        if (tlsEnabledAccessor == null) throw new IllegalArgumentException("tlsEnabledAccessor must be set");
         if (backupAction == null) throw new IllegalArgumentException("backupAction must be set");
         if (rebuildAction == null) throw new IllegalArgumentException("rebuildAction must be set");
         if (compactCollectionAction == null) throw new IllegalArgumentException("compactCollectionAction must be set");
@@ -50,6 +54,7 @@ public final class ServerSession implements AutoCloseable {
         this.portAccessor = portAccessor;
         this.addressAccessor = addressAccessor;
         this.persistPathAccessor = persistPathAccessor;
+        this.tlsEnabledAccessor = tlsEnabledAccessor;
         this.backupAction = backupAction;
         this.rebuildAction = rebuildAction;
         this.compactCollectionAction = compactCollectionAction;
@@ -74,9 +79,11 @@ public final class ServerSession implements AutoCloseable {
 
     public String persistPath() { ensureOpen(); return persistPathAccessor.apply(handle); }
 
-    // TLS not yet supported
+    public boolean tlsEnabled() { ensureOpen(); return tlsEnabledAccessor.getAsBoolean(); }
+
     public String url() {
-        return "http://" + address() + ":" + port();
+        String scheme = tlsEnabled() ? "https" : "http";
+        return scheme + "://" + address() + ":" + port();
     }
 
     @Override

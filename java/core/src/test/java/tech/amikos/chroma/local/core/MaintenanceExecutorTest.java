@@ -33,7 +33,7 @@ class MaintenanceExecutorTest {
             opts -> { throw new UnsupportedOperationException("stub"); };
 
     private static ServerSession fakeServer() {
-        return new ServerSession(1L, h -> {}, h -> {}, h -> 8000, h -> "localhost", h -> "/data",
+        return new ServerSession(1L, h -> {}, h -> {}, h -> 8000, h -> "localhost", h -> "/data", () -> false,
                 STUB_BACKUP, STUB_REBUILD, STUB_COMPACT_COLLECTION, STUB_COMPACT_ALL,
                 STUB_PRUNE_COLLECTION, STUB_PRUNE_ALL);
     }

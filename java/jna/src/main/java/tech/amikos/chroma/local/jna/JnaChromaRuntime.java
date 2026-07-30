@@ -49,6 +49,8 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
 
         Pointer chroma_server_address(Pointer handle);
 
+        int chroma_server_tls_enabled(Pointer handle);
+
         Pointer chroma_embedded_persist_path(Pointer handle);
 
         Pointer chroma_server_persist_path(Pointer handle);
@@ -142,6 +144,7 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
                 this::serverPort,
                 this::serverAddress,
                 this::serverPersistPath,
+                () -> serverTlsEnabled(handle),
                 opts -> BackupExecutor.execute(BackupMode.SERVER, persistPath, version, opts,
                         () -> { try { serverStop(handle); } finally { serverFree(handle); } },
                         () -> doStartServer(configYaml)),
@@ -183,6 +186,10 @@ public final class JnaChromaRuntime extends AbstractChromaRuntime {
     private String serverAddress(long handle) {
         return callFfiBorrowedString(
                 () -> Pointer.nativeValue(bindings.chroma_server_address(new Pointer(handle))));
+    }
+
+    private boolean serverTlsEnabled(long handle) {
+        return callFfiInt(() -> bindings.chroma_server_tls_enabled(new Pointer(handle))) > 0;
     }
 
     private String embeddedPersistPath(long handle) {
