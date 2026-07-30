@@ -51,7 +51,7 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        uses: chroma-core/setup-protoc@df9e7872eaabfd0ddfafd9e27fe77c6229bc7d22 # v4c
         with:
           version: "31.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -121,7 +121,7 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        uses: chroma-core/setup-protoc@df9e7872eaabfd0ddfafd9e27fe77c6229bc7d22 # v4c
         with:
           version: "31.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -195,7 +195,7 @@ jobs:
           workspaces: "shim -> target"
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        uses: chroma-core/setup-protoc@df9e7872eaabfd0ddfafd9e27fe77c6229bc7d22 # v4c
         with:
           version: "31.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
