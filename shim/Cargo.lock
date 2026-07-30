@@ -1034,7 +1034,7 @@ checksum = "b62ddb9cb1ec0a098ad4bbf9344d0713fa193ae1a80af55febcff2627b6a00c1"
 dependencies = [
  "getrandom 0.2.17",
  "instant",
- "rand 0.8.5",
+ "rand 0.8.7",
 ]
 
 [[package]]
@@ -1447,7 +1447,7 @@ dependencies = [
  "mdac",
  "opentelemetry",
  "parking_lot",
- "rand 0.8.5",
+ "rand 0.8.7",
  "rust-embed",
  "serde",
  "serde_json",
@@ -1493,7 +1493,7 @@ dependencies = [
  "opentelemetry",
  "parking_lot",
  "parquet",
- "rand 0.8.5",
+ "rand 0.8.7",
  "roaring",
  "serde",
  "simsimd",
@@ -1524,7 +1524,7 @@ dependencies = [
  "chroma-types",
  "futures",
  "opentelemetry",
- "rand 0.8.5",
+ "rand 0.8.7",
  "serde",
  "serde_json",
  "sqlx",
@@ -1666,7 +1666,7 @@ dependencies = [
  "futures",
  "object_store",
  "opentelemetry",
- "rand 0.8.5",
+ "rand 0.8.7",
  "serde",
  "serde_json",
  "tempfile",
@@ -1718,7 +1718,7 @@ dependencies = [
  "futures",
  "opentelemetry",
  "parking_lot",
- "rand 0.8.5",
+ "rand 0.8.7",
  "serde",
  "tempfile",
  "thiserror 1.0.69",
@@ -4300,7 +4300,7 @@ dependencies = [
  "madsim-macros",
  "naive-timer",
  "panic-message",
- "rand 0.8.5",
+ "rand 0.8.7",
  "rand_xoshiro",
  "rustversion",
  "serde",
@@ -4651,7 +4651,7 @@ dependencies = [
  "num-integer",
  "num-iter",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.7",
  "smallvec",
  "zeroize",
 ]
@@ -4674,7 +4674,7 @@ checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "bytemuck",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.7",
 ]
 
 [[package]]
@@ -4877,7 +4877,7 @@ dependencies = [
  "glob",
  "opentelemetry",
  "percent-encoding",
- "rand 0.8.5",
+ "rand 0.8.7",
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
@@ -5577,9 +5577,9 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
-version = "0.8.5"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+checksum = "22f6172bdec972074665ed81ed53b71da00bfc44b65a753cfde883ec4c702a1a"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -5658,7 +5658,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.7",
 ]
 
 [[package]]
@@ -6465,7 +6465,7 @@ dependencies = [
  "generator",
  "hex",
  "owo-colors",
- "rand 0.8.5",
+ "rand 0.8.7",
  "rand_core 0.6.4",
  "rand_pcg",
  "scoped-tls",
@@ -6746,7 +6746,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "percent-encoding",
- "rand 0.8.5",
+ "rand 0.8.7",
  "rsa",
  "serde",
  "sha1",
@@ -6785,7 +6785,7 @@ dependencies = [
  "md-5",
  "memchr",
  "once_cell",
- "rand 0.8.5",
+ "rand 0.8.7",
  "serde",
  "serde_json",
  "sha2",
@@ -7498,7 +7498,7 @@ dependencies = [
  "indexmap 1.9.3",
  "pin-project",
  "pin-project-lite",
- "rand 0.8.5",
+ "rand 0.8.7",
  "slab",
  "tokio",
  "tokio-util",
