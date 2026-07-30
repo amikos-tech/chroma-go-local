@@ -75,7 +75,15 @@ None yet.
 
 None yet.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260730-ggr | Fix issue #100: release workflow signs with refs/heads/main identity instead of refs/tags/<version> when dispatched from main | 2026-07-30 | 4a5d7aa | Verified | [260730-ggr-fix-issue-100-release-workflow-signs-wit](./quick/260730-ggr-fix-issue-100-release-workflow-signs-wit/) |
+
 ## Session Continuity
+
+Last activity: 2026-07-30 - Completed quick task 260730-ggr: Fix issue #100: release workflow signs with refs/heads/main identity instead of refs/tags/<version> when dispatched from main
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
