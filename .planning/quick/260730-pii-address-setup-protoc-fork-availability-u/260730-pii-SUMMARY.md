@@ -27,7 +27,8 @@ The local action retains the exact `dist/index.js` supplied by the reviewed sour
 - `yq` parses all three affected workflows.
 - `actionlint` passes for the added workflow and passes for all affected workflows when excluding existing `SC2129` in `ci.yml`; no new lint finding was introduced.
 - `git check-ignore -v chroma/chroma.sqlite3` confirms the generated database is ignored.
-- `make test` and `make lint` were not run: the implementation changes the local JavaScript action and workflow configuration, not Go, Rust, or Java source.
+- `make test` passes.
+- `make lint` passes: `golangci-lint` reports zero issues and Rust clippy completes with warnings denied.
 
 ## Follow-up
 
