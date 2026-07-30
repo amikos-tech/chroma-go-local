@@ -73,7 +73,7 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- Quick task `260730-pii` is waiting for an `amikos` organization owner to create the public `amikos/setup-protoc` fork. The active GitHub identity cannot create the fork, so the four CI/release references remain on the existing source until the new repository and pinned commit can be verified.
 
 ### Quick Tasks Completed
 
@@ -84,7 +84,7 @@ None yet.
 
 ## Session Continuity
 
-Last activity: 2026-07-30 - Completed quick task 260730-p2k: Fix issue #96: replace arduino/setup-protoc (deprecated Node 20 runtime) with chroma-core/setup-protoc fork
+Last activity: 2026-07-30 - Paused quick task 260730-pii: setup-protoc availability follow-up is waiting for an `amikos` organization owner to create the fork
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
