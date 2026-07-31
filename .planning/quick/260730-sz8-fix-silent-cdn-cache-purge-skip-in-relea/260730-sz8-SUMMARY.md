@@ -99,12 +99,12 @@ None.
 
 | Commit | Message |
 |---|---|
-| c2fda6e | `fix(ci): warn loudly when CDN cache purge is skipped` |
+| e22f1a0 | `fix(ci): warn loudly when CDN cache purge is skipped` |
 
 ## Self-Check: PASSED
 
 - `.github/workflows/release.yml` exists and contains the annotation — FOUND
-- Commit `c2fda6e` exists in git history — FOUND
+- Commit `e22f1a0` exists in git history — FOUND
 - `actionlint` clean — PASS
 - `yq -e` gate (corrected form) exits 0 — PASS
 - Only `.github/workflows/release.yml` in the code commit — PASS
