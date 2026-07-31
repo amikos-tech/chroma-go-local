@@ -88,10 +88,11 @@ None yet.
 | 260731-fqz | Replace the ineffective yamllint apt path with a package-install-free, version-visible workflow lint contract and simplify Cloudflare cache purging into a structurally best-effort step | 2026-07-31 | 4174a8b | Verified — PR #107 | [260731-fqz-address-ci-lint-reproducibility-and-rele](./quick/260731-fqz-address-ci-lint-reproducibility-and-rele/) |
 | 260731-j64 | Address release purge diagnostics, lint documentation and Windows parity, resilient lint tool versions, and workflow lint hardening | 2026-07-31 | 4743852 | Needs Review — PR #107 | [260731-j64-address-release-purge-diagnostics-lint-d](./quick/260731-j64-address-release-purge-diagnostics-lint-d/) |
 | 260731-nkz | Validate and address release workflow review findings 1-10 | 2026-07-31 | f9d4e03 | Needs Review — PR #107 | [260731-nkz-validate-and-address-release-workflow-re](./quick/260731-nkz-validate-and-address-release-workflow-re/) |
+| 260731-sjq | Protect published `v*` tags from updates and deletions for issue #99 | 2026-07-31 | ruleset 20138470 | Verified | [260731-sjq-review-and-address-issue-99-by-protectin](./quick/260731-sjq-review-and-address-issue-99-by-protectin/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-31 - Shipped quick tasks 260730-sz8 + 260731-dgm + 260731-eho + 260731-fqz + 260731-j64 + 260731-nkz as PR #107: fix silent CDN purge skip (issue #97), plus retry-timing bound and lint hardening. Human verification (hosted-release CDN purge observation) still pending post-merge.
+Last activity: 2026-07-31 - Completed quick task 260731-sjq: protected published `v*` tags from updates and deletions with verified repository ruleset 20138470 (issue #99).
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
