@@ -460,6 +460,7 @@ jobs:
 
       - name: Purge release metadata from CDN cache
         shell: bash
+        continue-on-error: true
         env:
           CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -480,121 +481,51 @@ jobs:
             exit 0
           fi
 
-          PURGE_BODY_FILE=$(mktemp)
-          PURGE_STDERR_FILE=$(mktemp)
-          trap 'rm -f "${PURGE_BODY_FILE}" "${PURGE_STDERR_FILE}"' EXIT
+          PURGE_BODY_FILE=""
+          if ! PURGE_BODY_FILE=$(mktemp); then
+            echo "::warning title=CDN cache not purged::Unable to create a temporary response file for the Cloudflare cache purge. Release publication will continue."
+            exit 0
+          fi
+          trap 'rm -f "${PURGE_BODY_FILE}"' EXIT
 
-          PURGE_CODE=000
-          PURGE_CODE=$(curl -sS \
-            --retry 3 \
-            --retry-all-errors \
-            --max-time 180 \
-            -o "${PURGE_BODY_FILE}" \
-            -w '%{http_code}' \
-            -X POST \
-            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}" \
-            2>"${PURGE_STDERR_FILE}") || PURGE_CODE=000
+          if ! PURGE_CODE=$(curl -sS \
+              --retry 3 \
+              --retry-all-errors \
+              --max-time 180 \
+              -o "${PURGE_BODY_FILE}" \
+              -w '%{http_code}' \
+              -X POST \
+              "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"); then
+            echo "::warning title=CDN cache not purged::Cloudflare cache purge transport request failed after retries. Release publication will continue."
+            exit 0
+          fi
 
           case "${PURGE_CODE}" in
             2[0-9][0-9])
               ;;
+            401|403)
+              echo "::warning title=CDN cache not purged::Cloudflare rejected cache purge authentication or configuration. Verify CF_ZONE_ID and token zone permissions. Release publication will continue."
+              exit 0
+              ;;
+            408|429|5[0-9][0-9])
+              echo "::warning title=CDN cache not purged::Cloudflare cache purge failed after retries because of a timeout, rate limit, or server error. Release publication will continue."
+              exit 0
+              ;;
             *)
-              PURGE_BODY_DIAGNOSTIC=$(tr '\r\n' '  ' < "${PURGE_BODY_FILE}")
-              PURGE_STDERR_DIAGNOSTIC=$(tr '\r\n' '  ' < "${PURGE_STDERR_FILE}")
-              printf 'Cloudflare purge HTTP status: %s\n' "${PURGE_CODE}"
-              printf 'Cloudflare purge response diagnostic: %s\n' "${PURGE_BODY_DIAGNOSTIC:-<empty>}"
-              printf 'Cloudflare purge transport diagnostic: %s\n' "${PURGE_STDERR_DIAGNOSTIC:-<empty>}"
-              echo "::warning title=CDN cache not purged::Cloudflare cache purge transport or HTTP request failed. Release publication will continue; see the diagnostic log lines above."
+              echo "::warning title=CDN cache not purged::Cloudflare cache purge returned an unexpected non-success HTTP status. Release publication will continue."
               exit 0
               ;;
           esac
 
-          if ! command -v jq >/dev/null 2>&1; then
-            echo "Cloudflare purge diagnostic: jq is unavailable; response validation could not run."
-            echo "::warning title=CDN cache not purged::Cloudflare cache purge response could not be validated. Release publication will continue; see the diagnostic log lines above."
-            exit 0
-          fi
-
-          warn_purge_validation() {
-            echo "::warning title=CDN cache not purged::Cloudflare cache purge response could not be validated. Release publication will continue; see the diagnostic log lines above."
-          }
-
-          JQ_STATUS=0
-          jq -e '.success == true' "${PURGE_BODY_FILE}" >/dev/null 2>"${PURGE_STDERR_FILE}" || JQ_STATUS=$?
-          if (( JQ_STATUS == 0 )); then
+          if jq -e '.success == true' "${PURGE_BODY_FILE}" >/dev/null; then
             echo "Cloudflare release metadata purge succeeded."
             exit 0
           fi
 
-          if ! grep -q '[^[:space:]]' "${PURGE_BODY_FILE}"; then
-            echo "Cloudflare purge diagnostic: response body is empty."
-            warn_purge_validation
-            exit 0
-          fi
-
-          JSON_STATUS=0
-          jq -c . "${PURGE_BODY_FILE}" >/dev/null 2>"${PURGE_STDERR_FILE}" || JSON_STATUS=$?
-          if (( JSON_STATUS != 0 )); then
-            PURGE_JQ_DIAGNOSTIC=$(tr '\r\n' '  ' < "${PURGE_STDERR_FILE}")
-            PURGE_RESPONSE_DIAGNOSTIC=$(tr '\r\n' '  ' < "${PURGE_BODY_FILE}")
-            printf 'Cloudflare purge diagnostic: response body is not valid JSON (jq exit %s): %s\n' \
-              "${JSON_STATUS}" "${PURGE_JQ_DIAGNOSTIC:-no parser diagnostic}"
-            printf 'Cloudflare purge response diagnostic: %s\n' "${PURGE_RESPONSE_DIAGNOSTIC}"
-            warn_purge_validation
-            exit 0
-          fi
-
-          PURGE_RESPONSE_DIAGNOSTIC=""
-          PURGE_RESPONSE_DIAGNOSTIC=$(jq -c . "${PURGE_BODY_FILE}" | tr '\r\n' '  ')
-
-          SUCCESS_CLASS=""
-          SUCCESS_CLASS=$(jq -r '
-            if type != "object" then
-              "not-object"
-            elif (has("success") | not) then
-              "missing"
-            elif (.success | type) != "boolean" then
-              "wrong-type:" + (.success | type)
-            elif .success == false then
-              "false"
-            else
-              "unexpected"
-            end
-          ' "${PURGE_BODY_FILE}" 2>"${PURGE_STDERR_FILE}") || SUCCESS_CLASS="classification-error"
-
-          case "${SUCCESS_CLASS}" in
-            false)
-              printf 'Cloudflare purge diagnostic: %s\n' "${PURGE_RESPONSE_DIAGNOSTIC}"
-              echo "::warning title=CDN cache not purged::Cloudflare API rejected the cache purge (success:false). Release publication will continue; see the diagnostic log line above."
-              ;;
-            missing)
-              echo "Cloudflare purge diagnostic: response JSON is missing the success field."
-              printf 'Cloudflare purge response diagnostic: %s\n' "${PURGE_RESPONSE_DIAGNOSTIC}"
-              warn_purge_validation
-              ;;
-            wrong-type:*)
-              printf 'Cloudflare purge diagnostic: response JSON success field must be boolean, got %s.\n' \
-                "${SUCCESS_CLASS#wrong-type:}"
-              printf 'Cloudflare purge response diagnostic: %s\n' "${PURGE_RESPONSE_DIAGNOSTIC}"
-              warn_purge_validation
-              ;;
-            not-object)
-              echo "Cloudflare purge diagnostic: response JSON must be an object containing boolean success."
-              printf 'Cloudflare purge response diagnostic: %s\n' "${PURGE_RESPONSE_DIAGNOSTIC}"
-              warn_purge_validation
-              ;;
-            *)
-              PURGE_JQ_DIAGNOSTIC=$(tr '\r\n' '  ' < "${PURGE_STDERR_FILE}")
-              printf 'Cloudflare purge diagnostic: response classification failed after jq exit %s: %s\n' \
-                "${JQ_STATUS}" "${PURGE_JQ_DIAGNOSTIC:-unexpected jq result}"
-              printf 'Cloudflare purge response diagnostic: %s\n' "${PURGE_RESPONSE_DIAGNOSTIC}"
-              warn_purge_validation
-              ;;
-          esac
-          exit 0
+          echo "::warning title=CDN cache not purged::Cloudflare cache purge API response was invalid or did not report success:true. Release publication will continue."
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0

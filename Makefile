@@ -1,4 +1,4 @@
-.PHONY: build build-debug build-release build-java clean test test-go test-rust test-java test-all bench bench-go bench-rust lint lint-go lint-rust lint-java fmt fmt-go fmt-rust help
+.PHONY: build build-debug build-release build-java clean test test-go test-rust test-java test-all bench bench-go bench-rust lint lint-go lint-rust lint-workflows lint-java fmt fmt-go fmt-rust help
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo UNKNOWN)
 OS_ENV := $(OS)
@@ -89,9 +89,10 @@ help:
 	@echo "  build-java    - Build Java modules (core, jna, panama)"
 	@echo "  test-java     - Run Java smoke tests (JNA + Panama)"
 	@echo "  lint-java     - Run Java checks"
-	@echo "  lint          - Run linters for Go and Rust"
+	@echo "  lint          - Run linters for Go, Rust, and GitHub Actions workflows"
 	@echo "  lint-go       - Run golangci-lint"
 	@echo "  lint-rust     - Run cargo clippy"
+	@echo "  lint-workflows - Run actionlint and yamllint"
 	@echo "  fmt           - Format Go and Rust code"
 	@echo "  fmt-go        - Format Go code with gofmt and goimports"
 	@echo "  fmt-rust      - Format Rust code with cargo fmt"
@@ -166,13 +167,52 @@ clean:
 	cd $(SHIM_DIR) && cargo clean
 	rm -rf ./chroma_test_data
 
-lint: lint-go lint-rust
+lint: lint-go lint-rust lint-workflows
 
 lint-go:
 	golangci-lint run ./...
 
 lint-rust:
 	cd $(SHIM_DIR) && cargo clippy --locked -- -D warnings
+
+lint-workflows:
+	@set -eu; \
+	shellcheck_path="$$(command -v shellcheck 2>/dev/null)" || { \
+		echo "ShellCheck is required for workflow linting but was not found on PATH."; \
+		exit 1; \
+	}; \
+	yamllint_path="$$(command -v yamllint 2>/dev/null)" || { \
+		echo "yamllint is required for workflow linting but was not found on PATH."; \
+		exit 1; \
+	}; \
+	shellcheck_version="$$("$$shellcheck_path" --version | awk '/^version:/ { print $$2; exit }')"; \
+	yamllint_version="$$("$$yamllint_path" --version | awk 'NR == 1 { print $$2 }')"; \
+	if [ -z "$$shellcheck_version" ]; then \
+		echo "Unable to determine ShellCheck version from $$shellcheck_path."; \
+		exit 1; \
+	fi; \
+	if [ -z "$$yamllint_version" ]; then \
+		echo "Unable to determine yamllint version from $$yamllint_path."; \
+		exit 1; \
+	fi; \
+	printf 'ShellCheck %s (%s)\n' "$$shellcheck_version" "$$shellcheck_path"; \
+	printf 'yamllint %s (%s)\n' "$$yamllint_version" "$$yamllint_path"; \
+	if [ -n "$${EXPECTED_SHELLCHECK_VERSION:-}" ] && [ "$$shellcheck_version" != "$$EXPECTED_SHELLCHECK_VERSION" ]; then \
+		printf 'ShellCheck version mismatch: expected %s, found %s at %s.\n' \
+			"$$EXPECTED_SHELLCHECK_VERSION" "$$shellcheck_version" "$$shellcheck_path"; \
+		exit 1; \
+	fi; \
+	if [ -n "$${EXPECTED_YAMLLINT_VERSION:-}" ] && [ "$$yamllint_version" != "$$EXPECTED_YAMLLINT_VERSION" ]; then \
+		printf 'yamllint version mismatch: expected %s, found %s at %s.\n' \
+			"$$EXPECTED_YAMLLINT_VERSION" "$$yamllint_version" "$$yamllint_path"; \
+		exit 1; \
+	fi; \
+	actionlint_version="$$(go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -version)"; \
+	printf 'actionlint %s\n' "$$actionlint_version"; \
+	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 \
+		-shellcheck="$$shellcheck_path" \
+		-ignore 'SC2129'; \
+	"$$yamllint_path" -c .yamllint .
 
 lint-java:
 	@set -e; \

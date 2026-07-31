@@ -13,6 +13,9 @@ jobs:
   workflow-lint:
     name: Lint GitHub Actions workflows
     runs-on: ubuntu-24.04
+    env:
+      EXPECTED_SHELLCHECK_VERSION: "0.9.0"
+      EXPECTED_YAMLLINT_VERSION: "1.38.0"
 
     steps:
       - name: Checkout
@@ -24,22 +27,9 @@ jobs:
           go-version: stable
           cache: true
 
-      - name: Install workflow linters
-        shell: bash
-        run: |
-          set -euo pipefail
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends yamllint=1.33.0-1
-
       - name: Lint GitHub Actions workflows
         shell: bash
-        run: |
-          set -euo pipefail
-          "$(go env GOPATH)/bin/actionlint" -version
-          yamllint --version
-          "$(go env GOPATH)/bin/actionlint" -ignore 'SC2129' .github/workflows/*.yml
-          yamllint -c .yamllint .github/workflows/*.yml
+        run: make lint-workflows
 
   build-test-lint:
     name: Build/Test/Lint (${{ matrix.os }})
