@@ -78,7 +78,7 @@ Output: One verified repository-level tag ruleset. No source or workflow changes
   <action>
 Run from the repository root. Confirm `gh auth status` succeeds and `gh api 'repos/{owner}/{repo}' --jq '.permissions.admin'` returns `true`; stop without mutation if not.
 
-Before any POST, list repository-owned tag rulesets with `GET repos/{owner}/{repo}/rulesets?includes_parents=false&amp;targets=tag&amp;per_page=100`, following pagination, then fetch each returned ruleset by ID so conditions, rules, enforcement, and bypass actors are available. Use the deterministic name `Protect published version tags`. Treat an existing ruleset as the desired no-op result only when it is active, targets tags, has `include: ["refs/tags/v*"]` and an empty exclude list, has no bypass actors, contains exactly the `update`, `deletion`, and `non_fast_forward` rule types, and the update rule's `parameters` field is absent or null.
+Before any POST, list repository-owned tag rulesets with `GET repos/{owner}/{repo}/rulesets?includes_parents=false&targets=tag&per_page=100`, following pagination, then fetch each returned ruleset by ID so conditions, rules, enforcement, and bypass actors are available. Use the deterministic name `Protect published version tags`. Treat an existing ruleset as the desired no-op result only when it is active, targets tags, has `include: ["refs/tags/v*"]` and an empty exclude list, has no bypass actors, contains exactly the `update`, `deletion`, and `non_fast_forward` rule types, and the update rule's `parameters` field is absent or null.
 
 If a non-equivalent ruleset has the deterministic name or overlaps `refs/tags/v*` through that exact include, `refs/tags/*`, or `~ALL`, stop before mutation and report its ID and full configuration. Do not create a duplicate, overwrite an existing ruleset, or delete anything. If one exact desired ruleset already exists, skip creation and continue to Task 2.
 
@@ -89,9 +89,9 @@ Do not edit `.github/workflows/release.yml`, query sum.golang.org, alter issue #
   <verify>
     <automated>set -euo pipefail
 name='Protect published version tags'
-pages="$(gh api 'repos/{owner}/{repo}/rulesets?includes_parents=false&amp;targets=tag&amp;per_page=100' --paginate --slurp)"
-test "$(jq --arg name "${name}" '[.[][] | select(.name == $name)] | length' &lt;&lt;&lt;"${pages}")" -eq 1
-id="$(jq -r --arg name "${name}" '.[][] | select(.name == $name) | .id' &lt;&lt;&lt;"${pages}")"
+pages="$(gh api 'repos/{owner}/{repo}/rulesets?includes_parents=false&targets=tag&per_page=100' --paginate --slurp)"
+test "$(jq --arg name "${name}" '[.[][] | select(.name == $name)] | length' <<<"${pages}")" -eq 1
+id="$(jq -r --arg name "${name}" '.[][] | select(.name == $name) | .id' <<<"${pages}")"
 gh api "repos/{owner}/{repo}/rulesets/${id}" --jq '.id' | grep -Eq '^[0-9]+$'</automated>
   </verify>
   <done>
@@ -112,9 +112,9 @@ Do not test enforcement by attempting to move or delete a live tag. Structural v
   <verify>
     <automated>set -euo pipefail
 name='Protect published version tags'
-pages="$(gh api 'repos/{owner}/{repo}/rulesets?includes_parents=false&amp;targets=tag&amp;per_page=100' --paginate --slurp)"
-test "$(jq --arg name "${name}" '[.[][] | select(.name == $name)] | length' &lt;&lt;&lt;"${pages}")" -eq 1
-id="$(jq -r --arg name "${name}" '.[][] | select(.name == $name) | .id' &lt;&lt;&lt;"${pages}")"
+pages="$(gh api 'repos/{owner}/{repo}/rulesets?includes_parents=false&targets=tag&per_page=100' --paginate --slurp)"
+test "$(jq --arg name "${name}" '[.[][] | select(.name == $name)] | length' <<<"${pages}")" -eq 1
+id="$(jq -r --arg name "${name}" '.[][] | select(.name == $name) | .id' <<<"${pages}")"
 detail="$(gh api "repos/{owner}/{repo}/rulesets/${id}")"
 jq -e --arg name "${name}" '
   .name == $name and
@@ -125,7 +125,7 @@ jq -e --arg name "${name}" '
   ((.bypass_actors // []) | length == 0) and
   (([.rules[].type] | sort) == ["deletion", "non_fast_forward", "update"]) and
   ([.rules[] | select(.type == "update") | (.parameters // null)] == [null])
-' &lt;&lt;&lt;"${detail}" &gt;/dev/null
+' <<<"${detail}" >/dev/null
 git diff --exit-code HEAD -- .github/workflows/release.yml</automated>
   </verify>
   <done>
