@@ -469,24 +469,42 @@ jobs:
           set -euo pipefail
           MISSING=""
           if [ -z "${CF_ZONE_ID}" ]; then
-            MISSING="CF_ZONE_ID (repository variable)"
+            MISSING="${MISSING}, CF_ZONE_ID (repository variable)"
           fi
           if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
-            if [ -n "${MISSING}" ]; then
-              MISSING="${MISSING}, CLOUDFLARE_API_TOKEN (repository secret)"
-            else
-              MISSING="CLOUDFLARE_API_TOKEN (repository secret)"
-            fi
+            MISSING="${MISSING}, CLOUDFLARE_API_TOKEN (repository secret)"
           fi
+          MISSING="${MISSING#, }"
           if [ -n "${MISSING}" ]; then
-            echo "::warning title=CDN cache not purged::Missing ${MISSING}. The CDN cache was NOT purged: https://${RELEASES_DOMAIN}/${PROJECT}/latest.json and https://${RELEASES_DOMAIN}/${PROJECT}/releases.json may serve stale release metadata at the edge until the CDN TTL expires."
+            echo "::warning title=CDN cache not purged::Missing ${MISSING}. Add each named item under repository Settings > Secrets and variables > Actions, then rerun the release for the same tag. Release metadata can remain stale until a successful purge."
             exit 0
           fi
-          curl -sf -X POST \
+
+          if ! PURGE_RESPONSE=$(curl -sS --fail-with-body \
+            --retry 3 \
+            --retry-all-errors \
+            --max-time 180 \
+            -X POST \
             "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"
+            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}" 2>&1); then
+            PURGE_DIAGNOSTIC=$(printf '%s' "${PURGE_RESPONSE}" | tr '\r\n' '  ')
+            printf 'Cloudflare purge diagnostic: %s\n' "${PURGE_DIAGNOSTIC}"
+            echo "::warning title=CDN cache not purged::Cloudflare cache purge failed. Release publication will continue; see the diagnostic log line above."
+            exit 0
+          fi
+
+          if ! printf '%s' "${PURGE_RESPONSE}" | jq -e '.success == true' >/dev/null 2>&1; then
+            if ! PURGE_DIAGNOSTIC=$(printf '%s' "${PURGE_RESPONSE}" | jq -c . 2>/dev/null); then
+              PURGE_DIAGNOSTIC=$(printf '%s' "${PURGE_RESPONSE}" | tr '\r\n' '  ')
+            fi
+            printf 'Cloudflare purge diagnostic: %s\n' "${PURGE_DIAGNOSTIC}"
+            echo "::warning title=CDN cache not purged::Cloudflare cache purge failed. Release publication will continue; see the diagnostic log line above."
+            exit 0
+          fi
+
+          echo "Cloudflare release metadata purge succeeded."
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
