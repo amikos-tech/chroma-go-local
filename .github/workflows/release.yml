@@ -456,7 +456,8 @@ jobs:
             --cache-control "public, max-age=60"
           aws s3 cp /tmp/releases.json.sigstore.json "s3://${BUCKET}/${PROJECT}/releases.json.sigstore.json" \
             --endpoint-url "${R2_ENDPOINT}" \
-            --content-type "application/json"
+            --content-type "application/json" \
+            --cache-control "public, max-age=60"
 
       - name: Purge release metadata from CDN cache
         shell: bash
@@ -475,8 +476,6 @@ jobs:
           warn_purge_failure() {
             local reason=$1
             local response_body="<empty>"
-            local response_size=""
-            local truncation_marker=""
 
             if [ -n "${PURGE_BODY_FILE}" ] && [ -s "${PURGE_BODY_FILE}" ]; then
               if ! response_body="$(
@@ -486,17 +485,16 @@ jobs:
                 response_body="<unreadable>"
               fi
 
-              if response_size="$(LC_ALL=C wc -c < "${PURGE_BODY_FILE}" 2>/dev/null)"; then
-                response_size="${response_size//[[:space:]]/}"
-                if [[ "${response_size}" =~ ^[0-9]+$ ]] && [ "${response_size}" -gt 512 ]; then
-                  truncation_marker="...[truncated]"
-                fi
+              if [ "$(LC_ALL=C wc -c < "${PURGE_BODY_FILE}" 2>/dev/null || true)" -gt 512 ] 2>/dev/null; then
+                response_body="${response_body}...[truncated]"
               fi
             fi
 
             printf 'CDN purge diagnostic: HTTP status=%s; response body=%s\n' \
-              "${PURGE_CODE}" "${response_body}${truncation_marker}"
+              "${PURGE_CODE}" "${response_body}"
             printf '::warning title=CDN cache not purged::%s\n' "${reason}"
+            # Call only as a top-level command: an exit in a subshell or pipeline
+            # would not stop this step before its success message.
             exit 0
           }
 
@@ -525,7 +523,7 @@ jobs:
           trap 'rm -f "${PURGE_BODY_FILE}"' EXIT
 
           PURGE_CODE=""
-          if ! PURGE_CODE=$(curl -sS \
+          if PURGE_CODE=$(curl -sS \
               --retry 3 \
               --retry-all-errors \
               --max-time 180 \
@@ -535,10 +533,13 @@ jobs:
               "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
               -H "Content-Type: application/json" \
-              --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"); then
+              --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json.sigstore.json\"]}"); then
+            :
+          else
+            PURGE_CURL_EXIT=$?
             PURGE_CODE="${PURGE_CODE:-000}"
             warn_purge_failure \
-              "Cloudflare cache purge transport request failed after retries. Check runner connectivity and Cloudflare availability, then retry the release. Release publication will continue."
+              "Cloudflare cache purge transport request failed after retries (curl exit code ${PURGE_CURL_EXIT}). Check runner connectivity and Cloudflare availability, then retry the release. Release publication will continue."
           fi
 
           case "${PURGE_CODE}" in

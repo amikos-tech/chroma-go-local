@@ -1,5 +1,6 @@
 extends: default
 
+# ignore-from-file requires yamllint 1.28 or newer.
 ignore-from-file: .gitignore
 
 rules:

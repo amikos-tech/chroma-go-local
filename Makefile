@@ -196,7 +196,7 @@ lint-workflows:
 		exit 1; \
 	}; \
 	yamllint_path="$$(command -v yamllint 2>/dev/null)" || { \
-		echo "yamllint is required for workflow linting but was not found on PATH."; \
+		echo "yamllint 1.28 or newer is required for workflow linting but was not found on PATH."; \
 		exit 1; \
 	}; \
 	printf 'ShellCheck executable: %s\n' "$$shellcheck_path"; \

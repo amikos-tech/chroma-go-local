@@ -11,7 +11,7 @@ It supports both:
 - Go 1.21+
 - Rust 1.70+
 - Java 17+ (JNA module) and Java 22+ (Panama module)
-- `golangci-lint`, ShellCheck 0.9 or newer, and yamllint (for the complete `make lint` checks)
+- `golangci-lint`, ShellCheck 0.9 or newer, and yamllint 1.28 or newer (for the complete `make lint` checks)
 
 Go 1.21+ remains the library build/runtime baseline. The repository's workflow-lint target runs the actionlint version pinned in `.actionlint-version`. With Go 1.21+ and automatic toolchain switching enabled, Go selects the newer toolchain requested by that module. Go 1.24+ must be installed locally only when automatic toolchain switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
 
@@ -107,11 +107,11 @@ rustup default stable-aarch64-pc-windows-msvc
 go install golang.org/x/tools/cmd/goimports@latest
 ```
 
-6. Install ShellCheck 0.9 or newer and yamllint:
+6. Install ShellCheck 0.9 or newer and yamllint 1.28 or newer:
 
 ```powershell
 winget install --id koalaman.shellcheck
-py -m pip install --user yamllint
+py -m pip install --user 'yamllint>=1.28'
 ```
 
 ### Common Windows commands
@@ -600,12 +600,14 @@ For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, an
 
 Use `make lint-workflows` when only the Actions, embedded-shell, and YAML checks are needed. Both Make and `scripts/dev-windows.ps1 -Task lint-workflows` read the actionlint version pinned in `.actionlint-version` and invoke its Go module. Go 1.21+ with automatic toolchain switching is the normal path; a local Go 1.24+ toolchain is needed only when switching is unavailable or disabled.
 
-ShellCheck 0.9 or newer is supported. CI and local installations may use newer versions, and the printed ShellCheck and yamllint versions are diagnostic-only rather than exact-version gates.
+ShellCheck 0.9 or newer and yamllint 1.28 or newer are supported. CI and local installations may use newer versions, and the printed tool versions are diagnostic-only rather than exact-version gates.
 
 Common tool installation commands:
 
+On Debian/Ubuntu, use distribution packages only when both candidates meet the floors above; Ubuntu 22.04's packages do not. On older distributions, install a current ShellCheck release and install yamllint with `python3 -m pip install --user 'yamllint>=1.28'`.
+
 ```bash
-# Debian/Ubuntu
+# Debian/Ubuntu when package candidates meet the floors above
 sudo apt install shellcheck yamllint
 
 # macOS with Homebrew
@@ -615,7 +617,7 @@ brew install shellcheck yamllint
 ```powershell
 # Windows
 winget install --id koalaman.shellcheck
-py -m pip install --user yamllint
+py -m pip install --user 'yamllint>=1.28'
 ```
 
 For actionlint, the repository targets need no separately installed executable: they run the pinned module with Go. A direct `go install` of that same pinned module has the same conditional Go toolchain requirement, while an official prebuilt actionlint binary for the pinned version can be used directly without Go. Installing a prebuilt binary does not change what `make lint-workflows` or the PowerShell helper executes because those targets intentionally use `go run`.
