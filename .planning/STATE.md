@@ -84,10 +84,11 @@ None yet.
 | 260730-pii | Install protoc inline from its GitHub release with sha256 verification; vendoring approach superseded during code review (GPL-3.0 bundle + release-backfill regression) | 2026-07-30 | bc8200c, 2223396 | Verified — PR #105 | [260730-pii-address-setup-protoc-fork-availability-u](./quick/260730-pii-address-setup-protoc-fork-availability-u/) |
 | 260730-sz8 | Partial fix for issue #97: CDN cache purge step silently skipped when Cloudflare credentials are unset; now always runs and emits a ::warning:: annotation naming the missing credential. Setting real CF_ZONE_ID/CLOUDFLARE_API_TOKEN values and fixing the Cloudflare cache-rule TTL are still outstanding. | 2026-07-30 | e22f1a0 | Verified | [260730-sz8-fix-silent-cdn-cache-purge-skip-in-relea](./quick/260730-sz8-fix-silent-cdn-cache-purge-skip-in-relea/) |
 | 260731-dgm | Address issue #97 review findings: make all Cloudflare purge failures diagnostic and non-fatal, require success:true, add remediation, lint workflows in CI, and correct the prior shell rationale | 2026-07-31 | fb0b734, ab47d82 | Verified | [260731-dgm-address-cdn-purge-reliability-diagnostic](./quick/260731-dgm-address-cdn-purge-reliability-diagnostic/) |
+| 260731-eho | Address CDN purge retry-body pollution, failure diagnostics, and durable workflow linting findings | 2026-07-31 | c3a0e3a | Verified | [260731-eho-address-cdn-purge-and-ci-workflow-lint-f](./quick/260731-eho-address-cdn-purge-and-ci-workflow-lint-f/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-31 - Completed quick task 260731-dgm: hardened CDN purge failures, validated Cloudflare responses, added workflow lint CI, and corrected the prior shell rationale
+Last activity: 2026-07-31 - Completed quick task 260731-eho: fixed retry-safe CDN purge evaluation and made workflow linting standalone and reproducible
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
