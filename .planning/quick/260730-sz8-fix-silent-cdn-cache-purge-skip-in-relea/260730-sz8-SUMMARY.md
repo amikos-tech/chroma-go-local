@@ -19,7 +19,7 @@ key-files:
 decisions:
   - "Guard both credentials in the run body rather than in the step-level if:, so the step is never reported as skipped"
   - "Non-fatal exit 0 on missing credentials -- a missing repo variable must not fail a release"
-  - "Full if/then/fi blocks instead of [ -z X ] && Y one-liners, which abort under set -e"
+  - "Full if/then/fi blocks instead of [ -z X ] && Y one-liners, avoiding a final-command status hazard: a false left-hand test is exempt from immediate set -e termination, but the AND-list can still return 1 as the step result"
 metrics:
   duration: 6min
   tasks: 1
@@ -54,7 +54,7 @@ The `curl` purge invocation, the step name, `shell:`, the whole `env:` block, an
 Row 3 was run with the token set to the sentinel `SEKRET-TOKEN-VALUE`; the sentinel does not appear in the annotation output, confirming T-sz8-01 is mitigated.
 
 **Static gates**
-- `actionlint .github/workflows/release.yml` — clean (includes its shellcheck pass over the run body, which validates the `set -e` safety of the guard).
+- `actionlint .github/workflows/release.yml` — clean (includes its shellcheck pass over the run body, which validates the guard's shell syntax).
 - `yq -e` five-predicate gate — passes (exit 0) on the fixed file, fails on the pre-fix file (`git show HEAD:...`), confirming a real red-to-green transition. See deviation below regarding the gate's exact form.
 
 ## Deviations from Plan
@@ -76,14 +76,14 @@ Row 3 was run with the token set to the sentinel `SEKRET-TOKEN-VALUE`; the senti
 - **Files modified:** none (verification tooling only; no artifact change resulted)
 - **Commit:** n/a
 
-No other deviations. The workflow edit itself was executed exactly as written, including the plan's hard requirements: full `if/then/fi` blocks (no `&&` one-liners that would abort under `set -e`), a single physical annotation line, and no secret interpolation.
+No other deviations. The workflow edit itself was executed exactly as written, including the plan's hard requirements: full `if/then/fi` blocks rather than an `&&` list whose overall rc 1 could propagate from final-command position, a single physical annotation line, and no secret interpolation. A failed left-hand test in an AND-list is exempt from immediate `set -e` termination; the hazard is the list's final status when that list is the step's final command.
 
 ## Threat Model Compliance
 
 | Threat ID | Disposition | Status |
 |---|---|---|
 | T-sz8-01 (info disclosure via annotation) | mitigate | Verified — annotation interpolates only `${MISSING}` (literal variable *names*), `${RELEASES_DOMAIN}`, `${PROJECT}`. Sentinel-token dry run confirms no value leaks. |
-| T-sz8-02 (DoS of release pipeline) | mitigate | Verified — all four combinations exit 0; full `if/then/fi` blocks used, no `set -e`-unsafe one-liner. |
+| T-sz8-02 (DoS of release pipeline) | mitigate | Verified — all four combinations exit 0; full `if/then/fi` blocks avoid an AND-list returning rc 1 from the step's final-command position. |
 | T-sz8-03 (removal of step-level `if:`) | accept | Unchanged as planned — with no credentials present the step performs no network call. |
 | T-sz8-SC (package installs) | accept | No package installs in this change. |
 
