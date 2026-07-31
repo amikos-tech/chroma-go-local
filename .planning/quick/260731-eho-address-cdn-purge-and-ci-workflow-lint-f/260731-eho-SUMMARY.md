@@ -11,7 +11,7 @@ requires:
 provides:
   - Retry-safe Cloudflare body and HTTP-status capture
   - Distinct transport/HTTP, API rejection, and response-validation diagnostics
-  - Standalone pinned workflow-lint CI job with ShellCheck enabled
+  - Standalone ubuntu-24.04 workflow-lint CI job with ShellCheck enabled
   - Correct historical AND-list and static-analysis explanations
 affects: [release-workflow, ci-workflow, workflow-maintenance]
 
@@ -33,7 +33,7 @@ key-files:
 key-decisions:
   - "Treat status 000 and every non-2xx response as transport/HTTP failure; only 2xx JSON with boolean success:true is success."
   - "Keep response text in compact ordinary logs and keep Actions annotations fixed."
-  - "Pin workflow linting to ubuntu-24.04, actionlint v1.7.11, and Ubuntu yamllint 1.33.0-1."
+  - "The task intended to pin yamllint 1.33.0-1, but ubuntu-24.04's preinstalled yamllint 1.38.0 remained the executable on PATH; quick task 260731-fqz replaces the ineffective apt path with an explicit version check."
 
 requirements-completed:
   - EHO-01
@@ -52,14 +52,14 @@ completed: 2026-07-31
 
 # Quick Task 260731-eho: CDN Purge and Workflow Lint Findings Summary
 
-Cloudflare retries now evaluate only the final body and status, while a standalone pinned CI job enforces actionlint, ShellCheck, and yamllint across every workflow.
+Cloudflare retries now evaluate only the final body and status, while a standalone CI job enforces actionlint, ShellCheck, and the runner's preinstalled yamllint 1.38.0 across every workflow.
 
 ## Accomplishments
 
 - Replaced combined curl output with temporary body/stderr files and a guarded final HTTP-code assignment.
 - Preserved retries for transient failures while proving a permanent HTTP 403 is attempted once.
 - Added distinct fixed annotations for transport/HTTP failure and exact `success:false`, plus accurate empty, malformed, missing-field, wrong-type, wrong-top-level-type, and unavailable-jq diagnostics.
-- Moved workflow linting out of the OS build matrix, pinned its Linux runner and yamllint package, and restored embedded ShellCheck analysis with only SC2129 ignored.
+- Moved workflow linting out of the OS build matrix, pinned its Linux runner, attempted to pin yamllint 1.33.0-1, and restored embedded ShellCheck analysis with only SC2129 ignored. The apt pin did not control the command on PATH: the runner's preinstalled yamllint 1.38.0 remained active, which quick task 260731-fqz corrects.
 - Moved the yamllint policy to root `.yamllint` and corrected the historical plan wherever it overstated immediate errexit or static-linter guarantees.
 
 ## Commit
@@ -79,7 +79,7 @@ The executor created atomic task commits `8f4c54c` and `979cc01` on its isolated
 
 - `bash /tmp/260731-eho-cdn-purge-test.sh` passed all ten cases. The transient 503→200 case made two requests and ignored the first HTML body; HTTP 403 made one request; all modeled failures reached `PUBLISH_REACHABLE`; and the bearer-token sentinel never appeared.
 - `actionlint -ignore 'SC2129' .github/workflows/*.yml` passed with embedded ShellCheck analysis enabled.
-- `yamllint -c .yamllint .github/workflows/*.yml` passed.
+- `yamllint -c .yamllint .github/workflows/*.yml` passed with the preinstalled yamllint 1.38.0 executable, not the intended 1.33.0 apt package.
 - Equivalent yq v4.53.3 structural assertions returned `true` for both the release capture contract and standalone lint-job contract.
 - `make lint` passed with zero golangci-lint issues and Rust clippy clean under `-D warnings`.
 - `make test` built the debug shim and passed the full Go test suite. Expected runtime warnings and opt-in test skips remained non-failing.

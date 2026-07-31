@@ -4,7 +4,7 @@ milestone: v0.5.0
 milestone_name: Java API Surface
 status: "Phase 10 shipped — PR #82"
 stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-03-28T13:39:05.763Z"
+last_updated: "2026-07-31T08:44:06Z"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -84,11 +84,12 @@ None yet.
 | 260730-pii | Install protoc inline from its GitHub release with sha256 verification; vendoring approach superseded during code review (GPL-3.0 bundle + release-backfill regression) | 2026-07-30 | bc8200c, 2223396 | Verified — PR #105 | [260730-pii-address-setup-protoc-fork-availability-u](./quick/260730-pii-address-setup-protoc-fork-availability-u/) |
 | 260730-sz8 | Partial fix for issue #97: CDN cache purge step silently skipped when Cloudflare credentials are unset; now always runs and emits a ::warning:: annotation naming the missing credential. Setting real CF_ZONE_ID/CLOUDFLARE_API_TOKEN values and fixing the Cloudflare cache-rule TTL are still outstanding. | 2026-07-30 | e22f1a0 | Verified | [260730-sz8-fix-silent-cdn-cache-purge-skip-in-relea](./quick/260730-sz8-fix-silent-cdn-cache-purge-skip-in-relea/) |
 | 260731-dgm | Address issue #97 review findings: make all Cloudflare purge failures diagnostic and non-fatal, require success:true, add remediation, lint workflows in CI, and correct the prior shell rationale | 2026-07-31 | fb0b734, ab47d82 | Verified | [260731-dgm-address-cdn-purge-reliability-diagnostic](./quick/260731-dgm-address-cdn-purge-reliability-diagnostic/) |
-| 260731-eho | Address CDN purge retry-body pollution, failure diagnostics, and durable workflow linting findings | 2026-07-31 | c3a0e3a | Verified | [260731-eho-address-cdn-purge-and-ci-workflow-lint-f](./quick/260731-eho-address-cdn-purge-and-ci-workflow-lint-f/) |
+| 260731-eho | Address CDN purge retry-body pollution and diagnostics, and introduce standalone workflow linting; its intended yamllint apt pin did not displace preinstalled yamllint 1.38.0 and is corrected by 260731-fqz | 2026-07-31 | c3a0e3a | Verified | [260731-eho-address-cdn-purge-and-ci-workflow-lint-f](./quick/260731-eho-address-cdn-purge-and-ci-workflow-lint-f/) |
+| 260731-fqz | Replace the ineffective yamllint apt path with a package-install-free, version-visible workflow lint contract and simplify Cloudflare cache purging into a structurally best-effort step | 2026-07-31 | 4174a8b | Verified | [260731-fqz-address-ci-lint-reproducibility-and-rele](./quick/260731-fqz-address-ci-lint-reproducibility-and-rele/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-31 - Completed quick task 260731-eho: fixed retry-safe CDN purge evaluation and made workflow linting standalone and reproducible
+Last activity: 2026-07-31 - Completed quick task 260731-fqz: made workflow linting package-install-free and version-visible, and simplified cache purging into a structurally best-effort step
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
