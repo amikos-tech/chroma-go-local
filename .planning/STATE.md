@@ -86,10 +86,11 @@ None yet.
 | 260731-dgm | Address issue #97 review findings: make all Cloudflare purge failures diagnostic and non-fatal, require success:true, add remediation, lint workflows in CI, and correct the prior shell rationale | 2026-07-31 | fb0b734, ab47d82 | Verified | [260731-dgm-address-cdn-purge-reliability-diagnostic](./quick/260731-dgm-address-cdn-purge-reliability-diagnostic/) |
 | 260731-eho | Address CDN purge retry-body pollution and diagnostics, and introduce standalone workflow linting; its intended yamllint apt pin did not displace preinstalled yamllint 1.38.0 and is corrected by 260731-fqz | 2026-07-31 | c3a0e3a | Verified | [260731-eho-address-cdn-purge-and-ci-workflow-lint-f](./quick/260731-eho-address-cdn-purge-and-ci-workflow-lint-f/) |
 | 260731-fqz | Replace the ineffective yamllint apt path with a package-install-free, version-visible workflow lint contract and simplify Cloudflare cache purging into a structurally best-effort step | 2026-07-31 | 4174a8b | Verified | [260731-fqz-address-ci-lint-reproducibility-and-rele](./quick/260731-fqz-address-ci-lint-reproducibility-and-rele/) |
+| 260731-j64 | Address release purge diagnostics, lint documentation and Windows parity, resilient lint tool versions, and workflow lint hardening | 2026-07-31 | 4743852 | Needs Review | [260731-j64-address-release-purge-diagnostics-lint-d](./quick/260731-j64-address-release-purge-diagnostics-lint-d/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-31 - Completed quick task 260731-fqz: made workflow linting package-install-free and version-visible, and simplified cache purging into a structurally best-effort step
+Last activity: 2026-07-31 - Completed quick task 260731-j64: hardened release purge diagnostics and aligned workflow linting across CI, Make, and Windows
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md
