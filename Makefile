@@ -92,7 +92,7 @@ help:
 	@echo "  lint          - Run linters for Go, Rust, and GitHub Actions workflows"
 	@echo "  lint-go       - Run golangci-lint"
 	@echo "  lint-rust     - Run cargo clippy"
-	@echo "  lint-workflows - Run actionlint and yamllint"
+	@echo "  lint-workflows - Run actionlint, ShellCheck, and yamllint"
 	@echo "  fmt           - Format Go and Rust code"
 	@echo "  fmt-go        - Format Go code with gofmt and goimports"
 	@echo "  fmt-rust      - Format Rust code with cargo fmt"
@@ -177,6 +177,20 @@ lint-rust:
 
 lint-workflows:
 	@set -eu; \
+	if [ ! -f .actionlint-version ]; then \
+		echo ".actionlint-version is required for workflow linting but was not found."; \
+		exit 1; \
+	fi; \
+	actionlint_version="$$(sed -n '1p' .actionlint-version)"; \
+	if [ -z "$$actionlint_version" ]; then \
+		echo ".actionlint-version must contain a non-empty actionlint version."; \
+		exit 1; \
+	fi; \
+	actionlint_module="github.com/rhysd/actionlint/cmd/actionlint@$$actionlint_version"; \
+	command -v go >/dev/null 2>&1 || { \
+		echo "Go 1.24+ is required for the pinned actionlint workflow-lint path but was not found on PATH."; \
+		exit 1; \
+	}; \
 	shellcheck_path="$$(command -v shellcheck 2>/dev/null)" || { \
 		echo "ShellCheck is required for workflow linting but was not found on PATH."; \
 		exit 1; \
@@ -185,31 +199,12 @@ lint-workflows:
 		echo "yamllint is required for workflow linting but was not found on PATH."; \
 		exit 1; \
 	}; \
-	shellcheck_version="$$("$$shellcheck_path" --version | awk '/^version:/ { print $$2; exit }')"; \
-	yamllint_version="$$("$$yamllint_path" --version | awk 'NR == 1 { print $$2 }')"; \
-	if [ -z "$$shellcheck_version" ]; then \
-		echo "Unable to determine ShellCheck version from $$shellcheck_path."; \
-		exit 1; \
-	fi; \
-	if [ -z "$$yamllint_version" ]; then \
-		echo "Unable to determine yamllint version from $$yamllint_path."; \
-		exit 1; \
-	fi; \
-	printf 'ShellCheck %s (%s)\n' "$$shellcheck_version" "$$shellcheck_path"; \
-	printf 'yamllint %s (%s)\n' "$$yamllint_version" "$$yamllint_path"; \
-	if [ -n "$${EXPECTED_SHELLCHECK_VERSION:-}" ] && [ "$$shellcheck_version" != "$$EXPECTED_SHELLCHECK_VERSION" ]; then \
-		printf 'ShellCheck version mismatch: expected %s, found %s at %s.\n' \
-			"$$EXPECTED_SHELLCHECK_VERSION" "$$shellcheck_version" "$$shellcheck_path"; \
-		exit 1; \
-	fi; \
-	if [ -n "$${EXPECTED_YAMLLINT_VERSION:-}" ] && [ "$$yamllint_version" != "$$EXPECTED_YAMLLINT_VERSION" ]; then \
-		printf 'yamllint version mismatch: expected %s, found %s at %s.\n' \
-			"$$EXPECTED_YAMLLINT_VERSION" "$$yamllint_version" "$$yamllint_path"; \
-		exit 1; \
-	fi; \
-	actionlint_version="$$(go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -version)"; \
-	printf 'actionlint %s\n' "$$actionlint_version"; \
-	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 \
+	printf 'ShellCheck executable: %s\n' "$$shellcheck_path"; \
+	"$$shellcheck_path" --version; \
+	printf 'yamllint executable: %s\n' "$$yamllint_path"; \
+	"$$yamllint_path" --version; \
+	printf 'actionlint module: %s\n' "$$actionlint_module"; \
+	go run "$$actionlint_module" \
 		-shellcheck="$$shellcheck_path" \
 		-ignore 'SC2129'; \
 	"$$yamllint_path" -c .yamllint .

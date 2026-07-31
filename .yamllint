@@ -1,7 +1,6 @@
 extends: default
 
-ignore: |
-  shim/target/
+ignore-from-file: .gitignore
 
 rules:
   document-start: disable

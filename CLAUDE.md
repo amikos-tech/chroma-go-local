@@ -15,7 +15,9 @@ A local Chroma runtime package with:
 - Rust 1.70+
 - Java 17+ (JNA path), Java 22+ (Panama path)
 - Gradle 9+
-- golangci-lint (Go linting)
+- golangci-lint, ShellCheck, and yamllint (complete linting)
+
+Go 1.21+ remains the project build/runtime minimum. Workflow linting pins actionlint v1.7.11 in `.actionlint-version`; the repository's `go run` path for that module requires Go 1.24+ as a lint-tool-only requirement.
 
 ## Build Commands
 
@@ -27,7 +29,8 @@ make test-release   # Build release + run Go tests
 make build-java     # Build Java modules (no tests)
 make test-java      # Run Java smoke tests (JNA + Panama)
 make test-all       # Go + Rust + Java smoke tests (Java skipped only if Gradle missing)
-make lint           # Run all linters (Go + Rust)
+make lint           # Run Go, Rust, Actions, embedded-shell, and YAML linters
+make lint-workflows # Run Actions, embedded-shell, and repository-wide YAML lint
 make fmt            # Format all code (Go + Rust)
 make clean          # Clean build artifacts
 ```
@@ -106,5 +109,21 @@ The root package contains zero logic -- all implementation lives in `internal/ru
 ## Linting
 
 - Go: `golangci-lint run ./...` (config in `.golangci.yml`)
-- Rust: `cargo clippy -- -D warnings` (warnings as errors)
-- Java: `gradle --no-daemon :core:check :jna:check :panama:check`
+- Rust: `cargo clippy --locked -- -D warnings`
+- Actions syntax/expressions: actionlint v1.7.11, read from `.actionlint-version`
+- Embedded workflow shell: ShellCheck through actionlint, with the repository's SC2129 exception
+- YAML: `yamllint -c .yamllint .` across the repository
+- Java (separate target): `gradle --no-daemon :core:check :jna:check :panama:check`
+
+`make lint-workflows` and `pwsh -File .\scripts\dev-windows.ps1 -Task lint-workflows` both run the pinned actionlint module through Go, then repository-wide yamllint. Their Go path requires Go 1.24+; this does not change the library's Go 1.21+ baseline. A direct `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11` has the same Go requirement. Official prebuilt actionlint binaries can be run directly without Go, but installing one does not change what the repository targets invoke.
+
+Install ShellCheck and yamllint with `sudo apt install shellcheck yamllint` on Debian/Ubuntu, `brew install shellcheck yamllint` on macOS, or the following on Windows:
+
+```powershell
+winget install --id koalaman.shellcheck
+py -m pip install --user yamllint
+```
+
+On Windows, `scripts/dev-windows.ps1 -Task lint` runs Go, Rust, Actions, embedded-shell, and YAML checks in that order. The dedicated `-Task lint-workflows` entry point runs only the workflow lint contract. CI mirrors it in a standalone Ubuntu 24.04 `workflow-lint` job.
+
+`.yamllint` obtains repository-local exclusions from `.gitignore`; only paths that file actually matches are skipped. Do not assume an arbitrary relocated `CARGO_TARGET_DIR` is excluded.

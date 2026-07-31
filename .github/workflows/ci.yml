@@ -13,9 +13,6 @@ jobs:
   workflow-lint:
     name: Lint GitHub Actions workflows
     runs-on: ubuntu-24.04
-    env:
-      EXPECTED_SHELLCHECK_VERSION: "0.9.0"
-      EXPECTED_YAMLLINT_VERSION: "1.38.0"
 
     steps:
       - name: Checkout

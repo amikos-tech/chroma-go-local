@@ -16,6 +16,7 @@ param(
         "lint",
         "lint-go",
         "lint-rust",
+        "lint-workflows",
         "fmt",
         "fmt-go",
         "fmt-rust"
@@ -73,16 +74,16 @@ function Invoke-CommandChecked {
     )
 
     $exitCode = $null
-    $LASTEXITCODE = $null
+    $global:LASTEXITCODE = $null
 
     if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
         & $Name @Arguments
-        $exitCode = $LASTEXITCODE
+        $exitCode = $global:LASTEXITCODE
     } else {
         Push-Location $WorkingDirectory
         try {
             & $Name @Arguments
-            $exitCode = $LASTEXITCODE
+            $exitCode = $global:LASTEXITCODE
         } finally {
             Pop-Location
         }
@@ -94,7 +95,7 @@ function Invoke-CommandChecked {
 
     if ($exitCode -ne 0) {
         $argsText = $Arguments -join " "
-        throw "Command failed with exit code $exitCode: $Name $argsText"
+        throw "Command failed with exit code ${exitCode}: $Name $argsText"
     }
 }
 
@@ -206,6 +207,42 @@ function Lint-Rust {
     Invoke-CommandChecked -Name "cargo" -Arguments @("clippy", "--locked", "--", "-D", "warnings") -WorkingDirectory $shimDir
 }
 
+function Lint-Workflows {
+    Test-CommandAvailable -Name "go" -Hint "Install Go 1.24+ for the pinned actionlint workflow-lint path and ensure 'go' is on PATH."
+    Test-CommandAvailable -Name "shellcheck" -Hint "Install ShellCheck from its official Windows release or with Chocolatey, then ensure 'shellcheck' is on PATH."
+    Test-CommandAvailable -Name "yamllint" -Hint "Install yamllint with 'py -m pip install --user yamllint', then ensure 'yamllint' is on PATH."
+
+    $actionlintVersionFile = Join-Path $repoRoot ".actionlint-version"
+    if (-not (Test-Path -Path $actionlintVersionFile -PathType Leaf)) {
+        throw ".actionlint-version is required for workflow linting but was not found at '$actionlintVersionFile'."
+    }
+
+    $actionlintVersion = (Get-Content -Path $actionlintVersionFile -Raw).Trim()
+    if ([string]::IsNullOrWhiteSpace($actionlintVersion)) {
+        throw ".actionlint-version must contain a non-empty actionlint version."
+    }
+
+    $shellcheckPath = (Get-Command "shellcheck" -ErrorAction Stop).Source
+    if ([string]::IsNullOrWhiteSpace($shellcheckPath)) {
+        throw "Unable to resolve the ShellCheck executable path."
+    }
+
+    $actionlintModule = "github.com/rhysd/actionlint/cmd/actionlint@$actionlintVersion"
+    Write-Host "ShellCheck executable: $shellcheckPath"
+    Invoke-CommandChecked -Name $shellcheckPath -Arguments @("--version")
+    Write-Host "yamllint executable: $((Get-Command "yamllint" -ErrorAction Stop).Source)"
+    Invoke-CommandChecked -Name "yamllint" -Arguments @("--version")
+    Write-Host "actionlint module: $actionlintModule"
+    Invoke-CommandChecked -Name "go" -Arguments @(
+        "run",
+        $actionlintModule,
+        "-shellcheck=$shellcheckPath",
+        "-ignore",
+        "SC2129"
+    ) -WorkingDirectory $repoRoot
+    Invoke-CommandChecked -Name "yamllint" -Arguments @("-c", ".yamllint", ".") -WorkingDirectory $repoRoot
+}
+
 function Fmt-Go {
     Test-CommandAvailable -Name "gofmt" -Hint "Install Go 1.21+ and ensure gofmt is on PATH."
     Test-CommandAvailable -Name "goimports" -Hint "Install goimports: 'go install golang.org/x/tools/cmd/goimports@latest'."
@@ -238,9 +275,10 @@ function Show-Help {
     Write-Host "  bench         Run Go and Rust benchmarks"
     Write-Host "  bench-go      Build debug shim + run Go benchmarks"
     Write-Host "  bench-rust    Run Rust criterion benchmark"
-    Write-Host "  lint          Run Go and Rust lint"
+    Write-Host "  lint          Run Go, Rust, Actions, embedded-shell, and YAML lint"
     Write-Host "  lint-go       Run golangci-lint"
     Write-Host "  lint-rust     Run cargo clippy"
+    Write-Host "  lint-workflows Run actionlint, ShellCheck, and repository-wide yamllint"
     Write-Host "  fmt           Format Go and Rust code"
     Write-Host "  fmt-go        Format Go code (gofmt + goimports)"
     Write-Host "  fmt-rust      Format Rust code (cargo fmt)"
@@ -260,9 +298,10 @@ switch ($Task) {
     "bench" { Bench-Go; Bench-Rust }
     "bench-go" { Bench-Go }
     "bench-rust" { Bench-Rust }
-    "lint" { Lint-Go; Lint-Rust }
+    "lint" { Lint-Go; Lint-Rust; Lint-Workflows }
     "lint-go" { Lint-Go }
     "lint-rust" { Lint-Rust }
+    "lint-workflows" { Lint-Workflows }
     "fmt" { Fmt-Go; Fmt-Rust }
     "fmt-go" { Fmt-Go }
     "fmt-rust" { Fmt-Rust }
