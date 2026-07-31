@@ -49,7 +49,7 @@ Output: One verified repository-level tag ruleset. No source or workflow changes
 
 <interfaces>
 - Use the repository REST endpoint `repos/{owner}/{repo}/rulesets` through `gh api`; placeholders must resolve from the current checkout rather than hard-coding a repository name.
-- The current GitHub REST schema accepts `target: tag`, `enforcement: active`, `conditions.ref_name`, and the `update`, `deletion`, and `non_fast_forward` rule types. The `update` rule must set `parameters.update_allows_fetch_and_merge` to `false`.
+- The accepted GitHub tag-ruleset representation stores the exact rule objects `{type: "update"}`, `{type: "deletion"}`, and `{type: "non_fast_forward"}`. For a tag target, the `update` rule has no `parameters`; `update_allows_fetch_and_merge` is branch-only.
 - Creating a repository ruleset requires repository Administration write permission. The supplied live state says the current user has ADMIN permission, but execution must verify this before mutation.
 - `.github/workflows/release.yml` intentionally accepts existing tags through `workflow_dispatch` for retries and backfills. Do not add a sum.golang.org or other fail-on-existing-tag preflight: it would reject valid reruns and can race with first publication.
 </interfaces>
@@ -78,11 +78,11 @@ Output: One verified repository-level tag ruleset. No source or workflow changes
   <action>
 Run from the repository root. Confirm `gh auth status` succeeds and `gh api 'repos/{owner}/{repo}' --jq '.permissions.admin'` returns `true`; stop without mutation if not.
 
-Before any POST, list repository-owned tag rulesets with `GET repos/{owner}/{repo}/rulesets?includes_parents=false&amp;targets=tag&amp;per_page=100`, following pagination, then fetch each returned ruleset by ID so conditions, rules, enforcement, and bypass actors are available. Use the deterministic name `Protect published version tags`. Treat an existing ruleset as the desired no-op result only when it is active, targets tags, has `include: ["refs/tags/v*"]` and an empty exclude list, has no bypass actors, contains exactly the `update`, `deletion`, and `non_fast_forward` rule types, and the update rule has `update_allows_fetch_and_merge: false`.
+Before any POST, list repository-owned tag rulesets with `GET repos/{owner}/{repo}/rulesets?includes_parents=false&amp;targets=tag&amp;per_page=100`, following pagination, then fetch each returned ruleset by ID so conditions, rules, enforcement, and bypass actors are available. Use the deterministic name `Protect published version tags`. Treat an existing ruleset as the desired no-op result only when it is active, targets tags, has `include: ["refs/tags/v*"]` and an empty exclude list, has no bypass actors, contains exactly the `update`, `deletion`, and `non_fast_forward` rule types, and the update rule's `parameters` field is absent or null.
 
 If a non-equivalent ruleset has the deterministic name or overlaps `refs/tags/v*` through that exact include, `refs/tags/*`, or `~ALL`, stop before mutation and report its ID and full configuration. Do not create a duplicate, overwrite an existing ruleset, or delete anything. If one exact desired ruleset already exists, skip creation and continue to Task 2.
 
-When no candidate exists, submit one POST to `repos/{owner}/{repo}/rulesets` with the recommended GitHub media type and API version `2026-03-10`. Send a JSON body with name `Protect published version tags`, `target: "tag"`, `enforcement: "active"`, `bypass_actors: []`, `conditions.ref_name.include: ["refs/tags/v*"]`, `conditions.ref_name.exclude: []`, and rules `{type: "update", parameters: {update_allows_fetch_and_merge: false}}`, `{type: "deletion"}`, and `{type: "non_fast_forward"}`. Do not add a `creation` rule: new release tags must remain creatable. Capture the returned ruleset ID for diagnostics.
+When no candidate exists, submit one POST to `repos/{owner}/{repo}/rulesets` with the recommended GitHub media type and API version `2026-03-10`. Send a JSON body with name `Protect published version tags`, `target: "tag"`, `enforcement: "active"`, `bypass_actors: []`, `conditions.ref_name.include: ["refs/tags/v*"]`, `conditions.ref_name.exclude: []`, and the exact rules `{type: "update"}`, `{type: "deletion"}`, and `{type: "non_fast_forward"}`. Do not add parameters to the tag `update` rule. Do not add a `creation` rule: new release tags must remain creatable. Capture the returned ruleset ID for diagnostics.
 
 Do not edit `.github/workflows/release.yml`, query sum.golang.org, alter issue #99, or make any other repository-setting change. No PR is required for the remote ruleset; if later work introduces a PR, follow the repository's squash-merge-only rule.
   </action>
@@ -103,7 +103,7 @@ The authenticated administrator either creates exactly one desired ruleset or sa
   <name>Task 2: Verify the stored protection and unchanged release path</name>
   <files>.github/workflows/release.yml (read-only), remote repository ruleset (read-only)</files>
   <action>
-Re-read the repository-owned tag rulesets from GitHub after Task 1 and resolve the single ruleset named `Protect published version tags` to its full configuration. Verify the remote stored representation, not the request or Task 1 response: name, active enforcement, tag target, exact include/exclude conditions, empty bypass list, the three exact rule types, and `update_allows_fetch_and_merge: false` must all match. Also confirm no `creation` rule is present.
+Re-read the repository-owned tag rulesets from GitHub after Task 1 and resolve the single ruleset named `Protect published version tags` to its full configuration. Verify the remote stored representation, not the request or Task 1 response: name, active enforcement, tag target, exact include/exclude conditions, empty bypass list, the three exact rule types, and absent/null `parameters` on the `update` rule must all match. Also confirm no `creation` rule is present.
 
 Verify `.github/workflows/release.yml` is byte-for-byte unchanged from `HEAD`. Record in the quick-task summary that no sum.golang.org preflight was added because same-tag release retries/backfills are intentional and an existence lookup would both reject them and race first publication. Record the ruleset ID and HTML link returned by GitHub, but do not expose credentials or unrelated repository metadata.
 
@@ -124,7 +124,7 @@ jq -e --arg name "${name}" '
   .conditions.ref_name.exclude == [] and
   ((.bypass_actors // []) | length == 0) and
   (([.rules[].type] | sort) == ["deletion", "non_fast_forward", "update"]) and
-  ([.rules[] | select(.type == "update") | .parameters.update_allows_fetch_and_merge] == [false])
+  ([.rules[] | select(.type == "update") | (.parameters // null)] == [null])
 ' &lt;&lt;&lt;"${detail}" &gt;/dev/null
 git diff --exit-code HEAD -- .github/workflows/release.yml</automated>
   </verify>
