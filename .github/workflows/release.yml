@@ -469,49 +469,58 @@ jobs:
         run: |
           set -euo pipefail
 
+          PURGE_CODE="not-requested"
+          PURGE_BODY_FILE=""
+
           warn_purge_failure() {
             local reason=$1
-            local http_status=$2
-            local response_body_file=${3:-}
             local response_body="<empty>"
+            local response_size=""
+            local truncation_marker=""
 
-            if [ -n "${response_body_file}" ] && [ -s "${response_body_file}" ]; then
-              response_body="$(head -c 512 "${response_body_file}" | tr '\r\n' '  ')"
+            if [ -n "${PURGE_BODY_FILE}" ] && [ -s "${PURGE_BODY_FILE}" ]; then
+              if ! response_body="$(
+                LC_ALL=C head -c 512 "${PURGE_BODY_FILE}" 2>/dev/null \
+                  | LC_ALL=C tr '\r\n' '  ' 2>/dev/null
+              )"; then
+                response_body="<unreadable>"
+              fi
+
+              if response_size="$(LC_ALL=C wc -c < "${PURGE_BODY_FILE}" 2>/dev/null)"; then
+                response_size="${response_size//[[:space:]]/}"
+                if [[ "${response_size}" =~ ^[0-9]+$ ]] && [ "${response_size}" -gt 512 ]; then
+                  truncation_marker="...[truncated]"
+                fi
+              fi
             fi
 
             printf 'CDN purge diagnostic: HTTP status=%s; response body=%s\n' \
-              "${http_status}" "${response_body}"
+              "${PURGE_CODE}" "${response_body}${truncation_marker}"
             printf '::warning title=CDN cache not purged::%s\n' "${reason}"
+            exit 0
           }
 
           MISSING=""
-          if [ -z "${CF_ZONE_ID}" ]; then
+          if [ -z "${CF_ZONE_ID:-}" ]; then
             MISSING="${MISSING}, CF_ZONE_ID (repository variable)"
           fi
-          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
             MISSING="${MISSING}, CLOUDFLARE_API_TOKEN (repository secret)"
           fi
           MISSING="${MISSING#, }"
           if [ -n "${MISSING}" ]; then
             warn_purge_failure \
-              "Missing ${MISSING}. Add each named item under repository Settings > Secrets and variables > Actions, then rerun the release for the same tag. Release metadata can remain stale until a successful purge." \
-              "not-requested"
-            exit 0
+              "Missing ${MISSING}. Add each named item under repository Settings > Secrets and variables > Actions, then rerun the release for the same tag. Release metadata can remain stale until a successful purge."
           fi
 
           if ! command -v jq >/dev/null 2>&1; then
             warn_purge_failure \
-              "jq is required on the runner for validating the Cloudflare cache purge response. Install jq, then rerun the release for the same tag. Release publication will continue." \
-              "not-requested"
-            exit 0
+              "jq is required on the runner for validating the Cloudflare cache purge response. Install jq, then rerun the release for the same tag. Release publication will continue."
           fi
 
-          PURGE_BODY_FILE=""
           if ! PURGE_BODY_FILE=$(mktemp); then
             warn_purge_failure \
-              "Unable to create a temporary response file for the Cloudflare cache purge. Release publication will continue." \
-              "not-requested"
-            exit 0
+              "Unable to create a temporary response file for the Cloudflare cache purge. Release publication will continue."
           fi
           trap 'rm -f "${PURGE_BODY_FILE}"' EXIT
 
@@ -527,11 +536,9 @@ jobs:
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
               -H "Content-Type: application/json" \
               --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"); then
+            PURGE_CODE="${PURGE_CODE:-000}"
             warn_purge_failure \
-              "Cloudflare cache purge transport request failed after retries. Check runner connectivity and Cloudflare availability, then retry the release. Release publication will continue." \
-              "${PURGE_CODE:-000}" \
-              "${PURGE_BODY_FILE}"
-            exit 0
+              "Cloudflare cache purge transport request failed after retries. Check runner connectivity and Cloudflare availability, then retry the release. Release publication will continue."
           fi
 
           case "${PURGE_CODE}" in
@@ -539,76 +546,35 @@ jobs:
               ;;
             401)
               warn_purge_failure \
-                "Cloudflare rejected cache purge authentication. Replace or correct CLOUDFLARE_API_TOKEN, then rerun the release. Release publication will continue." \
-                "${PURGE_CODE}" \
-                "${PURGE_BODY_FILE}"
-              exit 0
+                "Cloudflare rejected cache purge authentication. Replace or correct CLOUDFLARE_API_TOKEN, then rerun the release. Release publication will continue."
               ;;
             403)
               warn_purge_failure \
-                "Cloudflare denied the cache purge. Grant Cache Purge permission for the selected zone and verify the token/zone association. Release publication will continue." \
-                "${PURGE_CODE}" \
-                "${PURGE_BODY_FILE}"
-              exit 0
+                "Cloudflare denied the cache purge. Grant Cache Purge permission for the selected zone and verify the token/zone association. Release publication will continue."
               ;;
             408|429|5[0-9][0-9])
               warn_purge_failure \
-                "Cloudflare cache purge failed after retries because of a timeout, rate limit, or server error. Retry the release after the service recovers. Release publication will continue." \
-                "${PURGE_CODE}" \
-                "${PURGE_BODY_FILE}"
-              exit 0
+                "Cloudflare cache purge failed after retries because of a timeout, rate limit, or server error. Retry the release after the service recovers. Release publication will continue."
               ;;
             *)
               warn_purge_failure \
-                "Cloudflare cache purge returned an unexpected non-success HTTP status. Review the diagnostic and Cloudflare configuration before retrying. Release publication will continue." \
-                "${PURGE_CODE}" \
-                "${PURGE_BODY_FILE}"
-              exit 0
+                "Cloudflare cache purge returned an unexpected non-success HTTP status. Review the diagnostic and Cloudflare configuration before retrying. Release publication will continue."
               ;;
           esac
 
           if [ ! -s "${PURGE_BODY_FILE}" ]; then
             warn_purge_failure \
-              "Cloudflare cache purge returned an empty response body. Retry the release and check Cloudflare service health. Release publication will continue." \
-              "${PURGE_CODE}" \
-              "${PURGE_BODY_FILE}"
-            exit 0
+              "Cloudflare cache purge returned an empty response body. Retry the release and check Cloudflare service health. Release publication will continue."
           fi
 
-          if ! jq -e '.' "${PURGE_BODY_FILE}" >/dev/null 2>&1; then
+          if ! jq empty "${PURGE_BODY_FILE}" >/dev/null 2>&1; then
             warn_purge_failure \
-              "Cloudflare cache purge returned malformed JSON. Retry the release and check Cloudflare service health. Release publication will continue." \
-              "${PURGE_CODE}" \
-              "${PURGE_BODY_FILE}"
-            exit 0
-          fi
-
-          if jq -e '
-            any(
-              .errors[]?;
-              (.code == 1012) and
-              (
-                (.message? // null)
-                | if type == "string"
-                  then contains("token lacks cache_purge")
-                  else false
-                  end
-              )
-            )
-          ' "${PURGE_BODY_FILE}" >/dev/null 2>&1; then
-            warn_purge_failure \
-              "Cloudflare reports that the token lacks cache_purge. Grant Cache Purge permission or correct the token scope/zone association. Release publication will continue." \
-              "${PURGE_CODE}" \
-              "${PURGE_BODY_FILE}"
-            exit 0
+              "Cloudflare cache purge returned malformed JSON. Retry the release and check Cloudflare service health. Release publication will continue."
           fi
 
           if ! jq -e '.success == true' "${PURGE_BODY_FILE}" >/dev/null 2>&1; then
             warn_purge_failure \
-              "Cloudflare cache purge API response did not report success:true. Review the diagnostic and Cloudflare response before retrying. Release publication will continue." \
-              "${PURGE_CODE}" \
-              "${PURGE_BODY_FILE}"
-            exit 0
+              "Cloudflare cache purge API response did not report success:true. Review the diagnostic and Cloudflare response before retrying. Release publication will continue."
           fi
 
           echo "Cloudflare release metadata purge succeeded."

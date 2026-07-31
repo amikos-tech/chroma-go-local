@@ -15,9 +15,9 @@ A local Chroma runtime package with:
 - Rust 1.70+
 - Java 17+ (JNA path), Java 22+ (Panama path)
 - Gradle 9+
-- golangci-lint, ShellCheck, and yamllint (complete linting)
+- golangci-lint, ShellCheck 0.9 or newer, and yamllint (complete linting)
 
-Go 1.21+ remains the project build/runtime minimum. Workflow linting pins actionlint v1.7.11 in `.actionlint-version`; the repository's `go run` path for that module requires Go 1.24+ as a lint-tool-only requirement.
+Go 1.21+ remains the project build/runtime minimum. Workflow linting runs the actionlint version pinned in `.actionlint-version`. Go 1.21+ with automatic toolchain switching is the normal path; Go 1.24+ must be installed locally only when switching is unavailable or disabled, including `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
 
 ## Build Commands
 
@@ -110,14 +110,14 @@ The root package contains zero logic -- all implementation lives in `internal/ru
 
 - Go: `golangci-lint run ./...` (config in `.golangci.yml`)
 - Rust: `cargo clippy --locked -- -D warnings`
-- Actions syntax/expressions: actionlint v1.7.11, read from `.actionlint-version`
+- Actions syntax/expressions: the actionlint version pinned in `.actionlint-version`
 - Embedded workflow shell: ShellCheck through actionlint, with the repository's SC2129 exception
 - YAML: `yamllint -c .yamllint .` across the repository
 - Java (separate target): `gradle --no-daemon :core:check :jna:check :panama:check`
 
-`make lint-workflows` and `pwsh -File .\scripts\dev-windows.ps1 -Task lint-workflows` both run the pinned actionlint module through Go, then repository-wide yamllint. Their Go path requires Go 1.24+; this does not change the library's Go 1.21+ baseline. A direct `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11` has the same Go requirement. Official prebuilt actionlint binaries can be run directly without Go, but installing one does not change what the repository targets invoke.
+`make lint-workflows` and `pwsh -File .\scripts\dev-windows.ps1 -Task lint-workflows` both run the pinned actionlint module through Go, then repository-wide yamllint. Automatic toolchain switching lets Go 1.21+ select the toolchain requested by the module. A local Go 1.24+ toolchain is needed only when switching is unavailable or disabled. A direct `go install` of the pinned module has the same conditional requirement. Official prebuilt actionlint binaries can run directly without Go, but installing one does not change what the repository targets invoke.
 
-Install ShellCheck and yamllint with `sudo apt install shellcheck yamllint` on Debian/Ubuntu, `brew install shellcheck yamllint` on macOS, or the following on Windows:
+Install ShellCheck 0.9 or newer and yamllint with `sudo apt install shellcheck yamllint` on Debian/Ubuntu, `brew install shellcheck yamllint` on macOS, or the following on Windows. CI and local installations may use newer versions; printed tool versions are diagnostic-only, not exact-version gates.
 
 ```powershell
 winget install --id koalaman.shellcheck

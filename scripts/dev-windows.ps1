@@ -208,7 +208,7 @@ function Lint-Rust {
 }
 
 function Lint-Workflows {
-    Test-CommandAvailable -Name "go" -Hint "Install Go 1.24+ for the pinned actionlint workflow-lint path and ensure 'go' is on PATH."
+    Test-CommandAvailable -Name "go" -Hint "Install Go 1.21+ with automatic toolchain switching enabled, or install a local Go 1.24+ toolchain when switching is unavailable or disabled (for example, GOTOOLCHAIN=local or an older pinned GOTOOLCHAIN value), and ensure 'go' is on PATH."
     Test-CommandAvailable -Name "shellcheck" -Hint "Install ShellCheck from its official Windows release or with Chocolatey, then ensure 'shellcheck' is on PATH."
     Test-CommandAvailable -Name "yamllint" -Hint "Install yamllint with 'py -m pip install --user yamllint', then ensure 'yamllint' is on PATH."
 

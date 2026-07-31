@@ -188,7 +188,7 @@ lint-workflows:
 	fi; \
 	actionlint_module="github.com/rhysd/actionlint/cmd/actionlint@$$actionlint_version"; \
 	command -v go >/dev/null 2>&1 || { \
-		echo "Go 1.24+ is required for the pinned actionlint workflow-lint path but was not found on PATH."; \
+		echo "Go was not found on PATH. Workflow linting requires Go 1.21+ with automatic toolchain switching enabled, or a locally installed Go 1.24+ toolchain when switching is unavailable or disabled (for example, GOTOOLCHAIN=local or an older pinned GOTOOLCHAIN value)."; \
 		exit 1; \
 	}; \
 	shellcheck_path="$$(command -v shellcheck 2>/dev/null)" || { \

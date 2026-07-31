@@ -11,9 +11,9 @@ It supports both:
 - Go 1.21+
 - Rust 1.70+
 - Java 17+ (JNA module) and Java 22+ (Panama module)
-- `golangci-lint`, ShellCheck, and yamllint (for the complete `make lint` checks)
+- `golangci-lint`, ShellCheck 0.9 or newer, and yamllint (for the complete `make lint` checks)
 
-Go 1.21+ remains the library build/runtime baseline. The repository's workflow-lint target separately runs actionlint v1.7.11 from the version in `.actionlint-version`; building or running that actionlint module through Go requires Go 1.24+. That lint-tool requirement does not raise the supported Go version for the library.
+Go 1.21+ remains the library build/runtime baseline. The repository's workflow-lint target runs the actionlint version pinned in `.actionlint-version`. With Go 1.21+ and automatic toolchain switching enabled, Go selects the newer toolchain requested by that module. Go 1.24+ must be installed locally only when automatic toolchain switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
 
 ## Supported Platform Matrix
 
@@ -84,7 +84,7 @@ On Windows, prefer the PowerShell workflow for `test`, `test-release`, and `benc
 
 ### Windows toolchain setup
 
-1. Install Go 1.21+. Use Go 1.24+ if you will run the full workflow lint described below.
+1. Install Go 1.21+. Automatic toolchain switching normally supplies the toolchain needed for workflow linting; install Go 1.24+ locally only when switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain.
 2. Install Rust with an MSVC target toolchain:
 
 ```powershell
@@ -107,7 +107,7 @@ rustup default stable-aarch64-pc-windows-msvc
 go install golang.org/x/tools/cmd/goimports@latest
 ```
 
-6. Install ShellCheck and yamllint:
+6. Install ShellCheck 0.9 or newer and yamllint:
 
 ```powershell
 winget install --id koalaman.shellcheck
@@ -598,7 +598,9 @@ For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, an
 - ShellCheck, through actionlint, for shell embedded in workflows
 - `yamllint -c .yamllint .` for YAML across the repository
 
-Use `make lint-workflows` when only the Actions, embedded-shell, and YAML checks are needed. Both Make and `scripts/dev-windows.ps1 -Task lint-workflows` read actionlint v1.7.11 from `.actionlint-version` and invoke its Go module, so those repository targets require Go 1.24+.
+Use `make lint-workflows` when only the Actions, embedded-shell, and YAML checks are needed. Both Make and `scripts/dev-windows.ps1 -Task lint-workflows` read the actionlint version pinned in `.actionlint-version` and invoke its Go module. Go 1.21+ with automatic toolchain switching is the normal path; a local Go 1.24+ toolchain is needed only when switching is unavailable or disabled.
+
+ShellCheck 0.9 or newer is supported. CI and local installations may use newer versions, and the printed ShellCheck and yamllint versions are diagnostic-only rather than exact-version gates.
 
 Common tool installation commands:
 
@@ -616,7 +618,7 @@ winget install --id koalaman.shellcheck
 py -m pip install --user yamllint
 ```
 
-For actionlint, the repository targets need no separately installed executable: they run the pinned module with Go. A direct `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11` also requires Go 1.24+, while an official prebuilt actionlint v1.7.11 binary can be used directly without Go. Installing a prebuilt binary does not remove the Go 1.24+ requirement from `make lint-workflows` or the PowerShell helper because those targets intentionally use `go run`.
+For actionlint, the repository targets need no separately installed executable: they run the pinned module with Go. A direct `go install` of that same pinned module has the same conditional Go toolchain requirement, while an official prebuilt actionlint binary for the pinned version can be used directly without Go. Installing a prebuilt binary does not change what `make lint-workflows` or the PowerShell helper executes because those targets intentionally use `go run`.
 
 The `.yamllint` configuration reads repository-local exclusions from `.gitignore`. It excludes only paths actually matched there; an arbitrary relocated `CARGO_TARGET_DIR` is still linted unless its exact path is also Git-ignored.
 
