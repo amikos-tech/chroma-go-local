@@ -1,0 +1,17 @@
+extends: default
+
+# ignore-from-file requires yamllint 1.28 or newer.
+ignore-from-file: .gitignore
+
+rules:
+  document-start: disable
+  line-length: disable
+  comments:
+    min-spaces-from-content: 1
+  truthy:
+    allowed-values:
+      - "true"
+      - "false"
+      - "on"
+  empty-lines:
+    max-end: 1

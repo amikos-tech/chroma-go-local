@@ -4,7 +4,7 @@ milestone: v0.5.0
 milestone_name: Java API Surface
 status: "Phase 10 shipped — PR #82"
 stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-03-28T13:39:05.763Z"
+last_updated: "2026-07-31T08:44:06Z"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -82,10 +82,16 @@ None yet.
 | 260730-ggr | Fix issue #100: release workflow signs with refs/heads/main identity instead of refs/tags/<version> when dispatched from main | 2026-07-30 | 4a5d7aa | Verified | [260730-ggr-fix-issue-100-release-workflow-signs-wit](./quick/260730-ggr-fix-issue-100-release-workflow-signs-wit/) |
 | 260730-p2k | Fix issue #96: replace arduino/setup-protoc (deprecated Node 20 runtime) with chroma-core/setup-protoc fork at all 4 call sites | 2026-07-30 | 425fb9c | N/A | [260730-p2k-replace-arduino-setup-protoc-with-chroma](./quick/260730-p2k-replace-arduino-setup-protoc-with-chroma/) |
 | 260730-pii | Install protoc inline from its GitHub release with sha256 verification; vendoring approach superseded during code review (GPL-3.0 bundle + release-backfill regression) | 2026-07-30 | bc8200c, 2223396 | Verified — PR #105 | [260730-pii-address-setup-protoc-fork-availability-u](./quick/260730-pii-address-setup-protoc-fork-availability-u/) |
+| 260730-sz8 | Partial fix for issue #97: CDN cache purge step silently skipped when Cloudflare credentials are unset; now always runs and emits a ::warning:: annotation naming the missing credential. Setting real CF_ZONE_ID/CLOUDFLARE_API_TOKEN values and fixing the Cloudflare cache-rule TTL are still outstanding. | 2026-07-30 | e22f1a0 | Verified — PR #107 | [260730-sz8-fix-silent-cdn-cache-purge-skip-in-relea](./quick/260730-sz8-fix-silent-cdn-cache-purge-skip-in-relea/) |
+| 260731-dgm | Address issue #97 review findings: make all Cloudflare purge failures diagnostic and non-fatal, require success:true, add remediation, lint workflows in CI, and correct the prior shell rationale | 2026-07-31 | fb0b734, ab47d82 | Verified — PR #107 | [260731-dgm-address-cdn-purge-reliability-diagnostic](./quick/260731-dgm-address-cdn-purge-reliability-diagnostic/) |
+| 260731-eho | Address CDN purge retry-body pollution and diagnostics, and introduce standalone workflow linting; its intended yamllint apt pin did not displace preinstalled yamllint 1.38.0 and is corrected by 260731-fqz | 2026-07-31 | c3a0e3a | Verified — PR #107 | [260731-eho-address-cdn-purge-and-ci-workflow-lint-f](./quick/260731-eho-address-cdn-purge-and-ci-workflow-lint-f/) |
+| 260731-fqz | Replace the ineffective yamllint apt path with a package-install-free, version-visible workflow lint contract and simplify Cloudflare cache purging into a structurally best-effort step | 2026-07-31 | 4174a8b | Verified — PR #107 | [260731-fqz-address-ci-lint-reproducibility-and-rele](./quick/260731-fqz-address-ci-lint-reproducibility-and-rele/) |
+| 260731-j64 | Address release purge diagnostics, lint documentation and Windows parity, resilient lint tool versions, and workflow lint hardening | 2026-07-31 | 4743852 | Needs Review — PR #107 | [260731-j64-address-release-purge-diagnostics-lint-d](./quick/260731-j64-address-release-purge-diagnostics-lint-d/) |
+| 260731-nkz | Validate and address release workflow review findings 1-10 | 2026-07-31 | f9d4e03 | Needs Review — PR #107 | [260731-nkz-validate-and-address-release-workflow-re](./quick/260731-nkz-validate-and-address-release-workflow-re/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-30 - Shipped quick tasks 260730-p2k + 260730-pii as PR #105: protoc installed inline from its GitHub release, no third-party action in the protoc path
+Last activity: 2026-07-31 - Shipped quick tasks 260730-sz8 + 260731-dgm + 260731-eho + 260731-fqz + 260731-j64 + 260731-nkz as PR #107: fix silent CDN purge skip (issue #97), plus retry-timing bound and lint hardening. Human verification (hosted-release CDN purge observation) still pending post-merge.
 
 Last session: 2026-03-28T09:41:20Z
 Stopped at: Completed 10-02-PLAN.md

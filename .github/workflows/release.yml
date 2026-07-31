@@ -456,11 +456,16 @@ jobs:
             --cache-control "public, max-age=60"
           aws s3 cp /tmp/releases.json.sigstore.json "s3://${BUCKET}/${PROJECT}/releases.json.sigstore.json" \
             --endpoint-url "${R2_ENDPOINT}" \
-            --content-type "application/json"
+            --content-type "application/json" \
+            --cache-control "public, max-age=60"
 
       - name: Purge release metadata from CDN cache
-        if: vars.CF_ZONE_ID != ''
         shell: bash
+        continue-on-error: true
+        # Backstop for hangs curl's own timeouts cannot model (stalled DNS or
+        # TLS). Must exceed the full retry ladder so the script reaches its own
+        # transport-failure branch and still emits a diagnostic.
+        timeout-minutes: 3
         env:
           CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -468,15 +473,117 @@ jobs:
           RELEASES_DOMAIN: ${{ vars.RELEASES_DOMAIN || 'releases.amikos.tech' }}
         run: |
           set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
-            echo "CLOUDFLARE_API_TOKEN is not set; skipping cache purge."
+
+          PURGE_CODE="not-requested"
+          PURGE_BODY_FILE=""
+
+          warn_purge_failure() {
+            local reason=$1
+            local response_body="<empty>"
+
+            if [ -n "${PURGE_BODY_FILE}" ] && [ -s "${PURGE_BODY_FILE}" ]; then
+              if ! response_body="$(
+                LC_ALL=C head -c 512 "${PURGE_BODY_FILE}" 2>/dev/null \
+                  | LC_ALL=C tr '\r\n' '  ' 2>/dev/null
+              )"; then
+                response_body="<unreadable>"
+              fi
+
+              if [ "$(LC_ALL=C wc -c < "${PURGE_BODY_FILE}" 2>/dev/null || true)" -gt 512 ] 2>/dev/null; then
+                response_body="${response_body}...[truncated]"
+              fi
+            fi
+
+            printf 'CDN purge diagnostic: HTTP status=%s; response body=%s\n' \
+              "${PURGE_CODE}" "${response_body}"
+            printf '::warning title=CDN cache not purged::%s\n' "${reason}"
+            # Call only as a top-level command: an exit in a subshell or pipeline
+            # would not stop this step before its success message.
             exit 0
+          }
+
+          MISSING=""
+          if [ -z "${CF_ZONE_ID:-}" ]; then
+            MISSING="${MISSING}, CF_ZONE_ID (repository variable)"
           fi
-          curl -sf -X POST \
-            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\"]}"
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            MISSING="${MISSING}, CLOUDFLARE_API_TOKEN (repository secret)"
+          fi
+          MISSING="${MISSING#, }"
+          if [ -n "${MISSING}" ]; then
+            warn_purge_failure \
+              "Missing ${MISSING}. Add each named item under repository Settings > Secrets and variables > Actions, then rerun the release for the same tag. Release metadata can remain stale until a successful purge."
+          fi
+
+          if ! command -v jq >/dev/null 2>&1; then
+            warn_purge_failure \
+              "jq is required on the runner for validating the Cloudflare cache purge response. Install jq, then rerun the release for the same tag. Release publication will continue."
+          fi
+
+          if ! PURGE_BODY_FILE=$(mktemp); then
+            warn_purge_failure \
+              "Unable to create a temporary response file for the Cloudflare cache purge. Release publication will continue."
+          fi
+          trap 'rm -f "${PURGE_BODY_FILE}"' EXIT
+
+          PURGE_CODE=""
+          if PURGE_CODE=$(curl -sS \
+              --retry 3 \
+              --retry-all-errors \
+              --max-time 30 \
+              -o "${PURGE_BODY_FILE}" \
+              -w '%{http_code}' \
+              -X POST \
+              "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "{\"files\":[\"https://${RELEASES_DOMAIN}/${PROJECT}/latest.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json\",\"https://${RELEASES_DOMAIN}/${PROJECT}/releases.json.sigstore.json\"]}"); then
+            :
+          else
+            PURGE_CURL_EXIT=$?
+            PURGE_CODE="${PURGE_CODE:-000}"
+            warn_purge_failure \
+              "Cloudflare cache purge transport request failed after retries (curl exit code ${PURGE_CURL_EXIT}). Check runner connectivity and Cloudflare availability, then retry the release. Release publication will continue."
+          fi
+
+          case "${PURGE_CODE}" in
+            2[0-9][0-9])
+              ;;
+            401)
+              warn_purge_failure \
+                "Cloudflare rejected cache purge authentication. Replace or correct CLOUDFLARE_API_TOKEN, then rerun the release. Release publication will continue."
+              ;;
+            403)
+              warn_purge_failure \
+                "Cloudflare denied the cache purge. Grant Cache Purge permission for the selected zone and verify the token/zone association. Release publication will continue."
+              ;;
+            408|429|5[0-9][0-9])
+              warn_purge_failure \
+                "Cloudflare cache purge failed after retries because of a timeout, rate limit, or server error. Retry the release after the service recovers. Release publication will continue."
+              ;;
+            *)
+              warn_purge_failure \
+                "Cloudflare cache purge returned an unexpected non-success HTTP status. Review the diagnostic and Cloudflare configuration before retrying. Release publication will continue."
+              ;;
+          esac
+
+          if [ ! -s "${PURGE_BODY_FILE}" ]; then
+            warn_purge_failure \
+              "Cloudflare cache purge returned an empty response body. Retry the release and check Cloudflare service health. Release publication will continue."
+          fi
+
+          if ! jq empty "${PURGE_BODY_FILE}" >/dev/null 2>&1; then
+            warn_purge_failure \
+              "Cloudflare cache purge returned malformed JSON. Retry the release and check Cloudflare service health. Release publication will continue."
+          fi
+
+          if ! jq -e '.success == true' "${PURGE_BODY_FILE}" >/dev/null 2>&1; then
+            warn_purge_failure \
+              "Cloudflare cache purge API response did not report success:true. Review the diagnostic and Cloudflare response before retrying. Release publication will continue."
+          fi
+
+          echo "Cloudflare release metadata purge succeeded."
+          exit 0
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0

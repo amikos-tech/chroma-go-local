@@ -1,4 +1,4 @@
-.PHONY: build build-debug build-release build-java clean test test-go test-rust test-java test-all bench bench-go bench-rust lint lint-go lint-rust lint-java fmt fmt-go fmt-rust help
+.PHONY: build build-debug build-release build-java clean test test-go test-rust test-java test-all bench bench-go bench-rust lint lint-go lint-rust lint-workflows lint-java fmt fmt-go fmt-rust help
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo UNKNOWN)
 OS_ENV := $(OS)
@@ -89,9 +89,10 @@ help:
 	@echo "  build-java    - Build Java modules (core, jna, panama)"
 	@echo "  test-java     - Run Java smoke tests (JNA + Panama)"
 	@echo "  lint-java     - Run Java checks"
-	@echo "  lint          - Run linters for Go and Rust"
+	@echo "  lint          - Run linters for Go, Rust, and GitHub Actions workflows"
 	@echo "  lint-go       - Run golangci-lint"
 	@echo "  lint-rust     - Run cargo clippy"
+	@echo "  lint-workflows - Run actionlint, ShellCheck, and yamllint"
 	@echo "  fmt           - Format Go and Rust code"
 	@echo "  fmt-go        - Format Go code with gofmt and goimports"
 	@echo "  fmt-rust      - Format Rust code with cargo fmt"
@@ -166,13 +167,47 @@ clean:
 	cd $(SHIM_DIR) && cargo clean
 	rm -rf ./chroma_test_data
 
-lint: lint-go lint-rust
+lint: lint-go lint-rust lint-workflows
 
 lint-go:
 	golangci-lint run ./...
 
 lint-rust:
 	cd $(SHIM_DIR) && cargo clippy --locked -- -D warnings
+
+lint-workflows:
+	@set -eu; \
+	if [ ! -f .actionlint-version ]; then \
+		echo ".actionlint-version is required for workflow linting but was not found."; \
+		exit 1; \
+	fi; \
+	actionlint_version="$$(sed -n '1p' .actionlint-version)"; \
+	if [ -z "$$actionlint_version" ]; then \
+		echo ".actionlint-version must contain a non-empty actionlint version."; \
+		exit 1; \
+	fi; \
+	actionlint_module="github.com/rhysd/actionlint/cmd/actionlint@$$actionlint_version"; \
+	command -v go >/dev/null 2>&1 || { \
+		echo "Go was not found on PATH. Workflow linting requires Go 1.21+ with automatic toolchain switching enabled, or a locally installed Go 1.24+ toolchain when switching is unavailable or disabled (for example, GOTOOLCHAIN=local or an older pinned GOTOOLCHAIN value)."; \
+		exit 1; \
+	}; \
+	shellcheck_path="$$(command -v shellcheck 2>/dev/null)" || { \
+		echo "ShellCheck is required for workflow linting but was not found on PATH."; \
+		exit 1; \
+	}; \
+	yamllint_path="$$(command -v yamllint 2>/dev/null)" || { \
+		echo "yamllint 1.28 or newer is required for workflow linting but was not found on PATH."; \
+		exit 1; \
+	}; \
+	printf 'ShellCheck executable: %s\n' "$$shellcheck_path"; \
+	"$$shellcheck_path" --version; \
+	printf 'yamllint executable: %s\n' "$$yamllint_path"; \
+	"$$yamllint_path" --version; \
+	printf 'actionlint module: %s\n' "$$actionlint_module"; \
+	go run "$$actionlint_module" \
+		-shellcheck="$$shellcheck_path" \
+		-ignore 'SC2129'; \
+	"$$yamllint_path" -c .yamllint .
 
 lint-java:
 	@set -e; \

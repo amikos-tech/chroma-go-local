@@ -11,7 +11,9 @@ It supports both:
 - Go 1.21+
 - Rust 1.70+
 - Java 17+ (JNA module) and Java 22+ (Panama module)
-- `golangci-lint` (for `lint` checks)
+- `golangci-lint`, ShellCheck 0.9 or newer, and yamllint 1.28 or newer (for the complete `make lint` checks)
+
+Go 1.21+ remains the library build/runtime baseline. The repository's workflow-lint target runs the actionlint version pinned in `.actionlint-version`. With Go 1.21+ and automatic toolchain switching enabled, Go selects the newer toolchain requested by that module. Go 1.24+ must be installed locally only when automatic toolchain switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
 
 ## Supported Platform Matrix
 
@@ -82,7 +84,7 @@ On Windows, prefer the PowerShell workflow for `test`, `test-release`, and `benc
 
 ### Windows toolchain setup
 
-1. Install Go 1.21+.
+1. Install Go 1.21+. Automatic toolchain switching normally supplies the toolchain needed for workflow linting; install Go 1.24+ locally only when switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain.
 2. Install Rust with an MSVC target toolchain:
 
 ```powershell
@@ -105,6 +107,13 @@ rustup default stable-aarch64-pc-windows-msvc
 go install golang.org/x/tools/cmd/goimports@latest
 ```
 
+6. Install ShellCheck 0.9 or newer and yamllint 1.28 or newer:
+
+```powershell
+winget install --id koalaman.shellcheck
+py -m pip install --user 'yamllint>=1.28'
+```
+
 ### Common Windows commands
 
 ```powershell
@@ -117,8 +126,11 @@ pwsh -File .\scripts\dev-windows.ps1 -Task test
 # Run Rust tests
 pwsh -File .\scripts\dev-windows.ps1 -Task test-rust
 
-# Run linters (golangci-lint + cargo clippy)
+# Run all linters (Go, Rust, Actions, embedded shell, and YAML)
 pwsh -File .\scripts\dev-windows.ps1 -Task lint
+
+# Run only Actions, embedded-shell, and repository-wide YAML checks
+pwsh -File .\scripts\dev-windows.ps1 -Task lint-workflows
 ```
 
 ## Prebuilt Release Artifacts
@@ -576,6 +588,42 @@ For `EmbeddedAddRequest.Metadatas`, `EmbeddedUpdateRecordsRequest.Metadatas`, an
 
 `UpdateRecords` and `UpsertRecords` allow `nil` metadata values to clear keys. Float metadata values are encoded with an explicit decimal representation to avoid integer/float array ambiguity at the Go/Rust boundary. On read-back through `EmbeddedGetRecordsResponse`, numeric metadata values decode as `float64` due standard Go JSON decoding.
 
+## Linting
+
+`make lint` runs the complete required lint contract:
+
+- `golangci-lint` for Go
+- `cargo clippy --locked -- -D warnings` for Rust
+- actionlint for GitHub Actions syntax and expressions
+- ShellCheck, through actionlint, for shell embedded in workflows
+- `yamllint -c .yamllint .` for YAML across the repository
+
+Use `make lint-workflows` when only the Actions, embedded-shell, and YAML checks are needed. Both Make and `scripts/dev-windows.ps1 -Task lint-workflows` read the actionlint version pinned in `.actionlint-version` and invoke its Go module. Go 1.21+ with automatic toolchain switching is the normal path; a local Go 1.24+ toolchain is needed only when switching is unavailable or disabled.
+
+ShellCheck 0.9 or newer and yamllint 1.28 or newer are supported. CI and local installations may use newer versions, and the printed tool versions are diagnostic-only rather than exact-version gates.
+
+Common tool installation commands:
+
+On Debian/Ubuntu, use distribution packages only when both candidates meet the floors above; Ubuntu 22.04's packages do not. On older distributions, install a current ShellCheck release and install yamllint with `python3 -m pip install --user 'yamllint>=1.28'`.
+
+```bash
+# Debian/Ubuntu when package candidates meet the floors above
+sudo apt install shellcheck yamllint
+
+# macOS with Homebrew
+brew install shellcheck yamllint
+```
+
+```powershell
+# Windows
+winget install --id koalaman.shellcheck
+py -m pip install --user 'yamllint>=1.28'
+```
+
+For actionlint, the repository targets need no separately installed executable: they run the pinned module with Go. A direct `go install` of that same pinned module has the same conditional Go toolchain requirement, while an official prebuilt actionlint binary for the pinned version can be used directly without Go. Installing a prebuilt binary does not change what `make lint-workflows` or the PowerShell helper executes because those targets intentionally use `go run`.
+
+The `.yamllint` configuration reads repository-local exclusions from `.gitignore`. It excludes only paths actually matched there; an arbitrary relocated `CARGO_TARGET_DIR` is still linted unless its exact path is also Git-ignored.
+
 ## Testing
 
 ```bash
@@ -596,7 +644,9 @@ pwsh -File .\scripts\dev-windows.ps1 -Task test-release
 
 ## CI
 
-GitHub Actions runs a cross-platform matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`) on pushes to `main` and pull requests. Each matrix job runs:
+GitHub Actions runs a standalone `workflow-lint` job on Ubuntu 24.04 that calls `make lint-workflows`, using the same actionlint/ShellCheck/yamllint contract as local POSIX development. ShellCheck and yamllint print their installed versions for diagnostics without brittle exact-version equality gates.
+
+A separate cross-platform matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`) runs on pushes to `main` and pull requests. Its build/test coverage includes:
 
 1. `cargo build --locked` in `shim/`
 2. `go test -v ./...` with platform-specific `CHROMA_LIB_PATH`

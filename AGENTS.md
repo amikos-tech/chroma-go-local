@@ -13,7 +13,9 @@ Guidance for coding agents working in this repository.
 - Go 1.21+
 - Rust 1.70+
 - Java 17+ (JNA) and Java 22+ (Panama)
-- `golangci-lint` for Go linting
+- `golangci-lint`, ShellCheck 0.9 or newer, and yamllint 1.28 or newer for complete linting
+
+Go 1.21+ remains the project build/runtime minimum. Workflow linting runs the actionlint version pinned in `.actionlint-version`. Go 1.21+ with automatic toolchain switching is the normal path; Go 1.24+ must be installed locally only when switching is unavailable or disabled, including `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
 
 ## Common Commands
 
@@ -23,12 +25,24 @@ Guidance for coding agents working in this repository.
 - Run tests (debug): `make test`
 - Run tests (release): `make test-release`
 - Run Java smoke tests: `make test-java`
-- Run linters: `make lint`
+- Run all Go, Rust, Actions, embedded-shell, and YAML linters: `make lint`
+- Run only workflow and YAML linters: `make lint-workflows`
+- Windows full lint: `pwsh -File .\scripts\dev-windows.ps1 -Task lint`
+- Windows workflow lint: `pwsh -File .\scripts\dev-windows.ps1 -Task lint-workflows`
 - Format code: `make fmt`
 
 Notes:
 - `make test` and `make test-release` set `CHROMA_LIB_PATH` automatically.
 - Prefer Make targets over ad-hoc commands for reproducibility.
+
+## Linting Contract
+
+- `make lint` runs `golangci-lint`, Rust clippy, actionlint, ShellCheck for embedded workflow shell, and repository-wide yamllint.
+- Make and `scripts/dev-windows.ps1 -Task lint-workflows` read the actionlint version from `.actionlint-version` and invoke the same Go module with the same ShellCheck/SC2129 settings.
+- The pinned actionlint Go path, including a direct `go install` of that module version, has the same conditional toolchain requirement. An official prebuilt actionlint binary can run directly without Go, but the repository targets still use `go run`; this does not raise the Go 1.21+ library baseline.
+- Install ShellCheck 0.9 or newer and yamllint 1.28 or newer. Use `sudo apt install shellcheck yamllint` on Debian/Ubuntu only when both package candidates meet those floors; Ubuntu 22.04's packages do not, so use a current ShellCheck release and `python3 -m pip install --user 'yamllint>=1.28'` there. On macOS use `brew install shellcheck yamllint`; on Windows use `winget install --id koalaman.shellcheck` plus `py -m pip install --user 'yamllint>=1.28'`. CI and local installations may use newer versions; printed tool versions are diagnostic-only, not exact-version gates.
+- `.yamllint` follows `.gitignore` for repository-local exclusions. A relocated `CARGO_TARGET_DIR` is excluded only when its exact path is also Git-ignored.
+- CI runs the workflow contract in a standalone Ubuntu 24.04 `workflow-lint` job via `make lint-workflows`.
 
 ## Code Map
 
