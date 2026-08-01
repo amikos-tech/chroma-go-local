@@ -129,3 +129,23 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 9. Backup API | v0.5.0 | 2/2 | Complete   | 2026-03-27 |
 | 10. Server Maintenance | v0.5.0 | 2/2 | Complete    | 2026-03-28 |
+
+### Phase 11: Migrate Rust shim from Chroma 1.5.5 to 1.5.9
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 10
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11 to break down)
+
+### Phase 12: Validate Chroma 1.5.9 cross-version data and binding compatibility
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 11
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 12 to break down)
