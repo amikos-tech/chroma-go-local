@@ -4,12 +4,14 @@ milestone: v0.5.0
 milestone_name: Java API Surface
 status: "Phase 10 shipped — PR #82"
 stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-07-31T08:44:06Z"
+last_updated: "2026-08-01T10:29:16.199Z"
+last_activity: "2026-07-31 - Completed quick task 260731-sjq: protected published `v*` tags from updates and deletions with verified repository ruleset 20138470 (issue #99)."
 progress:
-  total_phases: 5
+  total_phases: 7
   completed_phases: 5
   total_plans: 11
   completed_plans: 11
+  percent: 71
 ---
 
 # Project State
@@ -42,6 +44,13 @@ Plan: Not started
 | 10 | 02 | 6min | 2 | 2 |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 11 added: Migrate Rust shim from Chroma 1.5.5 to 1.5.9
+- Phase 12 added: Validate Chroma 1.5.9 cross-version data and binding compatibility
+- Phase 12 edited: defined COMPAT-01 through COMPAT-04, five success criteria, and phase-local compatibility research
+- Phase 11 edited: defined UPG-01 through UPG-04, five success criteria, and phase-local upgrade research
 
 ### Decisions
 
