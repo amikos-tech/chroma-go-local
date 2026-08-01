@@ -43,6 +43,17 @@
 - [x] **SMNT-03**: `ServerSession.pruneCollectionWAL(name, options)` and `pruneAllWAL(options)` use stop-embed-op-restart pattern
 - [x] **SMNT-04**: Integration tests verify server maintenance operations in both backends
 
+### Chroma 1.5.9 Migration
+
+- [ ] **UPG-01**: All nine direct Chroma Rust dependencies and the resolved lockfile use the Chroma 1.5.9 dependency graph
+- [ ] **UPG-02**: The shim adapts the changed `Frontend::delete` region argument with documented local-mode semantics and no behavior change through the existing FFI
+- [ ] **UPG-03**: Existing exported C symbols and public Go, JNA, and Panama APIs remain backward compatible; additive Chroma 1.5.9 APIs are explicitly included or deferred
+- [ ] **UPG-04**: Rust and protobuf toolchain guidance matches the versions actually required to build the locked Chroma 1.5.9 graph
+- [ ] **COMPAT-01**: Data created by the Chroma 1.5.5 shim can be opened, read, queried, mutated, and reopened with the Chroma 1.5.9 shim
+- [ ] **COMPAT-02**: Backup, rebuild, compaction, WAL pruning, and server stop/restart operations preserve data and availability after the upgrade
+- [ ] **COMPAT-03**: Go, Rust FFI, JNA, and Panama test suites pass against Chroma 1.5.9 on the supported CI platforms
+- [ ] **COMPAT-04**: Upgrade notes document the backup prerequisite, tested rollback boundary, toolchain changes, and intentionally deferred Chroma 1.5.9 capabilities
+
 ## v2 Requirements
 
 ### Post-Parity Improvements
@@ -91,12 +102,20 @@
 | SMNT-02 | Phase 10 | Complete |
 | SMNT-03 | Phase 10 | Complete |
 | SMNT-04 | Phase 10 | Complete |
+| UPG-01 | Phase 11 | Pending |
+| UPG-02 | Phase 11 | Pending |
+| UPG-03 | Phase 11 | Pending |
+| UPG-04 | Phase 11 | Pending |
+| COMPAT-01 | Phase 12 | Pending |
+| COMPAT-02 | Phase 12 | Pending |
+| COMPAT-03 | Phase 12 | Pending |
+| COMPAT-04 | Phase 12 | Pending |
 
 **Coverage:**
-- v1 requirements: 23 total
-- Mapped to phases: 23
+- v1 requirements: 31 total
+- Mapped to phases: 31
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-21 after roadmap creation*
+*Last updated: 2026-08-01 for Chroma 1.5.9 migration planning*

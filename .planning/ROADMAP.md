@@ -4,6 +4,7 @@
 
 - **v0.4.0 Go Subtree Reorganization** - Phases 1-5 (complete)
 - **v0.5.0 Java API Surface** - Phases 6-10 (in progress)
+- **Chroma 1.5.9 Upgrade** - Phases 11-12 (planned)
 
 ## Phases
 
@@ -31,6 +32,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 8: Embedded Maintenance** - Implement rebuild, compaction, and WAL prune operations on EmbeddedSession in both backends
 - [x] **Phase 9: Backup API** - Implement backup with filesystem copy, manifest generation, and option builder for both embedded and server modes (completed 2026-03-27)
 - [x] **Phase 10: Server Maintenance** - Implement stop-embed-op-restart orchestration for all maintenance operations on ServerSession (completed 2026-03-28)
+
+### Chroma 1.5.9 Upgrade
+
+- [ ] **Phase 11: Migrate Rust shim from Chroma 1.5.5 to 1.5.9** - Upgrade the Rust dependency graph and adapt the one known shim source break while preserving public binding contracts
+- [ ] **Phase 12: Validate Chroma 1.5.9 cross-version data and binding compatibility** - Prove persisted-data compatibility, maintenance behavior, and all Go/Rust/Java binding paths before release
 
 ## Phase Details
 
@@ -111,11 +117,47 @@ Plans:
 - [x] 10-01-PLAN.md -- MaintenanceResult, MaintenanceExecutor, ServerSession expansion, JNA/Panama backend wiring
 - [x] 10-02-PLAN.md -- Data-seeded integration tests for server maintenance in both JNA and Panama backends
 
+### Phase 11: Migrate Rust shim from Chroma 1.5.5 to 1.5.9
+
+**Goal:** Upgrade the Rust shim to Chroma 1.5.9, reconcile its dependency and toolchain changes, and preserve the existing C FFI, Go, JNA, and Panama contracts
+**Depends on:** Phase 10
+**Requirements:** UPG-01, UPG-02, UPG-03, UPG-04
+**Canonical refs:**
+- `.planning/phases/11-migrate-rust-shim-from-chroma-1-5-5-to-1-5-9/11-RESEARCH.md`
+**Success Criteria** (what must be TRUE):
+  1. All nine direct Chroma git dependencies are pinned to tag 1.5.9 and the committed lockfile resolves reproducibly with `--locked`, including the known `fastrace` reconciliation
+  2. The shim compiles against the new `Frontend::delete(request, region)` signature with the locally appropriate region value documented and protected by an embedded delete regression test
+  3. The exported C symbol set and the public Go, JNA, and Panama APIs remain backward compatible; additive upstream APIs are either deliberately exposed with tests or recorded as deferred
+  4. Contributor and CI guidance states the real Rust and protobuf toolchain requirements for the locked 1.5.9 graph
+  5. Fresh-data Rust, Go, JNA, and Panama smoke and integration tests pass with the migrated shim
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11 to break down)
+
+### Phase 12: Validate Chroma 1.5.9 cross-version data and binding compatibility
+
+**Goal:** Prove that users can upgrade existing Chroma 1.5.5 data to the 1.5.9-backed shim without losing data, maintenance behavior, or binding compatibility, and document the tested rollback boundary
+**Depends on:** Phase 11
+**Requirements:** COMPAT-01, COMPAT-02, COMPAT-03, COMPAT-04
+**Canonical refs:**
+- `.planning/phases/12-validate-chroma-1-5-9-cross-version-data-and-binding-compati/12-RESEARCH.md`
+**Success Criteria** (what must be TRUE):
+  1. A deterministic fixture created by the 1.5.5 shim is opened by 1.5.9 with collection identity, records, documents, metadata, counts, filters, and representative query results intact
+  2. The 1.5.9 shim can mutate the upgraded fixture and reopen it after process restart without data loss or result drift
+  3. Backup/restore, rebuild, compaction, WAL pruning, and server stop/restart complete against upgraded data and leave it queryable
+  4. Go, Rust FFI, JNA, and Panama compatibility tests pass across the supported CI operating systems
+  5. Upgrade documentation states the required pre-upgrade backup, the observed 1.5.9-to-1.5.5 rollback result, toolchain changes, and intentionally deferred upstream capabilities
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 12 to break down)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
-(Phases 7 and 8 can execute in parallel after Phase 6; Phases 9 and 10 depend on both 7 and 8.)
+Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
+(Phases 7 and 8 can execute in parallel after Phase 6; Phases 9 and 10 depend on both 7 and 8; compatibility validation follows the 1.5.9 shim migration.)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -129,23 +171,5 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 9. Backup API | v0.5.0 | 2/2 | Complete   | 2026-03-27 |
 | 10. Server Maintenance | v0.5.0 | 2/2 | Complete    | 2026-03-28 |
-
-### Phase 11: Migrate Rust shim from Chroma 1.5.5 to 1.5.9
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 10
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd-plan-phase 11 to break down)
-
-### Phase 12: Validate Chroma 1.5.9 cross-version data and binding compatibility
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 11
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd-plan-phase 12 to break down)
+| 11. Migrate Rust shim from Chroma 1.5.5 to 1.5.9 | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
+| 12. Validate Chroma 1.5.9 cross-version data and binding compatibility | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
