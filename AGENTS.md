@@ -11,11 +11,14 @@ Guidance for coding agents working in this repository.
 ## Requirements
 
 - Go 1.21+
-- Rust 1.70+
+- Rust 1.88.0+ for source builds of the committed Chroma 1.5.9 graph
+- `protoc` 31.1 for source builds of the native shim
 - Java 17+ (JNA) and Java 22+ (Panama)
 - `golangci-lint`, ShellCheck 0.9 or newer, and yamllint 1.28 or newer for complete linting
 
 Go 1.21+ remains the project build/runtime minimum. Workflow linting runs the actionlint version pinned in `.actionlint-version`. Go 1.21+ with automatic toolchain switching is the normal path; Go 1.24+ must be installed locally only when switching is unavailable or disabled, including `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
+
+Rust 1.88.0 is the measured source-build MSRV for the locked dependency graph. CI and release workflows intentionally retain the exact Rust 1.93.1 compiler pin for reproducible artifacts. Consumers of released/prebuilt native libraries need neither Rust nor `protoc`.
 
 ## Common Commands
 
