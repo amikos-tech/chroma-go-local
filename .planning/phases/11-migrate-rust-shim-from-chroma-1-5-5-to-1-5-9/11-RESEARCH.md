@@ -48,7 +48,7 @@
 | UPG-01 | All nine direct Chroma Rust dependencies and the resolved lockfile use the Chroma 1.5.9 dependency graph | Use one manifest group edit, the locked package-specific `fastrace` update, then verify the resolved graph semantically through Cargo metadata. |
 | UPG-02 | The shim adapts the changed `Frontend::delete` region argument with documented local-mode semantics and no behavior change through the existing FFI | Keep `String::new()` private to `run_embedded_delete_records`; test deletion and survivor retrieval through Go → C ABI → Rust. |
 | UPG-03 | Existing exported C symbols and public Go, JNA, and Panama APIs remain backward compatible; additive APIs are explicitly included or deferred | Capture the pre-migration native symbol set, compare the rebuilt library, run Go plus both Java binding suites, and record D-01/D-02 deferrals. |
-| UPG-04 | Rust and protobuf toolchain guidance matches the versions actually required to build the locked Chroma 1.5.9 graph | Lock the measured Rust 1.88.0 check, retain Rust 1.93.1 in CI/release, document `protoc` 31.1 for source builders only. |
+| UPG-04 | Rust and protobuf toolchain guidance matches the versions actually required to build the locked Chroma 1.5.9 graph | After the planned private delete adaptation, run the measured Rust 1.88.0 locked check; retain Rust 1.93.1 in CI/release and document `protoc` 31.1 for source builders only. |
 </phase_requirements>
 
 ## Project Constraints (from AGENTS.md)
@@ -120,9 +120,9 @@ No new external package installation is recommended. The migration updates exist
 flowchart LR
   M[shim/Cargo.toml\nnine Chroma 1.5.9 pins] --> U[cargo update -p fastrace\n--precise 0.7.8]
   U --> L[shim/Cargo.lock\ncommitted exact graph]
-  L --> C[cargo +1.88.0 check\n--all-targets --locked]
-  C --> R[Rust shim\nprivate delete region adaptation]
-  R --> N[rebuilt cdylib\nexported chroma_* symbols]
+  L --> R[Rust shim\nprivate delete region adaptation]
+  R --> C[successful cargo +1.88.0 check\n--all-targets --locked]
+  C --> N[rebuilt cdylib\nexported chroma_* symbols]
   N --> G[Go purego tests]
   N --> J[JNA smoke tests]
   N --> P[Panama smoke tests]
@@ -394,7 +394,7 @@ Persist the returned object/table in the phase summary and evaluate every return
 | Go framework | Go `testing` with integration-style tests against the real shim |
 | Java framework | Gradle/JUnit Platform, with JNA and Panama module test tasks |
 | Config files | `shim/Cargo.toml`, `go.mod`, `java/build.gradle.kts`, `java/jna/build.gradle.kts`, `java/panama/build.gradle.kts` [VERIFIED: filesystem scan] |
-| Quick run command | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` |
+| Quick run command | After Plan 11-02's private delete adaptation: `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` |
 | Full local suite | `make test && make test-rust && make test-java && make lint` |
 | Cross-platform gate | A normal PR `CI` run for the exact migrated SHA; evaluate run/job metadata dynamically or record equivalent manual evidence. [VERIFIED: .github/workflows/ci.yml; VERIFIED: 11-REVIEWS.md] |
 
@@ -403,13 +403,13 @@ Persist the returned object/table in the phase summary and evaluate every return
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
 | UPG-01 | All nine direct packages resolve from Chroma tag 1.5.9 and lockfile is accepted unchanged | dependency integration | `cargo metadata --manifest-path shim/Cargo.toml --locked --format-version=1 | jq -e '<all-nine predicate>'` | ✅ Cargo files; predicate is a plan task |
-| UPG-01 | The targeted graph remains buildable without lock mutation | compile | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` | ✅ existing Cargo targets |
+| UPG-01 | The targeted graph resolves semantically without lockfile mutation | dependency integration | `cargo metadata --manifest-path shim/Cargo.toml --locked --format-version=1 | jq -e '<all-nine predicate>'` | ✅ Cargo files; predicate is a Plan 11-01 task |
 | UPG-02 | Deleting one embedded record leaves another retrievable through Go → C → Rust | integration | `make build && CHROMA_LIB_PATH="$PWD/shim/target/debug/<platform-library>" go test ./internal/runtime -run '^TestEmbeddedDeleteByIDPreservesSurvivor$' -count=1` | ❌ Wave 0: add focused regression |
 | UPG-03 | Actual native `chroma_*` exports equal the pre-migration baseline | ABI/artifact | `make build` then platform export-list `diff -u` | ❌ Wave 0: add task-local baseline/evidence procedure |
 | UPG-03 | Go public bindings still load/use the rebuilt shim | integration | `make test` | ✅ |
 | UPG-03 | JNA and Panama each load/test the rebuilt shim | integration/smoke | `make test-java` | ✅ |
 | UPG-03 | Cross-platform fresh-data binding behavior succeeds | CI integration | exact-SHA normal PR `CI` run; inspect returned `jobs` metadata | ✅ CI workflow; summary evidence task needed |
-| UPG-04 | Claimed Rust source-build floor accepts the committed graph | compile | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` | ✅ Rust 1.88 locally installed |
+| UPG-04 | After Plan 11-02 adapts the known private delete region, the claimed Rust source-build floor accepts the committed graph | compile | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` | ✅ Rust 1.88 locally installed |
 | UPG-04 | Contributor docs and CI/release pins communicate 1.88/1.93.1/31.1 semantics correctly | review + workflow lint | `make lint-workflows` plus human semantic documentation review | ✅ docs/workflows; semantic review task needed |
 
 `<platform-library>` must be resolved through the existing Make platform rules (`libchroma_shim.so`, `libchroma_shim.dylib`, or `chroma_shim.dll`), not duplicated as an assumed path in a cross-platform command. [VERIFIED: Makefile]

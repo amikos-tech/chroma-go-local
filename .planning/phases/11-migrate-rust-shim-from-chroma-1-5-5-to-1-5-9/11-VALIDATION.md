@@ -19,7 +19,7 @@ created: 2026-08-02
 |----------|-------|
 | **Framework** | Cargo test/check, Go `testing`, and Gradle/JUnit (JNA + Panama) |
 | **Config file** | `shim/Cargo.toml`, `go.mod`, and `java/build.gradle.kts` |
-| **Quick run command** | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` |
+| **Quick run command** | After Plan 11-02 Task 2 adapts the private delete region: `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` |
 | **Full suite command** | `make test && make test-rust && make test-java && make lint` |
 | **Estimated runtime** | ~10 minutes locally; CI evidence may take up to 30 minutes |
 
@@ -38,10 +38,10 @@ created: 2026-08-02
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 11-01-01 | 01 | 1 | UPG-01 | T-11-01 | All nine named Chroma packages resolve from the official `1.5.9` git source in locked Cargo metadata | dependency integration | `cargo metadata --manifest-path shim/Cargo.toml --locked --format-version=1` plus the plan's JSON predicate | ✅ | ⬜ pending |
-| 11-01-02 | 01 | 1 | UPG-01, UPG-04 | T-11-01, T-11-04 | The committed graph compiles without lockfile mutation using the documented MSRV | compile | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` | ✅ | ⬜ pending |
+| 11-01-01 | 01 | 1 | UPG-03 | T-11-02 | A real pre-migration native `chroma_*` export baseline, or a precise inspector-unavailability record that keeps the ABI comparison pending, exists before dependency edits | ABI/artifact | `test -s 11-abi-before-inspection.md` plus either a non-empty export list or `UNAVAILABLE` record | ❌ Wave 0 | ⬜ pending |
+| 11-01-02 | 01 | 1 | UPG-01 | T-11-01 | All nine named Chroma packages resolve from the official `1.5.9` git source in locked Cargo metadata; this Wave 1 task does not require a successful compile before the known adaptation | dependency integration | `cargo metadata --manifest-path shim/Cargo.toml --locked --format-version=1` plus the plan's JSON predicate | ✅ | ⬜ pending |
 | 11-02-01 | 02 | 2 | UPG-02 | T-11-03 | A public embedded delete removes only the requested record through Go → C → Rust | integration | `make build` then the focused Go delete/survivor test | ❌ Wave 0 | ⬜ pending |
-| 11-02-02 | 02 | 2 | UPG-02 | T-11-04 | Any unexpected upstream compile change stays private and compatibility-preserving, or escalates before changing ABI/public APIs | compile + review | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` | ✅ | ⬜ pending |
+| 11-02-02 | 02 | 2 | UPG-02, UPG-04 | T-11-04 | After the known private delete-region adaptation, the committed graph compiles without lockfile mutation using the documented MSRV; any unexpected upstream change stays private and compatibility-preserving, or escalates before changing ABI/public APIs | compile + review | `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` | ✅ | ⬜ pending |
 | 11-03-01 | 03 | 3 | UPG-03 | T-11-02 | The rebuilt native library has exactly the pre-migration `chroma_*` export set | ABI/artifact | platform export-list capture followed by `diff -u` | ❌ Wave 0 | ⬜ pending |
 | 11-03-02 | 03 | 3 | UPG-03 | T-11-02 | Go, JNA, and Panama load and test the rebuilt shim without public API changes | integration/smoke | `make test && make test-java` | ✅ | ⬜ pending |
 | 11-03-03 | 03 | 3 | UPG-04 | T-11-01 | Source-builder documentation and CI/release pins state Rust 1.88.0, Rust 1.93.1, and protoc 31.1 accurately | workflow lint + review | `make lint-workflows` and semantic document review | ✅ | ⬜ pending |

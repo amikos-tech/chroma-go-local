@@ -90,10 +90,9 @@ After the manifest tag edit, run the validated constrained command from Spike 00
 ```sh
 cargo update --manifest-path shim/Cargo.toml -p fastrace --precise 0.7.8
 cargo tree --manifest-path shim/Cargo.toml --duplicates
-cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked
 ```
 
-Do not use bare `cargo update`: it was measured to refresh unrelated packages and raise the accidental compiler floor. Review the lockfile diff and duplicate tree as migration evidence, then commit only the resulting targeted graph.
+Do not use bare `cargo update`: it was measured to refresh unrelated packages and raise the accidental compiler floor. Wave 1 ends with the semantic metadata predicate, lockfile-diff review, and duplicate-tree review; the expected `Frontend::delete` signature break means it must not claim a successful all-targets compile yet. In Wave 2, first apply the private `String::new()` delete-region adaptation, then run `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked` as the sole successful locked-compile proof. Commit only the resulting targeted graph.
 
 ---
 
@@ -327,10 +326,9 @@ Apply to: the manifest and lockfile as one atomic dependency migration.
 ```sh
 cargo update --manifest-path shim/Cargo.toml -p fastrace --precise 0.7.8
 cargo tree --manifest-path shim/Cargo.toml --duplicates
-cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked
 ```
 
-The deliberate `fastrace` reconciliation is required by Chroma 1.5.9. The generated lockfile must be reviewed; a bare `cargo update` is out of scope because it refreshes unrelated packages.
+The deliberate `fastrace` reconciliation is required by Chroma 1.5.9. Resolve and inspect the graph in Wave 1, then adapt the known private `Frontend::delete` region argument in Wave 2 before running the sole successful `cargo +1.88.0 check --manifest-path shim/Cargo.toml --all-targets --locked`. The generated lockfile must be reviewed; a bare `cargo update` is out of scope because it refreshes unrelated packages.
 
 ### FFI error and ABI boundary
 
@@ -361,7 +359,7 @@ Use a temporary persist directory, `t.Cleanup` for `Close`, concrete seed IDs, a
     PROTOC_VERSION: "31.1"
 ```
 
-Keep these exact CI/release pins. If a dedicated MSRV check is added, make it a locked all-targets `cargo +1.88.0 check` validation; it supplements rather than replaces the current three-OS build, Go test/lint, JNA smoke, and Panama smoke matrix.
+Keep these exact CI/release pins. Plan 11-02 must run its required post-adaptation MSRV proof as a locked all-targets `cargo +1.88.0 check`; it supplements rather than replaces the current three-OS build, Go test/lint, JNA smoke, and Panama smoke matrix.
 
 ### Public API compatibility gate
 
