@@ -155,12 +155,12 @@ Plans:
   4. Contributor and CI guidance states the real Rust and protobuf toolchain requirements for the locked 1.5.9 graph
   5. Fresh-data Rust, Go, JNA, and Panama smoke and integration tests pass with the migrated shim
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md -- Pin all nine Chroma dependencies to 1.5.9 and produce the constrained `fastrace` 0.7.8 lockfile migration
+- [x] 11-01-PLAN.md -- Pin all nine Chroma dependencies to 1.5.9 and produce the constrained `fastrace` 0.7.8 lockfile migration
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -215,7 +215,7 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 9. Backup API | v0.5.0 | 2/2 | Complete   | 2026-03-27 |
 | 10. Server Maintenance | v0.5.0 | 2/2 | Complete    | 2026-03-28 |
-| 11. Migrate Rust shim from Chroma 1.5.5 to 1.5.9 | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
+| 11. Migrate Rust shim from Chroma 1.5.5 to 1.5.9 | Chroma 1.5.9 Upgrade | 1/4 | In Progress | - |
 | 12. Validate Chroma 1.5.9 cross-version data and binding compatibility | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
 
 ### Phase 13: Expose deferred Chroma 1.5.9 APIs with backward-compatible Go, JNA, and Panama bindings

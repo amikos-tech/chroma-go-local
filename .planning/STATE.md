@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
-status: Phase 11 planned — ready to execute
-stopped_at: Phase 11 planned with four executable migration plans
-last_updated: "2026-08-02T11:41:19.061Z"
+status: Phase 11 in progress — Plan 2 ready to execute
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-08-02T11:48:45.421Z"
 last_activity: 2026-08-02
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 15
-  completed_plans: 11
-  percent: 63
+  completed_plans: 12
+  percent: 80
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 11 (migrate-rust-shim-from-chroma-1-5-5-to-1-5-9) — EXECUTING
-Plan: 1 of 4
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -42,6 +42,7 @@ Plan: 1 of 4
 | Phase 09 P02 | 4min | 2 tasks | 4 files |
 | Phase 10 P01 | 6min | 2 tasks | 6 files |
 | 10 | 02 | 6min | 2 | 2 |
+| Phase 11 P01 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Plan: 1 of 4
 - [Phase 10]: Server maintenance methods invalidate session after callback matching backup pattern
 - [Phase 10]: Split null-option rejection tests per operation due to ServerSession closing on IllegalArgumentException
 - [Phase 10]: HTTP data seeding via Chroma v2 REST API for server maintenance test verification
+- [Phase 11]: Resolved Chroma 1.5.9 only through the targeted fastrace 0.7.8 update, preserving unrelated locked packages. — Constrained dependency drift to the validated migration graph.
+- [Phase 11]: Declared Rust 1.88 as the source-build MSRV and deferred the successful locked all-targets compile gate to Plan 11-02. — The known private delete-signature adaptation must land before compilation can pass.
 
 ### Pending Todos
 
@@ -104,6 +107,6 @@ None yet.
 
 Last activity: 2026-08-02
 
-Last session: 2026-08-02T08:13:32.164Z
-Stopped at: Phase 11 planned with four executable migration plans
-Resume file: .planning/phases/11-migrate-rust-shim-from-chroma-1-5-5-to-1-5-9/11-CONTEXT.md
+Last session: 2026-08-02T11:48:45.413Z
+Stopped at: Completed 11-01-PLAN.md
+Resume file: None
