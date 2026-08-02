@@ -193,6 +193,68 @@ func TestEmbeddedDeleteByDocumentFilterOnly(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "CountRecords did not reach expected count after filtered delete")
 }
 
+func TestEmbeddedDeleteByIDPreservesSurvivor(t *testing.T) {
+	embedded := newEmbeddedForIntegrationTest(t)
+
+	databaseName := fmt.Sprintf("delete_by_id_db_%d", time.Now().UnixNano())
+	if err := embedded.CreateDatabase(EmbeddedCreateDatabaseRequest{Name: databaseName}); err != nil {
+		t.Fatalf("CreateDatabase failed: %v", err)
+	}
+
+	collection, err := embedded.CreateCollection(EmbeddedCreateCollectionRequest{
+		Name:         fmt.Sprintf("delete_by_id_collection_%d", time.Now().UnixNano()),
+		DatabaseName: databaseName,
+		GetOrCreate:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateCollection failed: %v", err)
+	}
+
+	if err := embedded.Add(EmbeddedAddRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		IDs:          []string{"keep", "delete"},
+		Embeddings: [][]float32{
+			{0.1, 0.2, 0.3},
+			{0.3, 0.2, 0.1},
+		},
+		Documents: []string{"survivor document", "deletion target document"},
+	}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	if err := embedded.DeleteRecords(EmbeddedDeleteRecordsRequest{
+		CollectionID: collection.ID,
+		DatabaseName: databaseName,
+		IDs:          []string{"delete"},
+	}); err != nil {
+		t.Fatalf("DeleteRecords by ID failed: %v", err)
+	}
+
+	var count uint32
+	var getResp *EmbeddedGetRecordsResponse
+	require.Eventually(t, func() bool {
+		count, err = embedded.CountRecords(EmbeddedCountRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+		})
+		if err != nil || count != 1 {
+			return false
+		}
+
+		getResp, err = embedded.GetRecords(EmbeddedGetRecordsRequest{
+			CollectionID: collection.ID,
+			DatabaseName: databaseName,
+			IDs:          []string{"keep", "delete"},
+		})
+		return err == nil && getResp != nil && len(getResp.IDs) == 1
+	}, 5*time.Second, 100*time.Millisecond, "delete by ID did not preserve exactly one survivor")
+
+	require.Equal(t, uint32(1), count)
+	require.NotContains(t, getResp.IDs, "delete")
+	require.Contains(t, getResp.IDs, "keep")
+}
+
 func TestEmbeddedDeleteByDocumentFilterWithLimit(t *testing.T) {
 	embedded := newEmbeddedForIntegrationTest(t)
 
