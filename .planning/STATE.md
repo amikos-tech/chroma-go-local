@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
 status: "Phase 10 shipped — PR #82"
-stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-08-01T10:29:16.199Z"
+stopped_at: Phase 11 context gathered with validated dependency and toolchain spikes
+last_updated: "2026-08-02T08:13:32.172Z"
 last_activity: "2026-07-31 - Completed quick task 260731-sjq: protected published `v*` tags from updates and deletions with verified repository ruleset 20138470 (issue #99)."
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 5
   total_plans: 11
   completed_plans: 11
-  percent: 71
+  percent: 63
 ---
 
 # Project State
@@ -51,6 +51,7 @@ Plan: Not started
 - Phase 12 added: Validate Chroma 1.5.9 cross-version data and binding compatibility
 - Phase 12 edited: defined COMPAT-01 through COMPAT-04, five success criteria, and phase-local compatibility research
 - Phase 11 edited: defined UPG-01 through UPG-04, five success criteria, and phase-local upgrade research
+- Phase 13 added: Expose deferred Chroma 1.5.9 APIs with backward-compatible Go, JNA, and Panama bindings
 
 ### Decisions
 
@@ -103,6 +104,6 @@ None yet.
 
 Last activity: 2026-07-31 - Completed quick task 260731-sjq: protected published `v*` tags from updates and deletions with verified repository ruleset 20138470 (issue #99).
 
-Last session: 2026-03-28T09:41:20Z
-Stopped at: Completed 10-02-PLAN.md
-Resume file: None
+Last session: 2026-08-02T08:13:32.164Z
+Stopped at: Phase 11 context gathered with validated dependency and toolchain spikes
+Resume file: .planning/phases/11-migrate-rust-shim-from-chroma-1-5-5-to-1-5-9/11-CONTEXT.md
