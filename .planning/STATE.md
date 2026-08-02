@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: Java API Surface
-status: Phase 11 in progress — Plan 3 ready to execute
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-08-02T12:29:19.131Z"
+status: Phase 11 in progress — Plan 4 ready to execute
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-08-02T12:40:18.280Z"
 last_activity: 2026-08-02
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 15
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 11 (migrate-rust-shim-from-chroma-1-5-5-to-1-5-9) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Plan: 3 of 4
 | 10 | 02 | 6min | 2 | 2 |
 | Phase 11 P01 | 4min | 2 tasks | 4 files |
 | Phase 11 P02 | 6min | 2 tasks | 2 files |
+| Phase 11 P03 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ Plan: 3 of 4
 - [Phase 11]: Declared Rust 1.88 as the source-build MSRV and deferred the successful locked all-targets compile gate to Plan 11-02. — The known private delete-signature adaptation must land before compilation can pass.
 - [Phase 11]: Passed an empty private local telemetry region to Chroma 1.5.9 delete without exposing caller input through C, Go, JNA, or Panama. — Contained the upstream signature drift entirely inside the Rust shim and preserved every existing binding contract.
 - [Phase 11]: Validated embedded delete behavior through the public Go API and real native shim. — Behavioral evidence proves target removal and survivor preservation across Go, the existing C ABI, and Rust.
+- [Phase 11]: Documented Rust 1.88.0 as the source-build MSRV while retaining Rust 1.93.1 as the exact CI/release compiler pin. — Separates the measured source minimum from reproducible artifact builds.
+- [Phase 11]: Kept all additive Chroma 1.5.9 APIs deferred to Phase 13 and all persisted-data compatibility claims reserved for Phase 12. — Preserves the stable binding surface and the fresh-data-only evidence boundary.
+- [Phase 11]: Required uncached supplemental Go and Java runs after repository targets reported cached or up-to-date results. — Ensures the local evidence represents executed fresh-data paths.
 
 ### Pending Todos
 
@@ -110,6 +114,6 @@ None yet.
 
 Last activity: 2026-08-02
 
-Last session: 2026-08-02T12:28:50.115Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-08-02T12:40:18.273Z
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None

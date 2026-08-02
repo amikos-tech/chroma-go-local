@@ -155,7 +155,7 @@ Plans:
   4. Contributor and CI guidance states the real Rust and protobuf toolchain requirements for the locked 1.5.9 graph
   5. Fresh-data Rust, Go, JNA, and Panama smoke and integration tests pass with the migrated shim
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 **Wave 1**
@@ -168,7 +168,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 11-03-PLAN.md -- Align contributor toolchain guidance and run fresh-data local compatibility checks while recording deferred APIs and Phase 12 scope
+- [x] 11-03-PLAN.md -- Align contributor toolchain guidance and run fresh-data local compatibility checks while recording deferred APIs and Phase 12 scope
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -215,7 +215,7 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 | 8. Embedded Maintenance | v0.5.0 | 2/2 | Complete | 2026-03-26 |
 | 9. Backup API | v0.5.0 | 2/2 | Complete   | 2026-03-27 |
 | 10. Server Maintenance | v0.5.0 | 2/2 | Complete    | 2026-03-28 |
-| 11. Migrate Rust shim from Chroma 1.5.5 to 1.5.9 | Chroma 1.5.9 Upgrade | 2/4 | In Progress | - |
+| 11. Migrate Rust shim from Chroma 1.5.5 to 1.5.9 | Chroma 1.5.9 Upgrade | 3/4 | In Progress | - |
 | 12. Validate Chroma 1.5.9 cross-version data and binding compatibility | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
 
 ### Phase 13: Expose deferred Chroma 1.5.9 APIs with backward-compatible Go, JNA, and Panama bindings
