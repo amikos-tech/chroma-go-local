@@ -173,3 +173,13 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 | 10. Server Maintenance | v0.5.0 | 2/2 | Complete    | 2026-03-28 |
 | 11. Migrate Rust shim from Chroma 1.5.5 to 1.5.9 | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
 | 12. Validate Chroma 1.5.9 cross-version data and binding compatibility | Chroma 1.5.9 Upgrade | 0/TBD | Not started | - |
+
+### Phase 13: Expose deferred Chroma 1.5.9 APIs with backward-compatible Go, JNA, and Panama bindings
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 12
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 13 to break down)
