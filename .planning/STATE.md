@@ -4,7 +4,7 @@ milestone: v0.5.0
 milestone_name: Java API Surface
 status: Phase 11 planned — ready to execute
 stopped_at: Phase 11 planned with four executable migration plans
-last_updated: "2026-08-02T11:05:29.684Z"
+last_updated: "2026-08-02T11:41:19.061Z"
 last_activity: 2026-08-02
 progress:
   total_phases: 8
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Java and Go APIs must provide equivalent access to all Chroma runtime capabilities
-**Current focus:** Phase 11 — migrate Rust shim from Chroma 1.5.5 to 1.5.9 (planned)
+**Current focus:** Phase 11 — migrate-rust-shim-from-chroma-1-5-5-to-1-5-9
 
 ## Current Position
 
-Phase: 11
-Plan: 01 of 04 ready to execute
+Phase: 11 (migrate-rust-shim-from-chroma-1-5-5-to-1-5-9) — EXECUTING
+Plan: 1 of 4
 
 ## Performance Metrics
 
