@@ -2,6 +2,7 @@
 name = "chroma_go_shim"
 version = "0.3.4"
 edition = "2021"
+rust-version = "1.88"
 
 [lib]
 name = "chroma_shim"
@@ -16,15 +17,15 @@ serde_json = "1"
 serde-pickle = "1"
 
 # Chroma dependencies from official repo
-chroma-frontend = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-config = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-system = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-types = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-log = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-index = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-segment = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-sysdb = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
-chroma-sqlite = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.5" }
+chroma-frontend = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-config = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-system = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-types = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-log = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-index = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-segment = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-sysdb = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
+chroma-sqlite = { git = "https://github.com/chroma-core/chroma.git", tag = "1.5.9" }
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "sqlite"] }
 
 [profile.release]
