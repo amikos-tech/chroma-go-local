@@ -358,17 +358,13 @@ Persist the returned object/table in the phase summary and evaluate every return
 | A3 | The installed/future GitHub CLI exposes `status`, `conclusion`, `headSha`, and `jobs` in the proposed JSON call. | CI evidence pattern / Code Examples | Use `gh run view --help` and retain the manual evidence path if fields differ. |
 | A4 | A missing `gh`/network probe will present as the described unavailable/authentication condition. | Common Pitfalls | The executor must record the actual command/result, not infer a cause. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Where should durable CI evidence live if CI is manually inspected?**
-   - What we know: `11-04-SUMMARY.md` is the established phase summary artifact, and reviews require fallback/manual evidence. [VERIFIED: 11-REVIEWS.md]
-   - What's unclear: Whether maintainers prefer copied job rows or a linked exported run JSON attachment in addition to the summary. [ASSUMED]
-   - Recommendation: Require the summary table as the minimum; an attachment/link may supplement it but not replace PR URL, SHA, run URL/ID, retrieval timestamp, and complete job outcome table. [VERIFIED: 11-REVIEWS.md]
+1. **Where durable manually inspected CI evidence lives — resolved.**
+   - **Decision:** `11-04-SUMMARY.md` must contain the mandatory complete summary table. It records the PR URL/number, `OPEN` and non-draft state, exact head SHA, CI run URL/ID, completed/successful run conclusion, UTC retrieval timestamp, retrieval method, and every returned job name/status/conclusion. An attachment or link to exported JSON may supplement the summary but cannot replace any table field. [RESOLVED: planner revision 1; VERIFIED: 11-REVIEWS.md]
 
-2. **How should a Windows native-symbol command be selected?**
-   - What we know: The supported CI matrix includes Windows, and this research verified the macOS `nm` procedure only. [VERIFIED: .github/workflows/ci.yml; VERIFIED: local environment]
-   - What's unclear: Which export-inspection executable is available in the Windows runner at execution time. [ASSUMED]
-   - Recommendation: Probe `llvm-nm` then `dumpbin` in the CI task; if neither is available, record the limitation and use a supported runner/tool rather than weakening the ABI criterion. [ASSUMED]
+2. **How a Windows native-symbol command is selected — resolved.**
+   - **Decision:** On Windows, probe `llvm-nm` first and then `dumpbin /exports`; on other supported runners use `nm -gjU` (macOS) or `nm -D --defined-only` (Linux). If the initial execution environment has none of those supported inspectors, it records `RESULT: pending supported inspector` and Phase 11 cannot close UPG-03 there. Plan 11-04 must run the pre-migration and migrated exact SHAs on a supported runner with one of those inspectors and require a zero-diff `RESULT: identical` before ABI comparison closes. [RESOLVED: planner revision 1; VERIFIED: 11-REVIEWS.md; VERIFIED: .github/workflows/ci.yml]
 
 ## Environment Availability
 
