@@ -9,11 +9,14 @@ It supports both:
 ## Requirements
 
 - Go 1.21+
-- Rust 1.70+
+- Rust 1.88.0+ when building the native shim from source
+- `protoc` 31.1 when building the native shim from source
 - Java 17+ (JNA module) and Java 22+ (Panama module)
 - `golangci-lint`, ShellCheck 0.9 or newer, and yamllint 1.28 or newer (for the complete `make lint` checks)
 
 Go 1.21+ remains the library build/runtime baseline. The repository's workflow-lint target runs the actionlint version pinned in `.actionlint-version`. With Go 1.21+ and automatic toolchain switching enabled, Go selects the newer toolchain requested by that module. Go 1.24+ must be installed locally only when automatic toolchain switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain selected through `GOTOOLCHAIN`.
+
+Rust 1.88.0 is the measured source-build MSRV for the committed Chroma 1.5.9 dependency graph, and `protoc` 31.1 is the source-build protobuf generator requirement. CI and release builds retain the exact Rust 1.93.1 compiler pin for reproducibility. Consumers who use released/prebuilt native libraries need neither Rust nor protoc.
 
 ## Supported Platform Matrix
 
@@ -41,6 +44,8 @@ Design intent:
 - integration and compatibility tests for `PersistentClient` should live in `chroma-go`
 
 ## Building
+
+These commands build the native shim from source and therefore require Rust 1.88.0 or newer plus `protoc` 31.1. Prebuilt consumers can skip them.
 
 ```bash
 # Build debug version
@@ -85,21 +90,21 @@ On Windows, prefer the PowerShell workflow for `test`, `test-release`, and `benc
 ### Windows toolchain setup
 
 1. Install Go 1.21+. Automatic toolchain switching normally supplies the toolchain needed for workflow linting; install Go 1.24+ locally only when switching is unavailable or disabled, such as with `GOTOOLCHAIN=local` or an older pinned toolchain.
-2. Install Rust with an MSVC target toolchain:
+2. Install Rust 1.88.0 or newer with an MSVC target toolchain. Rust 1.88.0 is the source-build MSRV; CI and releases use the exact Rust 1.93.1 pin:
 
 ```powershell
 # x64 Windows
-rustup toolchain install stable-x86_64-pc-windows-msvc
-rustup default stable-x86_64-pc-windows-msvc
+rustup toolchain install 1.88.0-x86_64-pc-windows-msvc
+rustup default 1.88.0-x86_64-pc-windows-msvc
 ```
 
 ```powershell
 # ARM64 Windows
-rustup toolchain install stable-aarch64-pc-windows-msvc
-rustup default stable-aarch64-pc-windows-msvc
+rustup toolchain install 1.88.0-aarch64-pc-windows-msvc
+rustup default 1.88.0-aarch64-pc-windows-msvc
 ```
 
-3. Install `protoc` 31.x (matches Chroma `1.5.5` toolchain and this repo's CI).
+3. Install `protoc` 31.1 (matches the Chroma 1.5.9 source-build graph and this repository's CI/release setup).
 4. Install `golangci-lint`.
 5. Install `goimports`:
 
@@ -626,6 +631,8 @@ The `.yamllint` configuration reads repository-local exclusions from `.gitignore
 
 ## Testing
 
+Phase 11 test results cover fresh data created with the Chroma 1.5.9-backed shim. They do not establish compatibility for persisted data created by Chroma 1.5.5. Phase 12 owns the release-gating upgrade, mutation/reopen, and maintenance compatibility evidence for that persisted data.
+
 ```bash
 make test-go       # Run Go tests (unit + integration + property tests)
 make test-rust     # Run Rust shim tests (unit + proptests + FFI integration)
@@ -656,6 +663,10 @@ A separate cross-platform matrix (`ubuntu-latest`, `macos-latest`, `windows-late
 6. Java Panama smoke tests on Java 22
 
 Release tags (`v*`) run a separate workflow that builds canonical native archives plus Java release JARs, signs artifacts with cosign v3 keyless bundles, publishes to both GitHub Releases and `releases.amikos.tech`, and updates `latest.json` plus signed `releases.json`.
+
+### Chroma 1.5.9 migration boundary
+
+The migration preserves default-compatible raw YAML and schema parsing and adds no new typed C, Go, JNA, or Panama API. Phase 13 owns the deferred additive wrappers for collection lookup by UUID, `fork_count`, bounded-WAL reads through `ReadLevel::IndexAndBoundedWal`, sparse-index selection, and MaxScore controls. Phase 12, separately, owns compatibility proof for persisted Chroma 1.5.5 data, including upgrade, mutation/reopen, and maintenance operations.
 
 ## Troubleshooting
 
@@ -694,12 +705,12 @@ xattr -dr com.apple.quarantine /path/to/libchroma_shim.dylib
 ### Windows
 
 - Prefer the PowerShell helper commands in this README (`scripts/dev-windows.ps1`) instead of `make` for test/lint/bench flows.
-- Ensure the Rust MSVC target is active and `protoc` 31.x is installed before running tests.
+- Ensure the Rust 1.88.0-or-newer MSVC target is active and `protoc` 31.1 is installed before running source-build tests.
 - If path issues appear, set `CHROMA_LIB_PATH` via `Resolve-Path` as shown in [Prebuilt Release Artifacts](#prebuilt-release-artifacts).
 
 ### Build and test failures
 
-- `protoc` version mismatches are a common source of build failures; use `31.x`.
+- `protoc` version mismatches are a common source of build failures; use `31.1`.
 - If Rust or Go dependencies are corrupted locally, clear build outputs and rerun:
 
 ```bash

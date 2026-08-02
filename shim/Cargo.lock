@@ -1298,8 +1298,8 @@ dependencies = [
 
 [[package]]
 name = "chroma"
-version = "0.13.2"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+version = "0.14.0"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "backon",
@@ -1307,9 +1307,10 @@ dependencies = [
  "chroma-api-types",
  "chroma-error",
  "chroma-types",
+ "failsafe",
  "murmur3",
  "parking_lot",
- "reqwest",
+ "reqwest 0.13.4",
  "rust-stemmers",
  "serde",
  "serde_json",
@@ -1320,8 +1321,8 @@ dependencies = [
 
 [[package]]
 name = "chroma-api-types"
-version = "0.13.2"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+version = "0.14.0"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "serde",
  "utoipa",
@@ -1330,7 +1331,7 @@ dependencies = [
 [[package]]
 name = "chroma-blockstore"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1363,7 +1364,7 @@ dependencies = [
 [[package]]
 name = "chroma-cache"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1384,7 +1385,7 @@ dependencies = [
 [[package]]
 name = "chroma-config"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-error",
@@ -1398,7 +1399,7 @@ dependencies = [
 [[package]]
 name = "chroma-distance"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "chroma-error",
  "chroma-types",
@@ -1407,8 +1408,8 @@ dependencies = [
 
 [[package]]
 name = "chroma-error"
-version = "0.13.2"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+version = "0.14.0"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "http 1.4.0",
  "sqlx",
@@ -1420,7 +1421,7 @@ dependencies = [
 [[package]]
 name = "chroma-frontend"
 version = "1.0.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -1470,7 +1471,7 @@ dependencies = [
 [[package]]
 name = "chroma-index"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1488,6 +1489,7 @@ dependencies = [
  "dashmap",
  "faer",
  "futures",
+ "half",
  "hnswlib",
  "itertools 0.13.0",
  "opentelemetry",
@@ -1509,7 +1511,7 @@ dependencies = [
 [[package]]
 name = "chroma-log"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "bytemuck",
@@ -1523,6 +1525,7 @@ dependencies = [
  "chroma-tracing",
  "chroma-types",
  "futures",
+ "hyper 1.8.1",
  "opentelemetry",
  "rand 0.8.7",
  "serde",
@@ -1539,7 +1542,7 @@ dependencies = [
 [[package]]
 name = "chroma-memberlist"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1550,6 +1553,7 @@ dependencies = [
  "futures",
  "k8s-openapi",
  "kube",
+ "opentelemetry",
  "parking_lot",
  "schemars",
  "serde",
@@ -1564,7 +1568,7 @@ dependencies = [
 [[package]]
 name = "chroma-metering"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-metering-macros",
@@ -1578,7 +1582,7 @@ dependencies = [
 [[package]]
 name = "chroma-metering-macros"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-system",
@@ -1593,9 +1597,10 @@ dependencies = [
 [[package]]
 name = "chroma-segment"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
+ "bincode",
  "bytes",
  "chroma-blockstore",
  "chroma-cache",
@@ -1607,6 +1612,7 @@ dependencies = [
  "chroma-storage",
  "chroma-types",
  "chrono",
+ "fastbloom",
  "futures",
  "opentelemetry",
  "prost 0.14.3",
@@ -1630,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "chroma-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1652,7 +1658,7 @@ dependencies = [
 [[package]]
 name = "chroma-storage"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -1678,7 +1684,7 @@ dependencies = [
 [[package]]
 name = "chroma-sysdb"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-config",
@@ -1710,12 +1716,13 @@ dependencies = [
 [[package]]
 name = "chroma-system"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "chroma-config",
  "chroma-error",
  "futures",
+ "libc",
  "opentelemetry",
  "parking_lot",
  "rand 0.8.7",
@@ -1731,7 +1738,7 @@ dependencies = [
 [[package]]
 name = "chroma-tracing"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "axum 0.8.8",
  "chroma-system",
@@ -1742,6 +1749,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "rustls 0.23.37",
  "serde",
  "serde_json",
  "tokio",
@@ -1756,14 +1764,16 @@ dependencies = [
 
 [[package]]
 name = "chroma-types"
-version = "0.13.2"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+version = "0.14.0"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "bitpacking",
  "chroma-error",
  "chrono",
  "criterion 0.7.0",
+ "half",
  "itertools 0.13.0",
  "prost 0.14.3",
  "prost-types",
@@ -1909,6 +1919,16 @@ name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
+
+[[package]]
+name = "combine"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
+dependencies = [
+ "bytes",
+ "memchr",
+]
 
 [[package]]
 name = "concurrent-queue"
@@ -2635,6 +2655,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "failsafe"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6b1dc7c28e66a8f5dc32b7043b735e93d9eea8ea6e7be5507dae5850ab7ac70"
+dependencies = [
+ "futures-core",
+ "parking_lot",
+ "pin-project",
+ "rand 0.8.7",
+]
+
+[[package]]
 name = "fastant"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2645,6 +2677,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fastbloom"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef975e30683b2d965054bb0a836f8973857c4ebf6acf274fe46617cd285060d8"
+dependencies = [
+ "foldhash 0.2.0",
+ "libm",
+ "portable-atomic",
+ "rand 0.9.5",
+ "serde",
+ "siphasher",
+]
+
+[[package]]
 name = "fastdivide"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2652,12 +2698,13 @@ checksum = "9afc2bd4d5a73106dd53d10d73d3401c2f32730ba2c0b93ddb888a8983680471"
 
 [[package]]
 name = "fastrace"
-version = "0.7.16"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8df0cb35ba204d668c758a6400c2e43eab9b038843debfab606b26f194ad7f1b"
+checksum = "773324bb245e34a32d704c2256871377f9d7cdb4acff10c555e0dc068d6ddb55"
 dependencies = [
  "fastant",
  "fastrace-macro",
+ "once_cell",
  "parking_lot",
  "pin-project",
  "rand 0.9.5",
@@ -2777,6 +2824,12 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
@@ -3345,7 +3398,7 @@ checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
+ "foldhash 0.1.5",
 ]
 
 [[package]]
@@ -3586,7 +3639,6 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -3925,6 +3977,55 @@ name = "itoa"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
+
+[[package]]
+name = "jni"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
+dependencies = [
+ "cfg-if",
+ "combine",
+ "jni-macros",
+ "jni-sys",
+ "log",
+ "simd_cesu8",
+ "thiserror 2.0.18",
+ "walkdir",
+ "windows-link",
+]
+
+[[package]]
+name = "jni-macros"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "simd_cesu8",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "jni-sys"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6377a88cb3910bee9b0fa88d4f42e1d2da8e79915598f65fb0c7ee14c878af2"
+dependencies = [
+ "jni-sys-macros",
+]
+
+[[package]]
+name = "jni-sys-macros"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
+dependencies = [
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "jobserver"
@@ -4385,7 +4486,7 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 [[package]]
 name = "mdac"
 version = "0.1.0"
-source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.5#eca66b7afd4b7aea227644f8c78030f16fc2837a"
+source = "git+https://github.com/chroma-core/chroma.git?tag=1.5.9#11f3c7435e71024aa0a2b53710a28d3289d922d1"
 dependencies = [
  "serde",
  "siphasher",
@@ -4755,7 +4856,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml",
  "rand 0.9.5",
- "reqwest",
+ "reqwest 0.12.28",
  "ring",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -5227,6 +5328,9 @@ name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "portable-atomic-util"
@@ -5519,6 +5623,7 @@ version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
+ "aws-lc-rs",
  "bytes",
  "getrandom 0.3.4",
  "lru-slab",
@@ -5800,7 +5905,6 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "encoding_rs",
  "futures-core",
  "futures-util",
  "h2 0.4.13",
@@ -5812,7 +5916,6 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
- "mime",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -5834,7 +5937,47 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
- "webpki-roots",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "encoding_rs",
+ "futures-core",
+ "h2 0.4.13",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper 1.8.1",
+ "hyper-rustls 0.27.7",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "mime",
+ "percent-encoding",
+ "pin-project-lite",
+ "quinn",
+ "rustls 0.23.37",
+ "rustls-pki-types",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tower 0.5.3",
+ "tower-http 0.6.8",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -6009,6 +6152,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "758025cb5fccfd3bc2fd74708fd4682be41d99e5dff73c377c0646c6012c73a4"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -6068,6 +6212,33 @@ dependencies = [
  "web-time",
  "zeroize",
 ]
+
+[[package]]
+name = "rustls-platform-verifier"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
+ "rustls-platform-verifier-android",
+ "rustls-webpki 0.103.9",
+ "security-framework 3.7.0",
+ "security-framework-sys",
+ "webpki-root-certs",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rustls-platform-verifier-android"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
@@ -6510,6 +6681,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
+name = "simd_cesu8"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11031e251abf8611c80f460e19dbdeb54a66db918e49c65a7065b46ac7aec520"
+dependencies = [
+ "rustc_version",
+ "simdutf8",
+]
+
+[[package]]
 name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6529,6 +6710,9 @@ name = "siphasher"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "sketches-ddsketch"
@@ -7107,7 +7291,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.59.0",
@@ -8095,10 +8279,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "webpki-roots"
-version = "1.0.6"
+name = "webpki-root-certs"
+version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
+checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
 dependencies = [
  "rustls-pki-types",
 ]

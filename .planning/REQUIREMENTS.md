@@ -45,10 +45,10 @@
 
 ### Chroma 1.5.9 Migration
 
-- [ ] **UPG-01**: All nine direct Chroma Rust dependencies and the resolved lockfile use the Chroma 1.5.9 dependency graph
-- [ ] **UPG-02**: The shim adapts the changed `Frontend::delete` region argument with documented local-mode semantics and no behavior change through the existing FFI
-- [ ] **UPG-03**: Existing exported C symbols and public Go, JNA, and Panama APIs remain backward compatible; additive Chroma 1.5.9 APIs are explicitly included or deferred
-- [ ] **UPG-04**: Rust and protobuf toolchain guidance matches the versions actually required to build the locked Chroma 1.5.9 graph
+- [x] **UPG-01**: All nine direct Chroma Rust dependencies and the resolved lockfile use the Chroma 1.5.9 dependency graph
+- [x] **UPG-02**: The shim adapts the changed `Frontend::delete` region argument with documented local-mode semantics and no behavior change through the existing FFI
+- [x] **UPG-03**: Existing exported C symbols and public Go, JNA, and Panama APIs remain backward compatible; additive Chroma 1.5.9 APIs are explicitly included or deferred
+- [x] **UPG-04**: Rust and protobuf toolchain guidance matches the versions actually required to build the locked Chroma 1.5.9 graph
 - [ ] **COMPAT-01**: Data created by the Chroma 1.5.5 shim can be opened, read, queried, mutated, and reopened with the Chroma 1.5.9 shim
 - [ ] **COMPAT-02**: Backup, rebuild, compaction, WAL pruning, and server stop/restart operations preserve data and availability after the upgrade
 - [ ] **COMPAT-03**: Go, Rust FFI, JNA, and Panama test suites pass against Chroma 1.5.9 on the supported CI platforms
@@ -102,10 +102,10 @@
 | SMNT-02 | Phase 10 | Complete |
 | SMNT-03 | Phase 10 | Complete |
 | SMNT-04 | Phase 10 | Complete |
-| UPG-01 | Phase 11 | Pending |
-| UPG-02 | Phase 11 | Pending |
-| UPG-03 | Phase 11 | Pending |
-| UPG-04 | Phase 11 | Pending |
+| UPG-01 | Phase 11 | Complete |
+| UPG-02 | Phase 11 | Complete |
+| UPG-03 | Phase 11 | Complete |
+| UPG-04 | Phase 11 | Complete |
 | COMPAT-01 | Phase 12 | Pending |
 | COMPAT-02 | Phase 12 | Pending |
 | COMPAT-03 | Phase 12 | Pending |
