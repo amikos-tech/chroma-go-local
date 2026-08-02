@@ -2609,9 +2609,10 @@ unsafe fn run_embedded_delete_records(
         }
     };
 
+    // Empty region is local embedded telemetry state, intentionally not exposed via C, Go, JNA, or Panama.
     match embedded
         .runtime
-        .block_on(async { frontend.delete(request).await })
+        .block_on(async { frontend.delete(request, String::new()).await })
     {
         Ok(response) => Ok(response),
         Err(e) => {
